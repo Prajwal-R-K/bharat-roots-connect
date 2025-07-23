@@ -1,5 +1,6 @@
 import { useState, useCallback, useEffect } from "react";
 import { toast } from "@/hooks/use-toast";
+import { familyTreeService } from "@/services/familyTree";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -26,7 +27,7 @@ interface FamilyMember {
 
 const FamilyTreeBuilder = () => {
   const [members, setMembers] = useState<FamilyMember[]>([]);
-  const [currentUserId] = useState("user_" + Date.now()); // In real app, get from auth
+  const [currentUserId, setCurrentUserId] = useState<string>("");
   
   const [zoom, setZoom] = useState(1);
   const [isAddingMember, setIsAddingMember] = useState(false);
@@ -40,12 +41,11 @@ const FamilyTreeBuilder = () => {
   });
 
   const handleAddMember = useCallback(async () => {
-    if (newMember.name && newMember.relation) {
+    if (newMember.name && newMember.relation && currentUserId) {
       try {
-        const { neo4jService } = await import('@/services/neo4j');
         const memberId = `member_${Date.now()}`;
         
-        await neo4jService.addFamilyMember({
+        await familyTreeService.addFamilyMember({
           userId: memberId,
           name: newMember.name,
           relation: newMember.relation,
@@ -83,9 +83,10 @@ const FamilyTreeBuilder = () => {
   }, [newMember, currentUserId]);
 
   const handleDeleteMember = useCallback(async (id: string) => {
+    if (!currentUserId) return;
+    
     try {
-      const { neo4jService } = await import('@/services/neo4j');
-      await neo4jService.deleteFamilyMember(id);
+      await familyTreeService.deleteFamilyMember(id, currentUserId);
       
       setMembers(prev => prev.filter(member => member.id !== id));
       setSelectedMember(null);
@@ -109,12 +110,16 @@ const FamilyTreeBuilder = () => {
     return member.gender === "male" ? "bg-tree-male" : "bg-tree-female";
   };
 
-  // Load family tree from Neo4j on component mount
+  // Load family tree on component mount
   useEffect(() => {
     const loadFamilyTree = async () => {
       try {
-        const { neo4jService } = await import('@/services/neo4j');
-        const familyData = await neo4jService.getFamilyTree(currentUserId);
+        // Get current user info
+        const currentUser = familyTreeService.getCurrentUser();
+        if (!currentUser) return;
+        
+        setCurrentUserId(currentUser.userId);
+        const familyData = await familyTreeService.getFamilyTree(currentUser.userId);
         
         // Convert Neo4j data to component format
         const convertedMembers = familyData.map((person: any, index: number) => ({
@@ -132,23 +137,11 @@ const FamilyTreeBuilder = () => {
         setMembers(convertedMembers);
       } catch (error) {
         console.error('Error loading family tree:', error);
-        // Initialize with sample data if no tree exists
-        setMembers([
-          {
-            id: currentUserId,
-            name: "You",
-            relation: "Self",
-            gender: "male",
-            isCurrentUser: true,
-            x: 400,
-            y: 300,
-          }
-        ]);
       }
     };
 
     loadFamilyTree();
-  }, [currentUserId]);
+  }, []);
 
   const zoomIn = () => setZoom(prev => Math.min(prev + 0.1, 2));
   const zoomOut = () => setZoom(prev => Math.max(prev - 0.1, 0.5));

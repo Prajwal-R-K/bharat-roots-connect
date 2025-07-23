@@ -37,11 +37,11 @@ const LandingPage = ({ setActiveTab }: LandingPageProps) => {
     }
 
     try {
-      const { neo4jService } = await import('@/services/neo4j');
+      const { familyTreeService } = await import('@/services/familyTree');
       
-      // Create user in Neo4j with initial family tree node
+      // Create user with initial family tree node
       const userId = `user_${Date.now()}`;
-      await neo4jService.createUser({
+      await familyTreeService.createUser({
         userId,
         name: signupForm.name,
         email: signupForm.email,
