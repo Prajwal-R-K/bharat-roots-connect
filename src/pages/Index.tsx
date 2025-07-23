@@ -3,13 +3,13 @@ import LandingPage from "@/components/LandingPage";
 import Dashboard from "@/components/Dashboard";
 
 const Index = () => {
-  const [isAuthenticated, setIsAuthenticated] = useState(false);
+  const [activeTab, setActiveTab] = useState('landing');
 
-  if (isAuthenticated) {
+  if (activeTab === 'dashboard') {
     return <Dashboard />;
   }
 
-  return <LandingPage />;
+  return <LandingPage setActiveTab={setActiveTab} />;
 };
 
 export default Index;

@@ -1,4 +1,5 @@
-import { useState, useCallback } from "react";
+import { useState, useCallback, useEffect } from "react";
+import { toast } from "@/hooks/use-toast";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -24,40 +25,8 @@ interface FamilyMember {
 }
 
 const FamilyTreeBuilder = () => {
-  const [members, setMembers] = useState<FamilyMember[]>([
-    {
-      id: "1",
-      name: "Arjun Rajesh",
-      relation: "Self",
-      gender: "male",
-      dob: "1985-06-15",
-      email: "arjun@example.com",
-      isCurrentUser: true,
-      x: 400,
-      y: 300,
-    },
-    {
-      id: "2",
-      name: "Rajesh Kumar",
-      relation: "Father",
-      gender: "male",
-      dob: "1955-03-20",
-      children: ["1"],
-      x: 300,
-      y: 150,
-    },
-    {
-      id: "3",
-      name: "Sunita Devi",
-      relation: "Mother",
-      gender: "female",
-      dob: "1960-08-10",
-      spouseId: "2",
-      children: ["1"],
-      x: 500,
-      y: 150,
-    },
-  ]);
+  const [members, setMembers] = useState<FamilyMember[]>([]);
+  const [currentUserId] = useState("user_" + Date.now()); // In real app, get from auth
   
   const [zoom, setZoom] = useState(1);
   const [isAddingMember, setIsAddingMember] = useState(false);
@@ -70,31 +39,116 @@ const FamilyTreeBuilder = () => {
     email: "",
   });
 
-  const handleAddMember = useCallback(() => {
+  const handleAddMember = useCallback(async () => {
     if (newMember.name && newMember.relation) {
-      const id = Math.random().toString(36).substr(2, 9);
-      const member: FamilyMember = {
-        id,
-        ...newMember,
-        x: 400 + Math.random() * 200 - 100,
-        y: 300 + Math.random() * 200 - 100,
-      };
-      
-      setMembers(prev => [...prev, member]);
-      setNewMember({ name: "", relation: "", gender: "male", dob: "", email: "" });
-      setIsAddingMember(false);
-    }
-  }, [newMember]);
+      try {
+        const { neo4jService } = await import('@/services/neo4j');
+        const memberId = `member_${Date.now()}`;
+        
+        await neo4jService.addFamilyMember({
+          userId: memberId,
+          name: newMember.name,
+          relation: newMember.relation,
+          gender: newMember.gender,
+          dob: newMember.dob,
+          email: newMember.email,
+          currentUserId,
+        });
 
-  const handleDeleteMember = useCallback((id: string) => {
-    setMembers(prev => prev.filter(member => member.id !== id));
-    setSelectedMember(null);
+        // Add to local state for visualization
+        const member: FamilyMember = {
+          id: memberId,
+          ...newMember,
+          x: 400 + Math.random() * 200 - 100,
+          y: 300 + Math.random() * 200 - 100,
+        };
+        
+        setMembers(prev => [...prev, member]);
+        setNewMember({ name: "", relation: "", gender: "male", dob: "", email: "" });
+        setIsAddingMember(false);
+
+        toast({
+          title: "Family member added",
+          description: `${newMember.name} has been added to your family tree.`,
+        });
+      } catch (error) {
+        console.error('Error adding family member:', error);
+        toast({
+          title: "Error",
+          description: "Failed to add family member. Please try again.",
+          variant: "destructive",
+        });
+      }
+    }
+  }, [newMember, currentUserId]);
+
+  const handleDeleteMember = useCallback(async (id: string) => {
+    try {
+      const { neo4jService } = await import('@/services/neo4j');
+      await neo4jService.deleteFamilyMember(id);
+      
+      setMembers(prev => prev.filter(member => member.id !== id));
+      setSelectedMember(null);
+
+      toast({
+        title: "Member removed",
+        description: "Family member has been removed from your tree.",
+      });
+    } catch (error) {
+      console.error('Error deleting family member:', error);
+      toast({
+        title: "Error", 
+        description: "Failed to remove family member. Please try again.",
+        variant: "destructive",
+      });
+    }
   }, []);
 
   const getMemberColor = (member: FamilyMember) => {
     if (member.isCurrentUser) return "bg-tree-current";
     return member.gender === "male" ? "bg-tree-male" : "bg-tree-female";
   };
+
+  // Load family tree from Neo4j on component mount
+  useEffect(() => {
+    const loadFamilyTree = async () => {
+      try {
+        const { neo4jService } = await import('@/services/neo4j');
+        const familyData = await neo4jService.getFamilyTree(currentUserId);
+        
+        // Convert Neo4j data to component format
+        const convertedMembers = familyData.map((person: any, index: number) => ({
+          id: person.userId,
+          name: person.name,
+          relation: person.relation || 'Family Member',
+          gender: person.gender,
+          dob: person.dob,
+          email: person.email,
+          isCurrentUser: person.isCurrentUser,
+          x: 400 + (index * 150) - 300,
+          y: 300 + (index % 2 === 0 ? -100 : 100),
+        }));
+        
+        setMembers(convertedMembers);
+      } catch (error) {
+        console.error('Error loading family tree:', error);
+        // Initialize with sample data if no tree exists
+        setMembers([
+          {
+            id: currentUserId,
+            name: "You",
+            relation: "Self",
+            gender: "male",
+            isCurrentUser: true,
+            x: 400,
+            y: 300,
+          }
+        ]);
+      }
+    };
+
+    loadFamilyTree();
+  }, [currentUserId]);
 
   const zoomIn = () => setZoom(prev => Math.min(prev + 0.1, 2));
   const zoomOut = () => setZoom(prev => Math.max(prev - 0.1, 0.5));

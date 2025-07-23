@@ -4,11 +4,69 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { TreePine, Users, Search, Shield, Heart, Star } from "lucide-react";
+import { toast } from "@/hooks/use-toast";
 import heroImage from "@/assets/hero-family-tree.jpg";
 
-const LandingPage = () => {
+interface LandingPageProps {
+  setActiveTab: (tab: string) => void;
+}
+
+const LandingPage = ({ setActiveTab }: LandingPageProps) => {
   const [isLogin, setIsLogin] = useState(true);
+  const [signupForm, setSignupForm] = useState({
+    name: "",
+    email: "",
+    password: "",
+    confirmPassword: "",
+    gender: "male" as "male" | "female",
+    dob: "",
+  });
+
+  const handleSignup = async (e: React.FormEvent) => {
+    e.preventDefault();
+    
+    if (signupForm.password !== signupForm.confirmPassword) {
+      toast({
+        title: "Password mismatch",
+        description: "Please ensure both passwords match.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    try {
+      const { neo4jService } = await import('@/services/neo4j');
+      
+      // Create user in Neo4j with initial family tree node
+      const userId = `user_${Date.now()}`;
+      await neo4jService.createUser({
+        userId,
+        name: signupForm.name,
+        email: signupForm.email,
+        gender: signupForm.gender,
+        dob: signupForm.dob,
+        isCurrentUser: true,
+      });
+
+      toast({
+        title: "Account created successfully!",
+        description: "Your family tree has been initialized. You can now start adding family members.",
+      });
+
+      // Navigate to dashboard
+      setActiveTab('dashboard');
+      console.log('User created with ID:', userId);
+    } catch (error) {
+      console.error('Signup error:', error);
+      toast({
+        title: "Signup failed",
+        description: "There was an error creating your account. Please try again.",
+        variant: "destructive",
+      });
+    }
+  };
 
   return (
     <div className="min-h-screen bg-background">
@@ -141,27 +199,80 @@ const LandingPage = () => {
                     </Button>
                   </TabsContent>
                   
-                  <TabsContent value="signup" className="space-y-4 mt-6">
-                    <div className="space-y-2">
-                      <Label htmlFor="name">Full Name</Label>
-                      <Input id="name" placeholder="Your full name" />
-                    </div>
-                    <div className="space-y-2">
-                      <Label htmlFor="signup-email">Email</Label>
-                      <Input id="signup-email" type="email" placeholder="your@email.com" />
-                    </div>
-                    <div className="space-y-2">
-                      <Label htmlFor="signup-password">Password</Label>
-                      <Input id="signup-password" type="password" placeholder="Create a password" />
-                    </div>
-                    <div className="space-y-2">
-                      <Label htmlFor="confirm-password">Confirm Password</Label>
-                      <Input id="confirm-password" type="password" placeholder="Confirm your password" />
-                    </div>
-                    <Button variant="gradient" className="w-full">
-                      Create Account
-                    </Button>
-                  </TabsContent>
+                   <TabsContent value="signup" className="space-y-4 mt-6">
+                     <form onSubmit={handleSignup} className="space-y-4">
+                       <div className="space-y-2">
+                         <Label htmlFor="name">Full Name</Label>
+                         <Input 
+                           id="name" 
+                           value={signupForm.name}
+                           onChange={(e) => setSignupForm(prev => ({ ...prev, name: e.target.value }))}
+                           placeholder="Your full name" 
+                           required
+                         />
+                       </div>
+                       <div className="space-y-2">
+                         <Label htmlFor="signup-email">Email</Label>
+                         <Input 
+                           id="signup-email" 
+                           type="email" 
+                           value={signupForm.email}
+                           onChange={(e) => setSignupForm(prev => ({ ...prev, email: e.target.value }))}
+                           placeholder="your@email.com" 
+                           required
+                         />
+                       </div>
+                       <div className="space-y-2">
+                         <Label htmlFor="gender">Gender</Label>
+                         <Select 
+                           value={signupForm.gender} 
+                           onValueChange={(value: "male" | "female") => setSignupForm(prev => ({ ...prev, gender: value }))}
+                         >
+                           <SelectTrigger>
+                             <SelectValue />
+                           </SelectTrigger>
+                           <SelectContent>
+                             <SelectItem value="male">Male</SelectItem>
+                             <SelectItem value="female">Female</SelectItem>
+                           </SelectContent>
+                         </Select>
+                       </div>
+                       <div className="space-y-2">
+                         <Label htmlFor="dob">Date of Birth</Label>
+                         <Input 
+                           id="dob" 
+                           type="date" 
+                           value={signupForm.dob}
+                           onChange={(e) => setSignupForm(prev => ({ ...prev, dob: e.target.value }))}
+                         />
+                       </div>
+                       <div className="space-y-2">
+                         <Label htmlFor="signup-password">Password</Label>
+                         <Input 
+                           id="signup-password" 
+                           type="password" 
+                           value={signupForm.password}
+                           onChange={(e) => setSignupForm(prev => ({ ...prev, password: e.target.value }))}
+                           placeholder="Create a password" 
+                           required
+                         />
+                       </div>
+                       <div className="space-y-2">
+                         <Label htmlFor="confirm-password">Confirm Password</Label>
+                         <Input 
+                           id="confirm-password" 
+                           type="password" 
+                           value={signupForm.confirmPassword}
+                           onChange={(e) => setSignupForm(prev => ({ ...prev, confirmPassword: e.target.value }))}
+                           placeholder="Confirm your password" 
+                           required
+                         />
+                       </div>
+                       <Button type="submit" variant="gradient" className="w-full">
+                         Create Account & Start Family Tree
+                       </Button>
+                     </form>
+                   </TabsContent>
                 </Tabs>
               </CardContent>
             </Card>
@@ -208,3 +319,4 @@ const LandingPage = () => {
 };
 
 export default LandingPage;
+export type { LandingPageProps };
