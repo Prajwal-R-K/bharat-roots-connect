@@ -17,12 +17,11 @@ import { User } from '@/types';
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
-import { getFamilyRelationships } from '@/lib/neo4j/family-tree';
-import { getUserPersonalizedFamilyTree } from '@/lib/neo4j/relationships';
+import { getTraversableFamilyTreeData } from '@/lib/neo4j/family-tree';
 import { Heart, Crown, User as UserIcon } from "lucide-react";
 
 interface FamilyMember {
-  userId: string;
+  id: string;
   name: string;
   email: string;
   status: string;
@@ -63,8 +62,8 @@ const getRelationshipCategory = (relationship: string): 'ancestor' | 'descendant
   return 'sibling';
 };
 
-// Get reciprocal relationship
-const getReciprocalRelationship = (relationship: string, gender: string): string => {
+// Get reciprocal relationship with gender
+const getReciprocalRelationship = (relationship: string, targetGender: string, sourceGender?: string): string => {
   const reciprocals: Record<string, Record<string, string>> = {
     father: { male: 'son', female: 'daughter' },
     mother: { male: 'son', female: 'daughter' },
@@ -81,7 +80,15 @@ const getReciprocalRelationship = (relationship: string, gender: string): string
     spouse: { male: 'husband', female: 'wife' }
   };
   
-  return reciprocals[relationship.toLowerCase()]?.[gender] || relationship;
+  const targetReciprocal = reciprocals[relationship.toLowerCase()]?.[targetGender] || relationship;
+  if (sourceGender && ['spouse', 'husband', 'wife'].includes(relationship.toLowerCase())) {
+    return reciprocals[targetReciprocal.toLowerCase()]?.[sourceGender] || targetReciprocal;
+  }
+  // Ensure reciprocal matches the source's perspective for parent-child
+  if (['son', 'daughter'].includes(relationship.toLowerCase()) && sourceGender) {
+    return reciprocals[relationship.toLowerCase()]?.[sourceGender] || relationship;
+  }
+  return targetReciprocal;
 };
 
 // Custom family member node component
@@ -127,45 +134,59 @@ const FamilyMemberNode = ({ data, id }: { data: any; id: string }) => {
 // Calculate positions based on heritage layout logic
 const calculateNodePositions = (
   members: FamilyMember[], 
-  relationships: Relationship[], 
+  relationships: Relationship[],
   createdByUserId: string
 ): { nodes: Node[]; edges: Edge[] } => {
   const nodeMap = new Map<string, FamilyMember>();
-  members.forEach(member => nodeMap.set(member.userId, member));
+  members.forEach(member => nodeMap.set(member.id, member));
   
   const positions = new Map<string, { x: number; y: number; generation: number }>();
   const processedNodes = new Set<string>();
   
-  // Start with the createdBy node at center
-  const rootPosition = { x: 0, y: 0, generation: 0 };
-  positions.set(createdByUserId, rootPosition);
-  
-  const queue: Array<{ userId: string; fromUserId?: string }> = [{ userId: createdByUserId }];
+  // Start with all nodes to ensure complete tree
+  const queue: string[] = Array.from(nodeMap.keys());
   
   // Generation tracking for y-positioning
   const generationCounts = new Map<number, number>();
-  generationCounts.set(0, 0);
+  generationCounts.set(0, queue.length); // Initial generation
   
   while (queue.length > 0) {
-    const { userId, fromUserId } = queue.shift()!;
+    const userId = queue.shift()!;
     
     if (processedNodes.has(userId)) continue;
     processedNodes.add(userId);
     
+    const currentMember = nodeMap.get(userId)!;
+    let currentGeneration = 0;
+    
+    // Determine generation based on relationships
+    const relatedRelationships = relationships.filter(rel => rel.source === userId || rel.target === userId);
+    relatedRelationships.forEach(rel => {
+      const otherId = rel.source === userId ? rel.target : rel.source;
+      const otherMember = nodeMap.get(otherId);
+      if (otherMember && positions.has(otherId)) {
+        const otherGen = positions.get(otherId)!.generation;
+        const category = getRelationshipCategory(rel.type);
+        if (category === 'ancestor') currentGeneration = Math.min(currentGeneration, otherGen - 1);
+        else if (category === 'descendant') currentGeneration = Math.max(currentGeneration, otherGen + 1);
+        else currentGeneration = otherGen; // Siblings stay in same generation
+      }
+    });
+    
+    if (!positions.has(userId)) {
+      currentGeneration = currentGeneration || 0;
+      positions.set(userId, { x: 0, y: currentGeneration * 200, generation: currentGeneration });
+    }
+    
     const currentPos = positions.get(userId)!;
     
-    // Find all relationships from this node
-    const nodeRelationships = relationships.filter(rel => rel.source === userId);
-    
-    let ancestorCount = 0;
-    let descendantCount = 0;
-    let siblingCount = 0;
-    
-    nodeRelationships.forEach(rel => {
-      if (processedNodes.has(rel.target)) return;
+    // Position related nodes
+    relatedRelationships.forEach(rel => {
+      const targetId = rel.target;
+      if (processedNodes.has(targetId)) return;
       
       const category = getRelationshipCategory(rel.type);
-      const targetMember = nodeMap.get(rel.target);
+      const targetMember = nodeMap.get(targetId);
       if (!targetMember) return;
       
       let targetGeneration: number;
@@ -174,36 +195,30 @@ const calculateNodePositions = (
       switch (category) {
         case 'ancestor':
           targetGeneration = currentPos.generation - 1;
-          xOffset = ancestorCount * 200 - ((nodeRelationships.filter(r => getRelationshipCategory(r.type) === 'ancestor').length - 1) * 100);
-          ancestorCount++;
+          xOffset = (generationCounts.get(targetGeneration) || 0) * 200 - ((relationships.filter(r => getRelationshipCategory(r.type) === 'ancestor' && r.target === targetId).length - 1) * 100);
           break;
           
         case 'descendant':
           targetGeneration = currentPos.generation + 1;
-          xOffset = descendantCount * 200 - ((nodeRelationships.filter(r => getRelationshipCategory(r.type) === 'descendant').length - 1) * 100);
-          descendantCount++;
+          xOffset = (generationCounts.get(targetGeneration) || 0) * 200 - ((relationships.filter(r => getRelationshipCategory(r.type) === 'descendant' && r.source === userId).length - 1) * 100);
           break;
           
         case 'sibling':
         default:
           targetGeneration = currentPos.generation;
-          xOffset = currentPos.x + (siblingCount + 1) * 250;
-          siblingCount++;
+          xOffset = currentPos.x + (relationships.filter(r => getRelationshipCategory(r.type) === 'sibling' && r.source === userId).length + 1) * 250;
           break;
       }
       
-      // Count nodes in generation for x-positioning
-      const genCount = generationCounts.get(targetGeneration) || 0;
-      generationCounts.set(targetGeneration, genCount + 1);
-      
+      generationCounts.set(targetGeneration, (generationCounts.get(targetGeneration) || 0) + 1);
       const targetPosition = {
-        x: category === 'sibling' ? xOffset : currentPos.x + xOffset,
+        x: currentPos.x + xOffset,
         y: targetGeneration * 200,
         generation: targetGeneration
       };
       
-      positions.set(rel.target, targetPosition);
-      queue.push({ userId: rel.target, fromUserId: userId });
+      positions.set(targetId, targetPosition);
+      if (!processedNodes.has(targetId)) queue.push(targetId);
     });
   }
   
@@ -226,20 +241,45 @@ const calculateNodePositions = (
     };
   });
   
-  const edges: Edge[] = relationships.map(rel => ({
-    id: `${rel.source}-${rel.target}`,
-    source: rel.source,
-    target: rel.target,
-    type: 'smoothstep',
-    animated: false,
-    style: { stroke: '#6366f1', strokeWidth: 2 },
-    markerEnd: { type: MarkerType.ArrowClosed, color: '#6366f1' },
-    data: {
-      relationship: rel.type,
-      sourceName: rel.sourceName,
-      targetName: rel.targetName
+  const edges: Edge[] = relationships.map(rel => {
+    const sourcePos = positions.get(rel.source)?.y || 0;
+    const targetPos = positions.get(rel.target)?.y || 0;
+    const isTopToBottom = sourcePos < targetPos;
+    const sourceId = isTopToBottom ? rel.source : rel.target;
+    const targetId = isTopToBottom ? rel.target : rel.source;
+    const sourceMember = nodeMap.get(rel.source);
+    const targetMember = nodeMap.get(rel.target);
+    
+    if (!sourceMember?.gender || !targetMember?.gender) {
+      throw new Error(`Missing gender for userId ${rel.source} or ${rel.target}`);
     }
-  }));
+
+    const originalRel = rel.type.toLowerCase();
+    let directRel = isTopToBottom ? originalRel : getReciprocalRelationship(originalRel, targetMember.gender, sourceMember.gender);
+    const reciprocalRel = isTopToBottom ? getReciprocalRelationship(originalRel, targetMember.gender, sourceMember.gender) : originalRel;
+
+    if (isTopToBottom && ['father', 'mother'].includes(originalRel)) {
+      directRel = targetMember.gender === 'male' ? 'son' : 'daughter';
+    } else if (!isTopToBottom && ['son', 'daughter'].includes(originalRel)) {
+      directRel = sourceMember.gender === 'male' ? 'father' : 'mother';
+    }
+
+    return {
+      id: `${sourceId}-${targetId}`,
+      source: sourceId,
+      target: targetId,
+      type: 'smoothstep',
+      animated: false,
+      style: { stroke: '#6366f1', strokeWidth: 2 },
+      markerEnd: { type: MarkerType.ArrowClosed, color: '#6366f1' },
+      data: {
+        relationship: directRel,
+        reciprocalRelationship: reciprocalRel,
+        sourceName: sourceMember.name,
+        targetName: targetMember.name
+      }
+    };
+  });
   
   return { nodes, edges };
 };
@@ -251,7 +291,8 @@ const nodeTypes = {
 const FamilyTreeVisualization: React.FC<FamilyTreeVisualizationProps> = ({ 
   user, 
   familyMembers,
-  viewMode = 'personal',
+  viewMode = 'all',
+  level = 5,
   minHeight = '600px',
   showControls = true
 }) => {
@@ -260,6 +301,38 @@ const FamilyTreeVisualization: React.FC<FamilyTreeVisualizationProps> = ({
   const [selectedEdge, setSelectedEdge] = useState<Edge | null>(null);
   const [relationshipDetailsOpen, setRelationshipDetailsOpen] = useState(false);
   const [showReciprocalRelation, setShowReciprocalRelation] = useState(false);
+  
+  // Fetch complete family tree data
+  useEffect(() => {
+    const fetchFamilyTreeData = async () => {
+      setIsLoading(true);
+      try {
+        const { nodes, links } = await getTraversableFamilyTreeData(user.familyTreeId, level);
+        const allMembers = nodes.map(node => ({
+          id: node.id,
+          name: node.name,
+          email: '',
+          status: node.status || '',
+          relationship: node.myRelationship || '',
+          createdBy: node.createdBy || '',
+          profilePicture: node.profilePicture || '',
+          gender: node.gender || ''
+        }));
+        setRelationships(links);
+        // Update familyMembers prop with complete data
+        familyMembers.forEach(member => {
+          const found = allMembers.find(m => m.id === member.id);
+          if (found) Object.assign(member, found);
+        });
+      } catch (error) {
+        console.error('Error fetching family tree data:', error);
+        setRelationships([]);
+      } finally {
+        setIsLoading(false);
+      }
+    };
+    fetchFamilyTreeData();
+  }, [user.familyTreeId, level, familyMembers]);
   
   // Calculate nodes and edges
   const { nodes: calculatedNodes, edges: calculatedEdges } = React.useMemo(() => {
@@ -278,28 +351,6 @@ const FamilyTreeVisualization: React.FC<FamilyTreeVisualizationProps> = ({
     setEdges(calculatedEdges);
   }, [calculatedNodes, calculatedEdges, setNodes, setEdges]);
   
-  // Fetch relationships
-  useEffect(() => {
-    const fetchRelationships = async () => {
-      setIsLoading(true);
-      try {
-        let relationshipData: Relationship[] = [];
-        if (viewMode === 'personal') {
-          relationshipData = await getUserPersonalizedFamilyTree(user.userId, user.familyTreeId);
-        } else {
-          relationshipData = await getFamilyRelationships(user.familyTreeId);
-        }
-        setRelationships(relationshipData);
-      } catch (error) {
-        console.error('Error fetching relationships:', error);
-        setRelationships([]);
-      } finally {
-        setIsLoading(false);
-      }
-    };
-    fetchRelationships();
-  }, [user.userId, user.familyTreeId, viewMode]);
-  
   // Handle edge click to show relationship details
   const onEdgeClick = useCallback((event: React.MouseEvent, edge: Edge) => {
     event.stopPropagation();
@@ -315,17 +366,11 @@ const FamilyTreeVisualization: React.FC<FamilyTreeVisualizationProps> = ({
   const getDisplayedRelationship = () => {
     if (!selectedEdge) return '';
     
-    const relationship = (selectedEdge.data?.relationship as string) || '';
+    const relationship = showReciprocalRelation 
+      ? selectedEdge.data?.reciprocalRelationship as string 
+      : selectedEdge.data?.relationship as string;
     
-    if (!showReciprocalRelation) {
-      return relationship;
-    }
-    
-    // Find target member to get gender for reciprocal
-    const targetMember = familyMembers.find(m => m.userId === selectedEdge.target);
-    const gender = targetMember?.gender || 'male';
-    
-    return getReciprocalRelationship(relationship, gender);
+    return relationship;
   };
   
   if (isLoading) {
@@ -361,7 +406,6 @@ const FamilyTreeVisualization: React.FC<FamilyTreeVisualizationProps> = ({
         {showControls && <Controls />}
       </ReactFlow>
       
-      {/* Relationship Details Dialog */}
       <Dialog open={relationshipDetailsOpen} onOpenChange={setRelationshipDetailsOpen}>
         <DialogContent className="max-w-md">
           <DialogHeader>
