@@ -296,15 +296,12 @@ const FamilyTreeVisualization: React.FC<FamilyTreeVisualizationProps> = ({
   const [relationshipDetailsOpen, setRelationshipDetailsOpen] = useState(false);
   const [showReciprocalRelation, setShowReciprocalRelation] = useState(false);
   
-  // Calculate nodes and edges - use family tree creator as root for consistency
+  // Calculate nodes and edges
   const { nodes: calculatedNodes, edges: calculatedEdges } = React.useMemo(() => {
     if (!relationships.length || !familyMembers.length) {
       return { nodes: [], edges: [] };
     }
-    // Find the family tree creator as the root node for consistent positioning
-    const familyTreeCreator = familyMembers.find(member => member.createdBy === member.userId);
-    const rootUserId = familyTreeCreator?.userId || user.userId;
-    return calculateNodePositions(familyMembers, relationships, rootUserId);
+    return calculateNodePositions(familyMembers, relationships, user.userId);
   }, [familyMembers, relationships, user.userId]);
   
   const [nodes, setNodes, onNodesChange] = useNodesState(calculatedNodes);
@@ -316,14 +313,17 @@ const FamilyTreeVisualization: React.FC<FamilyTreeVisualizationProps> = ({
     setEdges(calculatedEdges);
   }, [calculatedNodes, calculatedEdges, setNodes, setEdges]);
   
-  // Fetch relationships - always get complete family tree for all users
+  // Fetch relationships
   useEffect(() => {
     const fetchRelationships = async () => {
       setIsLoading(true);
       try {
-        // Always fetch complete family relationships regardless of viewMode
-        // This ensures all family members can see the complete tree
-        const relationshipData = await getFamilyRelationships(user.familyTreeId);
+        let relationshipData: Relationship[] = [];
+        if (viewMode === 'personal') {
+          relationshipData = await getUserPersonalizedFamilyTree(user.userId, user.familyTreeId);
+        } else {
+          relationshipData = await getFamilyRelationships(user.familyTreeId);
+        }
         setRelationships(relationshipData);
       } catch (error) {
         console.error('Error fetching relationships:', error);

@@ -5,7 +5,7 @@ import { Button } from '@/components/ui/button';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Badge } from '@/components/ui/badge';
 import { useToast } from '@/hooks/use-toast';
-import { updateUserProfile, getFamilyMembers, getTraversableFamilyTreeData } from '@/lib/neo4j';
+import { updateUserProfile, getFamilyMembers } from '@/lib/neo4j';
 import { User as UserType } from '@/types';
 import FamilyTreeVisualization from './FamilyTreeVisualization';
 
@@ -17,25 +17,19 @@ const Dashboard: React.FC<DashboardProps> = ({ user: initialUser }) => {
   const { toast } = useToast();
   const [user, setUser] = useState<UserType>(initialUser);
   const [familyMembers, setFamilyMembers] = useState<any[]>([]);
-  const [completeTreeData, setCompleteTreeData] = useState<any>(null);
 
   useEffect(() => {
-    const loadFamilyData = async () => {
+    const loadFamilyMembers = async () => {
       try {
-        // Fetch both family members and complete tree data for visualization
-        const [members, treeData] = await Promise.all([
-          getFamilyMembers(user.familyTreeId),
-          getTraversableFamilyTreeData(user.familyTreeId, 5)
-        ]);
+        const members = await getFamilyMembers(user.familyTreeId);
         setFamilyMembers(members);
-        setCompleteTreeData(treeData);
       } catch (error) {
-        console.error('Error loading family data:', error);
+        console.error('Error loading family members:', error);
       }
     };
 
     if (user.familyTreeId) {
-      loadFamilyData();
+      loadFamilyMembers();
     }
   }, [user.familyTreeId]);
 
@@ -99,10 +93,10 @@ const Dashboard: React.FC<DashboardProps> = ({ user: initialUser }) => {
             </CardHeader>
             <CardContent className="p-0">
               <div className="h-[600px] w-full rounded-b-lg overflow-hidden">
-                {completeTreeData && completeTreeData.nodes.length > 0 ? (
+                {familyMembers.length > 0 ? (
                   <FamilyTreeVisualization 
                     user={user} 
-                    familyMembers={completeTreeData.nodes}
+                    familyMembers={familyMembers}
                     viewMode="all"
                     minHeight="600px"
                     showControls={true}
