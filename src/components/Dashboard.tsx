@@ -1,247 +1,249 @@
-import { useState } from "react";
-import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
-import { Badge } from "@/components/ui/badge";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { TreePine, Users, Plus, Search, Settings, Bell, Share2, Download } from "lucide-react";
-import FamilyTreeBuilder from "./FamilyTreeBuilder";
+import React, { useState, useEffect } from 'react';
+import { User, Calendar, MessageSquare, Users, Settings, Home, Plus, Download, Mail, LogOut } from 'lucide-react';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Button } from '@/components/ui/button';
+import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
+import { Badge } from '@/components/ui/badge';
+import { useToast } from '@/hooks/use-toast';
+import { updateUserProfile, getFamilyMembers } from '@/lib/neo4j';
+import { User as UserType } from '@/types';
+import FamilyTreeVisualization from './FamilyTreeVisualization';
 
-const Dashboard = () => {
-  const [activeTab, setActiveTab] = useState("overview");
+interface DashboardProps {
+  user: UserType;
+}
+
+const Dashboard: React.FC<DashboardProps> = ({ user: initialUser }) => {
+  const { toast } = useToast();
+  const [user, setUser] = useState<UserType>(initialUser);
+  const [familyMembers, setFamilyMembers] = useState<any[]>([]);
+
+  useEffect(() => {
+    const loadFamilyMembers = async () => {
+      try {
+        const members = await getFamilyMembers(user.familyTreeId, user.email);
+        setFamilyMembers(members);
+      } catch (error) {
+        console.error('Error loading family members:', error);
+      }
+    };
+
+    if (user.familyTreeId) {
+      loadFamilyMembers();
+    }
+  }, [user.familyTreeId]);
+
+  const activeMembers = familyMembers.filter(m => m.status === 'active');
+  const pendingInvites = familyMembers.filter(m => m.status === 'invited');
+  const currentDate = new Date().toLocaleDateString();
+
+  const myRelations = familyMembers
+    .filter(member => member.relationship && member.email !== user.email)
+    .slice(0, 5); // Show top 5 relations
+
+  const recentActivities = [
+    { id: 1, type: 'member_joined', description: 'John Smith joined the family tree', time: '2 hours ago' },
+    { id: 2, type: 'relationship_added', description: 'Added relationship: Father-Son', time: '1 day ago' },
+    { id: 3, type: 'profile_updated', description: 'Updated profile information', time: '3 days ago' },
+  ];
+
+  const getActivityIcon = (type: string) => {
+    switch (type) {
+      case 'member_joined': return <Users className="w-4 h-4 text-indigo-500" />;
+      case 'relationship_added': return <User className="w-4 h-4 text-green-500" />;
+      case 'profile_updated': return <Settings className="w-4 h-4 text-yellow-500" />;
+      default: return <Home className="w-4 h-4 text-gray-400" />;
+    }
+  };
 
   return (
-    <div className="min-h-screen bg-background">
-      {/* Header */}
-      <header className="border-b border-border bg-card/50 backdrop-blur-sm sticky top-0 z-50">
-        <div className="container mx-auto px-4 py-4">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center space-x-4">
-              <div className="flex items-center space-x-2">
-                <TreePine className="h-8 w-8 text-primary" />
-                <span className="text-2xl font-playfair font-bold text-primary">BharatRoots</span>
-              </div>
-              <Badge variant="secondary" className="hidden md:inline-flex">
-                Premium Member
-              </Badge>
-            </div>
-            <div className="flex items-center space-x-4">
-              <Button variant="ghost" size="sm">
-                <Bell className="h-4 w-4" />
-              </Button>
-              <Button variant="ghost" size="sm">
-                <Settings className="h-4 w-4" />
-              </Button>
-              <Avatar className="h-8 w-8">
-                <AvatarImage src="" />
-                <AvatarFallback className="bg-primary text-primary-foreground">AR</AvatarFallback>
-              </Avatar>
-            </div>
+    <div className="space-y-10 max-w-7xl mx-auto px-2 sm:px-4 md:px-8 py-6">
+      {/* Enhanced Header */}
+      <div className="flex flex-col md:flex-row items-center justify-between gap-6 bg-gradient-to-r from-indigo-200 via-blue-100 to-white rounded-2xl p-8 shadow-lg border border-indigo-100 relative">
+        <div>
+          <h1 className="text-4xl font-extrabold text-indigo-800 mb-2 tracking-tight drop-shadow">Family Dashboard</h1>
+          <p className="text-gray-700 text-lg font-medium">Manage your family tree and relationships</p>
+        </div>
+        <div className="flex items-center gap-5">
+          <Avatar className="h-20 w-20 ring-4 ring-indigo-300 shadow-xl">
+            <AvatarImage src={user.profilePicture} />
+            <AvatarFallback className="bg-indigo-500 text-white text-3xl">{user.name?.charAt(0)}</AvatarFallback>
+          </Avatar>
+          <div className="flex flex-col items-start">
+            <div className="font-bold text-indigo-700 text-lg">{user.name}</div>
+            <div className="text-xs text-gray-500 font-mono">ID: {user.familyTreeId}</div>
+            <Button variant="ghost" size="sm" className="mt-2 text-red-500 flex items-center gap-1 hover:bg-red-50">
+              <LogOut className="w-4 h-4" /> Logout
+            </Button>
           </div>
         </div>
-      </header>
+      </div>
 
-      <div className="container mx-auto px-4 py-8">
-        <div className="grid lg:grid-cols-4 gap-8">
-          {/* Sidebar */}
-          <div className="lg:col-span-1">
-            <Card className="shadow-soft">
-              <CardHeader className="text-center">
-                <Avatar className="h-20 w-20 mx-auto mb-4">
-                  <AvatarImage src="" />
-                  <AvatarFallback className="bg-primary text-primary-foreground text-2xl">AR</AvatarFallback>
-                </Avatar>
-                <CardTitle className="font-playfair">Arjun Rajesh</CardTitle>
-                <CardDescription>Family Tree Creator</CardDescription>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                <div className="grid grid-cols-2 gap-4 text-center">
-                  <div>
-                    <div className="text-2xl font-bold text-primary">47</div>
-                    <div className="text-sm text-muted-foreground">Family Members</div>
-                  </div>
-                  <div>
-                    <div className="text-2xl font-bold text-primary">3</div>
-                    <div className="text-sm text-muted-foreground">Generations</div>
-                  </div>
-                </div>
-                <Button variant="gradient" className="w-full" size="sm">
-                  <Plus className="h-4 w-4 mr-2" />
-                  Add Family Member
+      {/* Main Content Grid */}
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-10">
+        {/* Left Column - Family Tree Visualization & Quick Actions */}
+        <div className="lg:col-span-2 space-y-10">
+          <Card className="shadow-xl border-0 bg-gradient-to-br from-blue-50 to-indigo-100">
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2 text-indigo-700 text-2xl font-bold">
+                <Home className="w-6 h-6" />
+                Family Tree Viewer
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="h-96 bg-gradient-to-br from-blue-100 to-indigo-50 rounded-xl flex items-center justify-center border border-indigo-200">
+                <FamilyTreeVisualization 
+                  user={user} 
+                  familyMembers={familyMembers}
+                  viewMode="all"
+                />
+              </div>
+            </CardContent>
+          </Card>
+
+          {/* Quick Actions */}
+          <Card className="shadow-xl border-0 bg-white">
+            <CardHeader>
+              <CardTitle className="text-indigo-700 text-xl font-semibold">Quick Actions</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-6">
+                <Button variant="outline" className="h-28 flex-col bg-indigo-50 hover:bg-indigo-100 border-indigo-200 shadow-md transition-all">
+                  <Plus className="h-9 w-9 mb-2 text-indigo-500" />
+                  <span className="font-semibold text-indigo-700">Add New Member</span>
                 </Button>
-              </CardContent>
-            </Card>
+                <Button variant="outline" className="h-28 flex-col bg-indigo-50 hover:bg-indigo-100 border-indigo-200 shadow-md transition-all">
+                  <Download className="h-9 w-9 mb-2 text-indigo-500" />
+                  <span className="font-semibold text-indigo-700">Export Tree</span>
+                </Button>
+                <Button variant="outline" className="h-28 flex-col bg-indigo-50 hover:bg-indigo-100 border-indigo-200 shadow-md transition-all">
+                  <Mail className="h-9 w-9 mb-2 text-indigo-500" />
+                  <span className="font-semibold text-indigo-700">Invite Family Member</span>
+                </Button>
+              </div>
+            </CardContent>
+          </Card>
 
-            {/* Quick Actions */}
-            <Card className="mt-6 shadow-soft">
+          {/* Recent Activity */}
+          <Card className="shadow-xl border-0 bg-white">
+            <CardHeader>
+              <CardTitle className="text-indigo-700 text-xl font-semibold">Recent Activity</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="space-y-4">
+                {recentActivities.map((activity) => (
+                  <div key={activity.id} className="flex items-center space-x-4">
+                    <div className="p-3 bg-indigo-100 rounded-full shadow">
+                      {getActivityIcon(activity.type)}
+                    </div>
+                    <div className="flex-1">
+                      <p className="text-base font-medium text-gray-800">{activity.description}</p>
+                      <p className="text-xs text-gray-500">{activity.time}</p>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+
+        {/* Right Column - Stats and Info Cards */}
+        <div className="space-y-10">
+          {/* Stats Cards */}
+          <div className="grid grid-cols-1 gap-6">
+            <Card className="shadow border-0 bg-gradient-to-br from-indigo-50 to-white">
               <CardHeader>
-                <CardTitle className="text-lg font-playfair">Quick Actions</CardTitle>
+                <CardTitle className="flex items-center gap-2 text-indigo-700 text-lg font-semibold">
+                  <Users className="w-5 h-5" />
+                  Total Members
+                </CardTitle>
               </CardHeader>
-              <CardContent className="space-y-2">
-                <Button variant="ghost" className="w-full justify-start">
-                  <Search className="h-4 w-4 mr-2" />
-                  Find Relatives
-                </Button>
-                <Button variant="ghost" className="w-full justify-start">
-                  <Share2 className="h-4 w-4 mr-2" />
-                  Share Tree
-                </Button>
-                <Button variant="ghost" className="w-full justify-start">
-                  <Download className="h-4 w-4 mr-2" />
-                  Export Tree
-                </Button>
+              <CardContent>
+                <div className="text-4xl font-bold text-indigo-600">{familyMembers.length}</div>
+                <p className="text-sm text-gray-600">People in your family tree</p>
+              </CardContent>
+            </Card>
+
+            <Card className="shadow border-0 bg-gradient-to-br from-green-50 to-white">
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2 text-green-700 text-lg font-semibold">
+                  <User className="w-5 h-5" />
+                  Active Members
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="text-4xl font-bold text-green-600">{activeMembers.length}</div>
+                <p className="text-sm text-gray-600">Registered and active</p>
+              </CardContent>
+            </Card>
+
+            <Card className="shadow border-0 bg-gradient-to-br from-orange-50 to-white">
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2 text-orange-700 text-lg font-semibold">
+                  <MessageSquare className="w-5 h-5" />
+                  Pending Invites
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="text-4xl font-bold text-orange-600">{pendingInvites.length}</div>
+                <p className="text-sm text-gray-600">Awaiting registration</p>
+                {pendingInvites.length > 0 && (
+                  <div className="mt-2 space-y-1">
+                    {pendingInvites.slice(0, 3).map(invite => (
+                      <div key={invite.userId} className="text-xs text-gray-500">
+                        {invite.name} ({invite.email})
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+
+            <Card className="shadow border-0 bg-gradient-to-br from-blue-50 to-white">
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2 text-blue-700 text-lg font-semibold">
+                  <Calendar className="w-5 h-5" />
+                  Tree Created On
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="text-lg font-semibold">{currentDate}</div>
+                <p className="text-sm text-gray-600">Your family tree birth date</p>
               </CardContent>
             </Card>
           </div>
 
-          {/* Main Content */}
-          <div className="lg:col-span-3">
-            <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
-              <TabsList className="grid w-full grid-cols-4">
-                <TabsTrigger value="overview">Overview</TabsTrigger>
-                <TabsTrigger value="tree">Family Tree</TabsTrigger>
-                <TabsTrigger value="connections">Connections</TabsTrigger>
-                <TabsTrigger value="activity">Activity</TabsTrigger>
-              </TabsList>
-
-              <TabsContent value="overview" className="space-y-6 mt-6">
-                {/* Welcome Section */}
-                <Card className="gradient-warm shadow-soft">
-                  <CardHeader>
-                    <CardTitle className="font-playfair text-2xl">Welcome back, Arjun!</CardTitle>
-                    <CardDescription className="text-base">
-                      Your family tree has grown by 3 members this month. Keep exploring your heritage!
-                    </CardDescription>
-                  </CardHeader>
-                  <CardContent>
-                    <Button variant="gradient">
-                      Continue Building Tree
-                    </Button>
-                  </CardContent>
-                </Card>
-
-                {/* Stats Cards */}
-                <div className="grid md:grid-cols-3 gap-6">
-                  <Card className="shadow-soft">
-                    <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                      <CardTitle className="text-sm font-medium">Total Family Members</CardTitle>
-                      <Users className="h-4 w-4 text-muted-foreground" />
-                    </CardHeader>
-                    <CardContent>
-                      <div className="text-2xl font-bold text-primary">47</div>
-                      <p className="text-xs text-muted-foreground">+3 from last month</p>
-                    </CardContent>
-                  </Card>
-
-                  <Card className="shadow-soft">
-                    <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                      <CardTitle className="text-sm font-medium">Active Connections</CardTitle>
-                      <TreePine className="h-4 w-4 text-muted-foreground" />
-                    </CardHeader>
-                    <CardContent>
-                      <div className="text-2xl font-bold text-primary">12</div>
-                      <p className="text-xs text-muted-foreground">Connected family trees</p>
-                    </CardContent>
-                  </Card>
-
-                  <Card className="shadow-soft">
-                    <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                      <CardTitle className="text-sm font-medium">Pending Invites</CardTitle>
-                      <Bell className="h-4 w-4 text-muted-foreground" />
-                    </CardHeader>
-                    <CardContent>
-                      <div className="text-2xl font-bold text-accent">5</div>
-                      <p className="text-xs text-muted-foreground">Awaiting response</p>
-                    </CardContent>
-                  </Card>
-                </div>
-
-                {/* Recent Activity */}
-                <Card className="shadow-soft">
-                  <CardHeader>
-                    <CardTitle className="font-playfair">Recent Activity</CardTitle>
-                  </CardHeader>
-                  <CardContent className="space-y-4">
-                    <div className="flex items-center space-x-4">
-                      <Avatar className="h-8 w-8">
-                        <AvatarFallback className="bg-tree-female text-white">P</AvatarFallback>
-                      </Avatar>
-                      <div className="flex-1">
-                        <p className="text-sm font-medium">Priya Sharma joined your family tree</p>
-                        <p className="text-xs text-muted-foreground">2 hours ago</p>
+          {/* My Relations */}
+          <Card className="shadow-xl border-0 bg-white">
+            <CardHeader>
+              <CardTitle className="text-indigo-700 text-xl font-semibold">My Relations</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="space-y-3">
+                {myRelations.length > 0 ? (
+                  myRelations.map((relation) => (
+                    <div key={relation.userId} className="flex items-center justify-between">
+                      <div className="flex items-center gap-3">
+                        <Avatar className="h-8 w-8">
+                          <AvatarImage src={relation.profilePicture} />
+                          <AvatarFallback>{relation.name?.charAt(0)}</AvatarFallback>
+                        </Avatar>
+                        <div>
+                          <div className="font-medium text-sm text-gray-800">{relation.name}</div>
+                          <div className="text-xs text-gray-500">{relation.email}</div>
+                        </div>
                       </div>
+                      <Badge variant="secondary" className="text-xs">
+                        {relation.relationship || 'Family'}
+                      </Badge>
                     </div>
-                    <div className="flex items-center space-x-4">
-                      <Avatar className="h-8 w-8">
-                        <AvatarFallback className="bg-tree-male text-white">R</AvatarFallback>
-                      </Avatar>
-                      <div className="flex-1">
-                        <p className="text-sm font-medium">Rahul Kumar updated his profile</p>
-                        <p className="text-xs text-muted-foreground">1 day ago</p>
-                      </div>
-                    </div>
-                    <div className="flex items-center space-x-4">
-                      <Avatar className="h-8 w-8">
-                        <AvatarFallback className="bg-tree-current text-white">S</AvatarFallback>
-                      </Avatar>
-                      <div className="flex-1">
-                        <p className="text-sm font-medium">New family photo added by Sunita Devi</p>
-                        <p className="text-xs text-muted-foreground">3 days ago</p>
-                      </div>
-                    </div>
-                  </CardContent>
-                </Card>
-              </TabsContent>
-
-              <TabsContent value="tree" className="mt-6">
-                <FamilyTreeBuilder />
-              </TabsContent>
-
-              <TabsContent value="connections" className="mt-6">
-                <Card className="shadow-soft">
-                  <CardHeader>
-                    <CardTitle className="font-playfair">Family Connections</CardTitle>
-                    <CardDescription>
-                      Connect with relatives and expand your family network
-                    </CardDescription>
-                  </CardHeader>
-                  <CardContent>
-                    <div className="text-center py-12">
-                      <Users className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
-                      <h3 className="text-lg font-medium mb-2">No connections yet</h3>
-                      <p className="text-muted-foreground mb-4">
-                        Start connecting with family members to build your network
-                      </p>
-                      <Button variant="gradient">
-                        <Search className="h-4 w-4 mr-2" />
-                        Find Relatives
-                      </Button>
-                    </div>
-                  </CardContent>
-                </Card>
-              </TabsContent>
-
-              <TabsContent value="activity" className="mt-6">
-                <Card className="shadow-soft">
-                  <CardHeader>
-                    <CardTitle className="font-playfair">Activity Feed</CardTitle>
-                    <CardDescription>
-                      Stay updated with your family tree activities
-                    </CardDescription>
-                  </CardHeader>
-                  <CardContent>
-                    <div className="text-center py-12">
-                      <Bell className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
-                      <h3 className="text-lg font-medium mb-2">No recent activity</h3>
-                      <p className="text-muted-foreground">
-                        Activity from your family network will appear here
-                      </p>
-                    </div>
-                  </CardContent>
-                </Card>
-              </TabsContent>
-            </Tabs>
-          </div>
+                  ))
+                ) : (
+                  <p className="text-sm text-gray-500">No relationships added yet</p>
+                )}
+              </div>
+            </CardContent>
+          </Card>
         </div>
       </div>
     </div>
