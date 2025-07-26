@@ -21,7 +21,7 @@ const Dashboard: React.FC<DashboardProps> = ({ user: initialUser }) => {
   useEffect(() => {
     const loadFamilyMembers = async () => {
       try {
-        const members = await getFamilyMembers(user.familyTreeId, user.email);
+        const members = await getFamilyMembers(user.familyTreeId);
         setFamilyMembers(members);
       } catch (error) {
         console.error('Error loading family members:', error);

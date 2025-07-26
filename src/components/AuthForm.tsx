@@ -40,7 +40,7 @@ const AuthForm = () => {
     return emailRegex.test(email);
   };
 
-  const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
     setInput({
       ...input,
       [e.target.name]: e.target.value,
