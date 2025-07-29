@@ -234,32 +234,18 @@ const calculateNodePositions = (
     };
   });
   
-  const edges: Edge[] = relationships
-    .filter(rel => {
-      const sourceMember = nodeMap.get(rel.source);
-      const targetMember = nodeMap.get(rel.target);
-      
-      // Skip relationships where either member is missing or has no gender
-      if (!sourceMember || !targetMember) {
-        console.warn(`Skipping edge for missing members: ${rel.source} -> ${rel.target}`);
-        return false;
-      }
-      
-      if (!sourceMember.gender || !targetMember.gender) {
-        console.warn(`Skipping edge for missing gender: ${rel.source} (${sourceMember.gender || 'unknown'}) -> ${rel.target} (${targetMember.gender || 'unknown'})`);
-        return false;
-      }
-      
-      return true;
-    })
-    .map(rel => {
+  const edges: Edge[] = relationships.map(rel => {
     const sourcePos = positions.get(rel.source)?.y || 0;
     const targetPos = positions.get(rel.target)?.y || 0;
     const isTopToBottom = sourcePos < targetPos; // Ensure top-to-bottom direction
     const sourceId = isTopToBottom ? rel.source : rel.target;
     const targetId = isTopToBottom ? rel.target : rel.source;
-    const sourceMember = nodeMap.get(rel.source)!; // Original source - safe after filter
-    const targetMember = nodeMap.get(rel.target)!; // Original target - safe after filter
+    const sourceMember = nodeMap.get(rel.source); // Original source
+    const targetMember = nodeMap.get(rel.target); // Original target
+    
+    if (!sourceMember?.gender || !targetMember?.gender) {
+      throw new Error(`Missing gender for userId ${rel.source} or ${rel.target}`);
+    }
 
     // Use original relationship type as basis, adjust direct based on direction and target gender
     const originalRel = rel.type.toLowerCase();
@@ -315,8 +301,8 @@ const FamilyTreeVisualization: React.FC<FamilyTreeVisualizationProps> = ({
     if (!relationships.length || !familyMembers.length) {
       return { nodes: [], edges: [] };
     }
-    return calculateNodePositions(familyMembers, relationships, user.userId);
-  }, [familyMembers, relationships, user.userId]);
+    return calculateNodePositions(familyMembers, relationships, user.createdBy);
+  }, [familyMembers, relationships, user.createdBy]);
   
   const [nodes, setNodes, onNodesChange] = useNodesState(calculatedNodes);
   const [edges, setEdges, onEdgesChange] = useEdgesState(calculatedEdges);
