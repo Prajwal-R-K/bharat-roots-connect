@@ -320,7 +320,7 @@ const FamilyTreeVisualization: React.FC<FamilyTreeVisualizationProps> = ({
       try {
         let relationshipData: Relationship[] = [];
         if (viewMode === 'personal') {
-          relationshipData = await getUserPersonalizedFamilyTree(user.userId, user.familyTreeId);
+          relationshipData = await getUserPersonalizedFamilyTree(user.createdBy, user.familyTreeId);
         } else {
           relationshipData = await getFamilyRelationships(user.familyTreeId);
         }
