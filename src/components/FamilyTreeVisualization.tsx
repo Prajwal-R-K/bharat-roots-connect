@@ -43,6 +43,7 @@ interface Relationship {
 interface FamilyTreeVisualizationProps {
   user: User;
   familyMembers: FamilyMember[];
+  relationships?: Relationship[]; // Make relationships optional and allow passing them
   viewMode?: 'personal' | 'all' | 'hyper';
   level?: number;
   minHeight?: string;
@@ -304,6 +305,7 @@ const nodeTypes = {
 const FamilyTreeVisualization: React.FC<FamilyTreeVisualizationProps> = ({ 
   user, 
   familyMembers,
+  relationships: passedRelationships,
   viewMode = 'personal',
   minHeight = '600px',
   showControls = true
@@ -334,15 +336,19 @@ const FamilyTreeVisualization: React.FC<FamilyTreeVisualizationProps> = ({
     setEdges(calculatedEdges);
   }, [calculatedNodes, calculatedEdges, setNodes, setEdges]);
   
-  // Fetch relationships - always get complete family tree for all users
+  // Use passed relationships or fetch them
   useEffect(() => {
     const fetchRelationships = async () => {
       setIsLoading(true);
       try {
-        // Always fetch complete family relationships regardless of viewMode
-        // This ensures all family members can see the complete tree
-        const relationshipData = await getFamilyRelationships(user.familyTreeId);
-        setRelationships(relationshipData);
+        if (passedRelationships && passedRelationships.length > 0) {
+          // Use relationships passed from parent component
+          setRelationships(passedRelationships);
+        } else {
+          // Fallback to fetching relationships
+          const relationshipData = await getFamilyRelationships(user.familyTreeId);
+          setRelationships(relationshipData);
+        }
       } catch (error) {
         console.error('Error fetching relationships:', error);
         setRelationships([]);
@@ -351,7 +357,7 @@ const FamilyTreeVisualization: React.FC<FamilyTreeVisualizationProps> = ({
       }
     };
     fetchRelationships();
-  }, [user.userId, user.familyTreeId, viewMode]);
+  }, [user.userId, user.familyTreeId, passedRelationships, viewMode]);
   
   // Handle edge click to show relationship details
   const onEdgeClick = useCallback((event: React.MouseEvent, edge: Edge) => {

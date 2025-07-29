@@ -102,7 +102,23 @@ const Dashboard: React.FC<DashboardProps> = ({ user: initialUser }) => {
                 {completeTreeData && completeTreeData.nodes.length > 0 ? (
                   <FamilyTreeVisualization 
                     user={user} 
-                    familyMembers={completeTreeData.nodes}
+                    familyMembers={completeTreeData.nodes.map((node: any) => ({
+                      userId: node.id,
+                      name: node.name,
+                      email: node.email || '',
+                      status: node.status,
+                      relationship: node.myRelationship,
+                      createdBy: node.createdBy,
+                      profilePicture: node.profilePicture,
+                      gender: node.gender
+                    }))}
+                    relationships={completeTreeData.links.map((link: any) => ({
+                      source: link.source,
+                      target: link.target,
+                      type: link.type,
+                      sourceName: completeTreeData.nodes.find((n: any) => n.id === link.source)?.name || 'Unknown',
+                      targetName: completeTreeData.nodes.find((n: any) => n.id === link.target)?.name || 'Unknown'
+                    }))}
                     viewMode="all"
                     minHeight="600px"
                     showControls={true}
