@@ -301,8 +301,8 @@ const FamilyTreeVisualization: React.FC<FamilyTreeVisualizationProps> = ({
     if (!relationships.length || !familyMembers.length) {
       return { nodes: [], edges: [] };
     }
-    return calculateNodePositions(familyMembers, relationships, user.userId);
-  }, [familyMembers, relationships, user.userId]);
+    return calculateNodePositions(familyMembers, relationships, user.createdBy);
+  }, [familyMembers, relationships, user.createdBy]);
   
   const [nodes, setNodes, onNodesChange] = useNodesState(calculatedNodes);
   const [edges, setEdges, onEdgesChange] = useEdgesState(calculatedEdges);
