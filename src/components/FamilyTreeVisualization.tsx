@@ -216,65 +216,79 @@ const calculateNodePositions = (
   }
   
   // Convert to nodes and edges
-  const nodes: Node[] = Array.from(positions.entries()).map(([userId, pos]) => {
-    const member = nodeMap.get(userId)!;
-    return {
-      id: userId,
-      type: 'familyMember',
-      position: { x: pos.x + 1000, y: pos.y + 500 }, // Offset to center in viewport
-      data: {
-        name: member.name,
-        email: member.email,
-        relationship: member.relationship,
-        profilePicture: member.profilePicture,
-        gender: member.gender,
-        isRoot: userId === createdByUserId,
-        status: member.status
+  const nodes: Node[] = Array.from(positions.entries())
+    .map(([userId, pos]) => {
+      const member = nodeMap.get(userId);
+      if (!member) {
+        console.warn(`Member not found for userId: ${userId}`);
+        return null;
       }
-    };
-  });
+      return {
+        id: userId,
+        type: 'familyMember',
+        position: { x: pos.x + 1000, y: pos.y + 500 }, // Offset to center in viewport
+        data: {
+          name: member.name,
+          email: member.email,
+          relationship: member.relationship,
+          profilePicture: member.profilePicture,
+          gender: member.gender,
+          isRoot: userId === createdByUserId,
+          status: member.status
+        }
+      };
+    })
+    .filter(node => node !== null) as Node[];
   
-  const edges: Edge[] = relationships.map(rel => {
-    const sourcePos = positions.get(rel.source)?.y || 0;
-    const targetPos = positions.get(rel.target)?.y || 0;
-    const isTopToBottom = sourcePos < targetPos; // Ensure top-to-bottom direction
-    const sourceId = isTopToBottom ? rel.source : rel.target;
-    const targetId = isTopToBottom ? rel.target : rel.source;
-    const sourceMember = nodeMap.get(rel.source); // Original source
-    const targetMember = nodeMap.get(rel.target); // Original target
-    
-    if (!sourceMember?.gender || !targetMember?.gender) {
-      throw new Error(`Missing gender for userId ${rel.source} or ${rel.target}`);
-    }
-
-    // Use original relationship type as basis, adjust direct based on direction and target gender
-    const originalRel = rel.type.toLowerCase();
-    let directRel = isTopToBottom ? originalRel : getReciprocalRelationship(originalRel, targetMember.gender, sourceMember.gender);
-    const reciprocalRel = isTopToBottom ? getReciprocalRelationship(originalRel, targetMember.gender, sourceMember.gender) : originalRel;
-
-    // Override directRel to match target gender for parent-child relationships
-    if (isTopToBottom && ['father', 'mother'].includes(originalRel)) {
-      directRel = targetMember.gender === 'male' ? 'son' : 'daughter';
-    } else if (!isTopToBottom && ['son', 'daughter'].includes(originalRel)) {
-      directRel = sourceMember.gender === 'male' ? 'father' : 'mother';
-    }
-
-    return {
-      id: `${sourceId}-${targetId}`,
-      source: sourceId,
-      target: targetId,
-      type: 'smoothstep',
-      animated: false,
-      style: { stroke: '#6366f1', strokeWidth: 2 },
-      markerEnd: { type: MarkerType.ArrowClosed, color: '#6366f1' },
-      data: {
-        relationship: directRel,
-        reciprocalRelationship: reciprocalRel,
-        sourceName: sourceMember.name,
-        targetName: targetMember.name
+  const edges: Edge[] = relationships
+    .map(rel => {
+      const sourcePos = positions.get(rel.source)?.y || 0;
+      const targetPos = positions.get(rel.target)?.y || 0;
+      const isTopToBottom = sourcePos < targetPos; // Ensure top-to-bottom direction
+      const sourceId = isTopToBottom ? rel.source : rel.target;
+      const targetId = isTopToBottom ? rel.target : rel.source;
+      const sourceMember = nodeMap.get(rel.source); // Original source
+      const targetMember = nodeMap.get(rel.target); // Original target
+      
+      // Skip edge if either member is missing or doesn't have a position
+      if (!sourceMember || !targetMember || !positions.has(rel.source) || !positions.has(rel.target)) {
+        console.warn(`Skipping edge for missing members: ${rel.source} -> ${rel.target}`);
+        return null;
       }
-    };
-  });
+
+      // Use default gender if missing
+      const sourceGender = sourceMember.gender || 'male';
+      const targetGender = targetMember.gender || 'male';
+
+      // Use original relationship type as basis, adjust direct based on direction and target gender
+      const originalRel = rel.type.toLowerCase();
+      let directRel = isTopToBottom ? originalRel : getReciprocalRelationship(originalRel, targetGender, sourceGender);
+      const reciprocalRel = isTopToBottom ? getReciprocalRelationship(originalRel, targetGender, sourceGender) : originalRel;
+
+      // Override directRel to match target gender for parent-child relationships
+      if (isTopToBottom && ['father', 'mother'].includes(originalRel)) {
+        directRel = targetGender === 'male' ? 'son' : 'daughter';
+      } else if (!isTopToBottom && ['son', 'daughter'].includes(originalRel)) {
+        directRel = sourceGender === 'male' ? 'father' : 'mother';
+      }
+
+      return {
+        id: `${sourceId}-${targetId}`,
+        source: sourceId,
+        target: targetId,
+        type: 'smoothstep',
+        animated: false,
+        style: { stroke: '#6366f1', strokeWidth: 2 },
+        markerEnd: { type: MarkerType.ArrowClosed, color: '#6366f1' },
+        data: {
+          relationship: directRel,
+          reciprocalRelationship: reciprocalRel,
+          sourceName: sourceMember.name,
+          targetName: targetMember.name
+        }
+      };
+    })
+    .filter(edge => edge !== null) as Edge[];
   
   return { nodes, edges };
 };
