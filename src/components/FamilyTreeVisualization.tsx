@@ -256,12 +256,16 @@ const calculateNodePositions = (
         return null;
       }
 
-      // Use default gender if missing
-      const sourceGender = sourceMember.gender || 'male';
-      const targetGender = targetMember.gender || 'male';
+      // Use default gender if missing, with extra safety checks
+      const sourceGender = sourceMember?.gender || 'male';
+      const targetGender = targetMember?.gender || 'male';
+      
+      // Additional safety check for names
+      const sourceName = sourceMember?.name || 'Unknown';
+      const targetName = targetMember?.name || 'Unknown';
 
       // Use original relationship type as basis, adjust direct based on direction and target gender
-      const originalRel = rel.type.toLowerCase();
+      const originalRel = rel.type?.toLowerCase() || 'family';
       let directRel = isTopToBottom ? originalRel : getReciprocalRelationship(originalRel, targetGender, sourceGender);
       const reciprocalRel = isTopToBottom ? getReciprocalRelationship(originalRel, targetGender, sourceGender) : originalRel;
 
@@ -283,8 +287,8 @@ const calculateNodePositions = (
         data: {
           relationship: directRel,
           reciprocalRelationship: reciprocalRel,
-          sourceName: sourceMember.name,
-          targetName: targetMember.name
+          sourceName: sourceName,
+          targetName: targetName
         }
       };
     })
