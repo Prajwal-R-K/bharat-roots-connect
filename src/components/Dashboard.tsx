@@ -80,74 +80,49 @@ const Dashboard: React.FC<DashboardProps> = ({ user: initialUser }) => {
       </div>
 
       {/* Main Content Grid */}
-      <div className="grid grid-cols-1 xl:grid-cols-4 gap-8">
-        {/* Left Column - Family Tree Visualization */}
-        <div className="xl:col-span-3 space-y-8">
-          <Card className="shadow-2xl border-0 bg-gradient-to-br from-blue-50 via-indigo-50 to-purple-50">
-            <CardHeader className="bg-gradient-to-r from-indigo-600 to-purple-600 text-white rounded-t-lg">
-              <CardTitle className="flex items-center gap-3 text-2xl font-bold">
-                <Home className="w-8 h-8" />
-                Interactive Family Tree
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-10">
+        {/* Left Column - Family Tree Visualization & Quick Actions */}
+        <div className="lg:col-span-2 space-y-10">
+          <Card className="shadow-xl border-0 bg-gradient-to-br from-blue-50 to-indigo-100">
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2 text-indigo-700 text-2xl font-bold">
+                <Home className="w-6 h-6" />
+                Family Tree Viewer
               </CardTitle>
-              <p className="text-indigo-100 text-sm">Explore your family connections • Click on relationships to learn more</p>
             </CardHeader>
-            <CardContent className="p-0">
-              <div className="h-[600px] w-full rounded-b-lg overflow-hidden">
-                {familyMembers.length > 0 ? (
-                  <FamilyTreeVisualization 
-                    user={user} 
-                    familyMembers={familyMembers}
-                    viewMode="all"
-                    minHeight="600px"
-                    showControls={true}
-                  />
-                ) : (
-                  <div className="h-full flex flex-col items-center justify-center bg-gradient-to-br from-blue-100 to-indigo-50 text-gray-600">
-                    <Users className="w-16 h-16 mb-4 text-indigo-400" />
-                    <h3 className="text-xl font-semibold mb-2">No Family Members Yet</h3>
-                    <p className="text-sm text-center px-4">Start building your family tree by inviting members</p>
-                    <Button className="mt-4 bg-indigo-600 hover:bg-indigo-700">
-                      <Plus className="w-4 h-4 mr-2" />
-                      Add First Member
-                    </Button>
-                  </div>
-                )}
+            <CardContent>
+              <div className="h-96 bg-gradient-to-br from-blue-100 to-indigo-50 rounded-xl flex items-center justify-center border border-indigo-200">
+                <FamilyTreeVisualization 
+                  user={user} 
+                  familyMembers={familyMembers}
+                  viewMode="all"
+                />
               </div>
             </CardContent>
           </Card>
 
-          {/* Enhanced Quick Actions */}
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-            <Card className="shadow-lg border-0 bg-gradient-to-br from-green-50 to-emerald-100 hover:shadow-xl transition-all cursor-pointer group">
-              <CardContent className="p-6 text-center">
-                <div className="w-16 h-16 bg-green-500 rounded-full flex items-center justify-center mx-auto mb-4 group-hover:scale-110 transition-transform">
-                  <Plus className="h-8 w-8 text-white" />
-                </div>
-                <h3 className="font-bold text-green-800 text-lg mb-2">Add Member</h3>
-                <p className="text-green-600 text-sm">Invite new family members to join your tree</p>
-              </CardContent>
-            </Card>
-            
-            <Card className="shadow-lg border-0 bg-gradient-to-br from-blue-50 to-cyan-100 hover:shadow-xl transition-all cursor-pointer group">
-              <CardContent className="p-6 text-center">
-                <div className="w-16 h-16 bg-blue-500 rounded-full flex items-center justify-center mx-auto mb-4 group-hover:scale-110 transition-transform">
-                  <Download className="h-8 w-8 text-white" />
-                </div>
-                <h3 className="font-bold text-blue-800 text-lg mb-2">Export Tree</h3>
-                <p className="text-blue-600 text-sm">Download your family tree as PDF or image</p>
-              </CardContent>
-            </Card>
-            
-            <Card className="shadow-lg border-0 bg-gradient-to-br from-purple-50 to-violet-100 hover:shadow-xl transition-all cursor-pointer group">
-              <CardContent className="p-6 text-center">
-                <div className="w-16 h-16 bg-purple-500 rounded-full flex items-center justify-center mx-auto mb-4 group-hover:scale-110 transition-transform">
-                  <Settings className="h-8 w-8 text-white" />
-                </div>
-                <h3 className="font-bold text-purple-800 text-lg mb-2">Manage Tree</h3>
-                <p className="text-purple-600 text-sm">Edit relationships and family details</p>
-              </CardContent>
-            </Card>
-          </div>
+          {/* Quick Actions */}
+          <Card className="shadow-xl border-0 bg-white">
+            <CardHeader>
+              <CardTitle className="text-indigo-700 text-xl font-semibold">Quick Actions</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-6">
+                <Button variant="outline" className="h-28 flex-col bg-indigo-50 hover:bg-indigo-100 border-indigo-200 shadow-md transition-all">
+                  <Plus className="h-9 w-9 mb-2 text-indigo-500" />
+                  <span className="font-semibold text-indigo-700">Add New Member</span>
+                </Button>
+                <Button variant="outline" className="h-28 flex-col bg-indigo-50 hover:bg-indigo-100 border-indigo-200 shadow-md transition-all">
+                  <Download className="h-9 w-9 mb-2 text-indigo-500" />
+                  <span className="font-semibold text-indigo-700">Export Tree</span>
+                </Button>
+                <Button variant="outline" className="h-28 flex-col bg-indigo-50 hover:bg-indigo-100 border-indigo-200 shadow-md transition-all">
+                  <Mail className="h-9 w-9 mb-2 text-indigo-500" />
+                  <span className="font-semibold text-indigo-700">Invite Family Member</span>
+                </Button>
+              </div>
+            </CardContent>
+          </Card>
 
           {/* Recent Activity */}
           <Card className="shadow-xl border-0 bg-white">
@@ -173,76 +148,98 @@ const Dashboard: React.FC<DashboardProps> = ({ user: initialUser }) => {
         </div>
 
         {/* Right Column - Stats and Info Cards */}
-        <div className="xl:col-span-1 space-y-6">
-          {/* Enhanced Stats Cards */}
-          <div className="grid grid-cols-1 gap-4">
-            <Card className="shadow-lg border-0 bg-gradient-to-br from-indigo-500 to-purple-600 text-white">
-              <CardContent className="p-6 text-center">
-                <Users className="w-12 h-12 mx-auto mb-3 opacity-80" />
-                <div className="text-3xl font-bold mb-1">{familyMembers.length}</div>
-                <p className="text-indigo-100 text-sm">Total Members</p>
+        <div className="space-y-10">
+          {/* Stats Cards */}
+          <div className="grid grid-cols-1 gap-6">
+            <Card className="shadow border-0 bg-gradient-to-br from-indigo-50 to-white">
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2 text-indigo-700 text-lg font-semibold">
+                  <Users className="w-5 h-5" />
+                  Total Members
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="text-4xl font-bold text-indigo-600">{familyMembers.length}</div>
+                <p className="text-sm text-gray-600">People in your family tree</p>
               </CardContent>
             </Card>
 
-            <Card className="shadow-lg border-0 bg-gradient-to-br from-green-500 to-emerald-600 text-white">
-              <CardContent className="p-6 text-center">
-                <User className="w-12 h-12 mx-auto mb-3 opacity-80" />
-                <div className="text-3xl font-bold mb-1">{activeMembers.length}</div>
-                <p className="text-green-100 text-sm">Active Members</p>
+            <Card className="shadow border-0 bg-gradient-to-br from-green-50 to-white">
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2 text-green-700 text-lg font-semibold">
+                  <User className="w-5 h-5" />
+                  Active Members
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="text-4xl font-bold text-green-600">{activeMembers.length}</div>
+                <p className="text-sm text-gray-600">Registered and active</p>
               </CardContent>
             </Card>
 
-            <Card className="shadow-lg border-0 bg-gradient-to-br from-orange-500 to-red-600 text-white">
-              <CardContent className="p-6 text-center">
-                <MessageSquare className="w-12 h-12 mx-auto mb-3 opacity-80" />
-                <div className="text-3xl font-bold mb-1">{pendingInvites.length}</div>
-                <p className="text-orange-100 text-sm">Pending Invites</p>
+            <Card className="shadow border-0 bg-gradient-to-br from-orange-50 to-white">
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2 text-orange-700 text-lg font-semibold">
+                  <MessageSquare className="w-5 h-5" />
+                  Pending Invites
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="text-4xl font-bold text-orange-600">{pendingInvites.length}</div>
+                <p className="text-sm text-gray-600">Awaiting registration</p>
+                {pendingInvites.length > 0 && (
+                  <div className="mt-2 space-y-1">
+                    {pendingInvites.slice(0, 3).map(invite => (
+                      <div key={invite.userId} className="text-xs text-gray-500">
+                        {invite.name} ({invite.email})
+                      </div>
+                    ))}
+                  </div>
+                )}
               </CardContent>
             </Card>
 
-            <Card className="shadow-lg border-0 bg-gradient-to-br from-blue-500 to-cyan-600 text-white">
-              <CardContent className="p-6 text-center">
-                <Calendar className="w-12 h-12 mx-auto mb-3 opacity-80" />
-                <div className="text-lg font-semibold mb-1">{currentDate}</div>
-                <p className="text-blue-100 text-sm">Tree Created</p>
+            <Card className="shadow border-0 bg-gradient-to-br from-blue-50 to-white">
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2 text-blue-700 text-lg font-semibold">
+                  <Calendar className="w-5 h-5" />
+                  Tree Created On
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="text-lg font-semibold">{currentDate}</div>
+                <p className="text-sm text-gray-600">Your family tree birth date</p>
               </CardContent>
             </Card>
           </div>
 
           {/* My Relations */}
-          <Card className="shadow-lg border-0 bg-white">
-            <CardHeader className="bg-gradient-to-r from-indigo-500 to-purple-600 text-white rounded-t-lg">
-              <CardTitle className="text-lg font-semibold">My Relations</CardTitle>
+          <Card className="shadow-xl border-0 bg-white">
+            <CardHeader>
+              <CardTitle className="text-indigo-700 text-xl font-semibold">My Relations</CardTitle>
             </CardHeader>
-            <CardContent className="p-4">
-              <div className="space-y-3 max-h-64 overflow-y-auto">
+            <CardContent>
+              <div className="space-y-3">
                 {myRelations.length > 0 ? (
                   myRelations.map((relation) => (
-                    <div key={relation.userId} className="flex items-center justify-between p-2 rounded-lg hover:bg-gray-50 transition-colors">
+                    <div key={relation.userId} className="flex items-center justify-between">
                       <div className="flex items-center gap-3">
-                        <Avatar className="h-10 w-10 ring-2 ring-indigo-200">
+                        <Avatar className="h-8 w-8">
                           <AvatarImage src={relation.profilePicture} />
-                          <AvatarFallback className="bg-indigo-500 text-white text-xs">{relation.name?.charAt(0)}</AvatarFallback>
+                          <AvatarFallback>{relation.name?.charAt(0)}</AvatarFallback>
                         </Avatar>
                         <div>
                           <div className="font-medium text-sm text-gray-800">{relation.name}</div>
                           <div className="text-xs text-gray-500">{relation.email}</div>
                         </div>
                       </div>
-                      <Badge variant="outline" className="text-xs border-indigo-200 text-indigo-700">
+                      <Badge variant="secondary" className="text-xs">
                         {relation.relationship || 'Family'}
                       </Badge>
                     </div>
                   ))
                 ) : (
-                  <div className="text-center py-8">
-                    <Users className="w-12 h-12 mx-auto text-gray-300 mb-3" />
-                    <p className="text-sm text-gray-500">No relationships yet</p>
-                    <Button size="sm" className="mt-3 bg-indigo-600 hover:bg-indigo-700">
-                      <Plus className="w-3 h-3 mr-1" />
-                      Add Relation
-                    </Button>
-                  </div>
+                  <p className="text-sm text-gray-500">No relationships added yet</p>
                 )}
               </div>
             </CardContent>
