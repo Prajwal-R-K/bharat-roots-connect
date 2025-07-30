@@ -296,16 +296,11 @@ const FamilyTreeBuilder: React.FC<FamilyTreeBuilderProps> = ({ onComplete, onBac
       }
     };
 
-    // Create edge - arrows should flow from ancestors to descendants
-    const ancestorRelationships = ['father', 'mother', 'grandfather', 'grandmother'];
-    const isNewNodeAncestor = ancestorRelationships.includes(newMember.relationship);
-    
+    // Create edge based on how the user connected nodes in the UI
     const newEdge: Edge = {
       id: `edge-${selectedNodeId}-${newNodeId}`,
-      // If new node is an ancestor, arrow goes from new node (ancestor) to selected node (descendant)
-      // If new node is a descendant, arrow goes from selected node (ancestor) to new node (descendant)
-      source: isNewNodeAncestor ? newNodeId : selectedNodeId,
-      target: isNewNodeAncestor ? selectedNodeId : newNodeId,
+      source: selectedNodeId,
+      target: newNodeId,
       type: 'smoothstep',
       style: {
         stroke: '#3b82f6',
