@@ -54,7 +54,6 @@ const createRelationshipInNeo4j = async (
    }
 };
 
-
 interface FamilyMemberNode extends Node {
   data: {
     label: string;
@@ -296,16 +295,11 @@ const FamilyTreeBuilder: React.FC<FamilyTreeBuilderProps> = ({ onComplete, onBac
       }
     };
 
-    // Create edge - arrows should flow from ancestors to descendants
-    const ancestorRelationships = ['father', 'mother', 'grandfather', 'grandmother'];
-    const isNewNodeAncestor = ancestorRelationships.includes(newMember.relationship);
-    
+    // Create edge based on how the user connected nodes in the UI
     const newEdge: Edge = {
       id: `edge-${selectedNodeId}-${newNodeId}`,
-      // If new node is an ancestor, arrow goes from new node (ancestor) to selected node (descendant)
-      // If new node is a descendant, arrow goes from selected node (ancestor) to new node (descendant)
-      source: isNewNodeAncestor ? newNodeId : selectedNodeId,
-      target: isNewNodeAncestor ? selectedNodeId : newNodeId,
+      source: selectedNodeId,
+      target: newNodeId,
       type: 'smoothstep',
       style: {
         stroke: '#3b82f6',
@@ -350,7 +344,6 @@ const FamilyTreeBuilder: React.FC<FamilyTreeBuilderProps> = ({ onComplete, onBac
   //   };
   //   return opposites[relationship.toLowerCase()] || "family";
   // };
-
 
 
   const handleComplete = async () => {
@@ -465,7 +458,6 @@ const FamilyTreeBuilder: React.FC<FamilyTreeBuilderProps> = ({ onComplete, onBac
       setIsLoading(false);
     }
   };
-
 
   return (
     <div className="h-screen w-screen bg-gradient-to-br from-slate-50 to-blue-50 flex flex-col overflow-hidden">
