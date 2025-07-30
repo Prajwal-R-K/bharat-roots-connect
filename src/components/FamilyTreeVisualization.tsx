@@ -243,8 +243,10 @@ const calculateNodePositions = (
     const sourceMember = nodeMap.get(rel.source); // Original source
     const targetMember = nodeMap.get(rel.target); // Original target
     
-    if (!sourceMember?.gender || !targetMember?.gender) {
-      throw new Error(`Missing gender for userId ${rel.source} or ${rel.target}`);
+    // Skip edges where members are missing or don't have gender
+    if (!sourceMember || !targetMember || !sourceMember.gender || !targetMember.gender) {
+      console.warn(`Skipping edge for missing members or gender: ${rel.source} -> ${rel.target}`);
+      return null;
     }
 
     // Use original relationship type as basis, adjust direct based on direction and target gender
@@ -274,7 +276,7 @@ const calculateNodePositions = (
         targetName: targetMember.name
       }
     };
-  });
+  }).filter(edge => edge !== null) as Edge[];
   
   return { nodes, edges };
 };
@@ -301,8 +303,10 @@ const FamilyTreeVisualization: React.FC<FamilyTreeVisualizationProps> = ({
     if (!relationships.length || !familyMembers.length) {
       return { nodes: [], edges: [] };
     }
-    return calculateNodePositions(familyMembers, relationships, user.userId);
-  }, [familyMembers, relationships, user.userId]);
+    // Use userId when createdBy is "self", otherwise use createdBy
+    const rootUserId = user.createdBy === 'self' ? user.userId : user.createdBy;
+    return calculateNodePositions(familyMembers, relationships, rootUserId);
+  }, [familyMembers, relationships, user.createdBy, user.userId]);
   
   const [nodes, setNodes, onNodesChange] = useNodesState(calculatedNodes);
   const [edges, setEdges, onEdgesChange] = useEdgesState(calculatedEdges);
@@ -320,7 +324,7 @@ const FamilyTreeVisualization: React.FC<FamilyTreeVisualizationProps> = ({
       try {
         let relationshipData: Relationship[] = [];
         if (viewMode === 'personal') {
-          relationshipData = await getUserPersonalizedFamilyTree(user.userId, user.familyTreeId);
+          relationshipData = await getUserPersonalizedFamilyTree(user.createdBy, user.familyTreeId);
         } else {
           relationshipData = await getFamilyRelationships(user.familyTreeId);
         }
