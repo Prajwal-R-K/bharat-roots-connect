@@ -94,15 +94,16 @@ export const createReciprocalRelationship = async (
   familyTreeId: string,
   parentId: string,
   childId: string,
-  relationship1: string,
-  relationship2: string
+  parentGender: string,
+  childGender: string
 ) => {
   try {
+    const { parentToChild } = getRelationshipTypes(parentGender, childGender);
+
     const cypher = `
       MATCH (parent:User {familyTreeId: $familyTreeId, userId: $parentId})
       MATCH (child:User {familyTreeId: $familyTreeId, userId: $childId})
-      CREATE (parent)-[:RELATES_TO {relationship: $relationship1}]->(child)
-      CREATE (child)-[:RELATES_TO {relationship: $relationship2}]->(parent)
+      CREATE (parent)-[:RELATES_TO {relationship: $parentToChild}]->(child)
       RETURN parent.userId as parentId, child.userId as childId
     `;
 
@@ -110,8 +111,7 @@ export const createReciprocalRelationship = async (
       familyTreeId,
       parentId,
       childId,
-      relationship1,
-      relationship2,
+      parentToChild,
     });
 
     return !!result;
