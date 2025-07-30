@@ -98,6 +98,8 @@ export const createReciprocalRelationship = async (
   relationship2: string
 ) => {
   try {
+    console.log('Creating relationship:', { familyTreeId, parentId, childId, relationship1, relationship2 });
+    
     // Store only unidirectional relationship (from parent to child)
     const cypher = `
       MATCH (parent:User {familyTreeId: $familyTreeId, userId: $parentId})
@@ -110,9 +112,10 @@ export const createReciprocalRelationship = async (
       familyTreeId,
       parentId,
       childId,
-      relationship1,
+      relationship1
     });
 
+    console.log('Relationship creation result:', result);
     return !!result;
   } catch (error) {
     console.error("Error creating relationship:", error);
