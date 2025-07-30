@@ -70,7 +70,7 @@ export const getFamilyRelationships = async (familyTreeId: string) => {
 
     const cypher = `
       MATCH (u1:User {familyTreeId: $familyTreeId})-[r:RELATES_TO]->(u2:User {familyTreeId: $familyTreeId})
-      RETURN u1.userId AS source, u2.userId AS target, r.relationship AS type,
+      RETURN DISTINCT u1.userId AS source, u2.userId AS target, r.relationship AS type,
              u1.name AS sourceName, u2.name AS targetName
     `;
 
@@ -94,16 +94,15 @@ export const createReciprocalRelationship = async (
   familyTreeId: string,
   parentId: string,
   childId: string,
-  parentGender: string,
-  childGender: string
+  relationship1: string,
+  relationship2: string
 ) => {
   try {
-    const { parentToChild } = getRelationshipTypes(parentGender, childGender);
-
+    // Store only unidirectional relationship (from parent to child)
     const cypher = `
       MATCH (parent:User {familyTreeId: $familyTreeId, userId: $parentId})
       MATCH (child:User {familyTreeId: $familyTreeId, userId: $childId})
-      CREATE (parent)-[:RELATES_TO {relationship: $parentToChild}]->(child)
+      CREATE (parent)-[:RELATES_TO {relationship: $relationship1}]->(child)
       RETURN parent.userId as parentId, child.userId as childId
     `;
 
@@ -111,7 +110,7 @@ export const createReciprocalRelationship = async (
       familyTreeId,
       parentId,
       childId,
-      parentToChild,
+      relationship1,
     });
 
     return !!result;
@@ -175,9 +174,9 @@ export const getTraversableFamilyTreeData = async (
       UNWIND allNodes AS u1
       UNWIND allNodes AS u2
       WITH u1, u2, allNodes
-      OPTIONAL MATCH (u1Node:User {userId: u1.userId, familyTreeId: $familyTreeId})-[r:RELATES_TO]-(u2Node:User {userId: u2.userId, familyTreeId: $familyTreeId})
+      OPTIONAL MATCH (u1Node:User {userId: u1.userId, familyTreeId: $familyTreeId})-[r:RELATES_TO]->(u2Node:User {userId: u2.userId, familyTreeId: $familyTreeId})
       WHERE u1Node <> u2Node
-      WITH COLLECT(DISTINCT CASE r WHEN null THEN null ELSE {source: u1.userId, target: u2.userId, type: type(r)} END) AS relationships,
+      WITH COLLECT(DISTINCT CASE r WHEN null THEN null ELSE {source: u1.userId, target: u2.userId, type: r.relationship} END) AS relationships,
            allNodes AS nodes
       UNWIND relationships AS rel
       WITH rel, nodes
