@@ -48,6 +48,8 @@ interface FamilyTreeVisualizationProps {
   minHeight?: string;
   showControls?: boolean;
   defaultNodeRadius?: number;
+  onNodeClick?: (nodeId: string) => void;
+  selectedNodes?: string[];
   defaultLineWidth?: number;
   defaultZoom?: number;
 }
@@ -93,10 +95,11 @@ const getReciprocalRelationship = (relationship: string, targetGender: string, s
 };
 
 // Custom family member node component
-const FamilyMemberNode = ({ data, id }: { data: any; id: string }) => {
+const FamilyMemberNode = ({ data, id, selected }: { data: any; id: string; selected?: boolean }) => {
   const getNodeColor = () => {
     // Use logged-in user (data.loginUserId) to determine crown color;
     // the node whose id matches loginUserId gets the crown.
+    if (selected) return 'border-indigo-500 bg-indigo-100 ring-2 ring-indigo-300';
     if (data.userId === data.loginUserId) return 'border-amber-400 bg-amber-50';
     if (data.gender === 'male') return 'border-blue-400 bg-blue-50';
     if (data.gender === 'female') return 'border-pink-400 bg-pink-50';
@@ -104,7 +107,10 @@ const FamilyMemberNode = ({ data, id }: { data: any; id: string }) => {
   };
 
   return (
-    <div className={`relative ${getNodeColor()} border-2 rounded-xl p-3 min-w-[160px] shadow-lg hover:shadow-xl transition-shadow`}>
+    <div 
+      className={`relative ${getNodeColor()} border-2 rounded-xl p-3 min-w-[160px] shadow-lg hover:shadow-xl transition-all cursor-pointer`}
+      onClick={() => data.onNodeClick?.(data.userId)}
+    >
       <Handle type="target" position={Position.Top} className="w-2 h-2 bg-gray-400" />
       <Handle type="source" position={Position.Bottom} className="w-2 h-2 bg-gray-400" />
       <Handle type="target" position={Position.Left} className="w-2 h-2 bg-gray-400" />
@@ -235,7 +241,8 @@ const calculateNodePositions = (
         // Pass loggedInUserId from auth (currently logged in user)
         loginUserId: loggedInUserId,
         isRoot: userId === createdByUserId,
-        status: member.status
+        status: member.status,
+        onNodeClick: undefined // Will be set by the component
       }
     };
   });
@@ -310,7 +317,9 @@ const FamilyTreeVisualization: React.FC<FamilyTreeVisualizationProps> = ({
   familyMembers,
   viewMode = 'personal',
   minHeight = '600px',
-  showControls = true
+  showControls = true,
+  onNodeClick,
+  selectedNodes = []
 }) => {
   const [relationships, setRelationships] = useState<Relationship[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -326,8 +335,20 @@ const FamilyTreeVisualization: React.FC<FamilyTreeVisualizationProps> = ({
     // Determine rootUserId based on creator logic.
     const rootUserId = user.createdBy === 'self' ? user.userId : user.createdBy;
     // Pass loggedInUserId as user.userId for crown highlighting.
-    return calculateNodePositions(familyMembers, relationships, rootUserId, user.userId);
-  }, [familyMembers, relationships, user.createdBy, user.userId]);
+    const result = calculateNodePositions(familyMembers, relationships, rootUserId, user.userId);
+    
+    // Add onNodeClick to node data and selection state
+    result.nodes = result.nodes.map(node => ({
+      ...node,
+      data: {
+        ...node.data,
+        onNodeClick
+      },
+      selected: selectedNodes.includes(node.id) || selectedNodes.includes(node.data.email as string)
+    }));
+    
+    return result;
+  }, [familyMembers, relationships, user.createdBy, user.userId, onNodeClick, selectedNodes]);
   
   const [nodes, setNodes, onNodesChange] = useNodesState(calculatedNodes);
   const [edges, setEdges, onEdgesChange] = useEdgesState(calculatedEdges);
