@@ -250,16 +250,41 @@ const calculateNodePositions = (
     }
 
     // Use original relationship type as basis, adjust direct based on direction and target gender
-    const originalRel = rel.type.toLowerCase();
-    let directRel = isTopToBottom ? originalRel : getReciprocalRelationship(originalRel, targetMember.gender, sourceMember.gender);
-    const reciprocalRel = isTopToBottom ? getReciprocalRelationship(originalRel, targetMember.gender, sourceMember.gender) : originalRel;
+    // Use original relationship type
+const originalRel = rel.type.toLowerCase();
 
-    // Override directRel to match target gender for parent-child relationships
-    if (isTopToBottom && ['father', 'mother'].includes(originalRel)) {
-      directRel = targetMember.gender === 'male' ? 'son' : 'daughter';
-    } else if (!isTopToBottom && ['son', 'daughter'].includes(originalRel)) {
-      directRel = sourceMember.gender === 'male' ? 'father' : 'mother';
-    }
+let directRel: string;
+let reciprocalRel: string;
+
+if (isTopToBottom) {
+  // From source → target (normal case)
+  directRel = originalRel;
+  reciprocalRel = getReciprocalRelationship(originalRel, targetMember.gender, sourceMember.gender);
+
+  // If it's a parent → child direction, show child’s role based on gender
+  if (['father', 'mother'].includes(originalRel)) {
+    // Source is parent, target is child
+    directRel = targetMember.gender === 'male' ? 'son' : 'daughter';
+  }
+
+} else {
+  // From target → source (reversed edge)
+  directRel = getReciprocalRelationship(originalRel, targetMember.gender, sourceMember.gender);
+  reciprocalRel = originalRel;
+
+  // If it's child → parent (original), now edge is parent → child
+  if (['father', 'mother'].includes(originalRel)) {
+    // Target is parent, source is child
+    directRel = sourceMember.gender === 'male' ? 'son' : 'daughter';
+  }
+
+  // If original was son/daughter, and now drawing parent → child
+  else if (['son', 'daughter'].includes(originalRel)) {
+    // Target is child, source is parent
+    directRel = targetMember.gender === 'male' ? 'son' : 'daughter';
+  }
+}
+
 
     return {
       id: `${sourceId}-${targetId}`,
