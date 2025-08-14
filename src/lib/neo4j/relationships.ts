@@ -163,54 +163,64 @@ export const getConnectedFamilyTrees = async (familyTreeId: string): Promise<any
   }
 };
 
+// Hierarchical relationship types - only these are used now
 export const getRelationshipTypes = (): string[] => {
   return [
     "father",
-    "mother",
+    "mother", 
     "son",
     "daughter",
-    "brother",
-    "sister",
     "husband",
     "wife",
+    "brother",
+    "sister",
     "grandfather",
     "grandmother",
     "grandson",
-    "granddaughter",
-    "uncle",
-    "aunt",
-    "nephew",
-    "niece",
-    "cousin",
-    "friend",
-    "other"
+    "granddaughter"
   ];
 };
 
-export const getOppositeRelationship = (relationship: string): string => {
-  const opposites: Record<string, string> = {
-    "father": "son",
-    "mother": "son",
-    "son": "father",  // This is an approximation, could be mother too
-    "daughter": "father",  // This is an approximation, could be mother too
-    "brother": "brother",
-    "sister": "brother",  // This is an approximation, could be sister too
-    "husband": "wife",
-    "wife": "husband",
-    "grandfather": "grandson",
-    "grandmother": "grandson",
-    "grandson": "grandfather",  // This is an approximation, could be grandmother too
-    "granddaughter": "grandfather",  // This is an approximation, could be grandmother too
-    "uncle": "nephew",
-    "aunt": "nephew",
-    "nephew": "uncle",  // This is an approximation, could be aunt too
-    "niece": "uncle",  // This is an approximation, could be aunt too
-    "cousin": "cousin",
-    "friend": "friend",
-    "other": "other"
+// Get hierarchical category for a relationship
+export const getRelationshipCategory = (relationship: string): string => {
+  const categories = {
+    parent: ['father', 'mother', 'grandfather', 'grandmother'],
+    child: ['son', 'daughter', 'grandson', 'granddaughter'],
+    spouse: ['husband', 'wife'],
+    sibling: ['brother', 'sister']
   };
   
-  return opposites[relationship.toLowerCase()] || "family";
+  for (const [category, relationships] of Object.entries(categories)) {
+    if (relationships.includes(relationship.toLowerCase())) {
+      return category;
+    }
+  }
+  return 'other';
+};
+
+// Updated to handle hierarchical relationships properly
+export const getOppositeRelationship = (relationship: string, gender?: string): string => {
+  const rel = relationship.toLowerCase();
+  
+  // For hierarchical relationships, we determine based on category and gender
+  const category = getRelationshipCategory(rel);
+  
+  switch (category) {
+    case 'parent':
+      // Parent's opposite is child, specific type depends on gender
+      return gender === 'female' ? 'daughter' : 'son';
+    case 'child':
+      // Child's opposite is parent, specific type depends on gender  
+      return gender === 'female' ? 'mother' : 'father';
+    case 'spouse':
+      // Spouse relationships are direct opposites
+      return rel === 'husband' ? 'wife' : 'husband';
+    case 'sibling':
+      // Sibling relationships depend on gender
+      return gender === 'female' ? 'sister' : 'brother';
+    default:
+      return 'family';
+  }
 };
 
 // Function to create reciprocal relationships when a user confirms their relationship

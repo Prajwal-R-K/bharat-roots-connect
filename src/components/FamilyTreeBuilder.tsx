@@ -64,11 +64,22 @@ interface FamilyMemberNode extends Node {
     generation: number;
     isRoot?: boolean;
     onAddRelation?: (nodeId: string) => void;
-    gender?: string; // Add gender to node data
+    gender?: string;
+    dateOfBirth?: string;
+    marriageDate?: string;
+    marriageStatus?: string;
   };
 }
 
-const relationshipTypes = [
+// Hierarchical relationship types based on the new flow
+const relationshipCategories = {
+  parent: ['father', 'mother'],
+  child: ['son', 'daughter'],
+  spouse: ['husband', 'wife'],
+  sibling: ['brother', 'sister']
+};
+
+const allRelationshipTypes = [
   'father', 'mother', 'son', 'daughter', 'brother', 'sister',
   'husband', 'wife', 'grandfather', 'grandmother', 'grandson', 'granddaughter'
 ];
@@ -124,14 +135,20 @@ const FamilyTreeBuilder: React.FC<FamilyTreeBuilderProps> = ({ onComplete, onBac
   const [edges, setEdges, onEdgesChange] = useEdgesState([]);
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
   const [showAddDialog, setShowAddDialog] = useState(false);
+  const [showRelationshipChoice, setShowRelationshipChoice] = useState(false);
+  const [selectedRelationshipCategory, setSelectedRelationshipCategory] = useState<string>('');
   const [newMember, setNewMember] = useState({
     name: '',
     email: '',
     phone: '',
     relationship: '',
     gender: '',
+    dateOfBirth: '',
+    marriageDate: '',
+    marriageStatus: 'married'
   });
   const [isLoading, setIsLoading] = useState(false);
+  const [selectedNode, setSelectedNode] = useState<any>(null);
 
   // Initialize with "You" node in center using registration data
   useEffect(() => {
@@ -159,9 +176,91 @@ const FamilyTreeBuilder: React.FC<FamilyTreeBuilderProps> = ({ onComplete, onBac
   );
 
   const handleAddRelation = (nodeId: string) => {
+    const node = nodes.find(n => n.id === nodeId);
+    if (!node) return;
+    
     setSelectedNodeId(nodeId);
+    setSelectedNode(node);
+    setShowRelationshipChoice(true);
+    setNewMember({ 
+      name: '', 
+      email: '', 
+      phone: '', 
+      relationship: '', 
+      gender: '',
+      dateOfBirth: '',
+      marriageDate: '',
+      marriageStatus: 'married'
+    });
+  };
+
+  const handleRelationshipCategorySelect = (category: string) => {
+    setSelectedRelationshipCategory(category);
+    setShowRelationshipChoice(false);
     setShowAddDialog(true);
-    setNewMember({ name: '', email: '', phone: '', relationship: '', gender: '' });
+  };
+
+  // Validation functions for edge cases
+  const validateRelationshipAddition = async (selectedNode: any, category: string): Promise<{ valid: boolean; message?: string; requiresConfirmation?: boolean }> => {
+    if (category === 'parent') {
+      // Check parent count
+      const existingParents = nodes.filter(node => 
+        edges.some(edge => edge.target === selectedNode.id && edge.source === node.id) &&
+        relationshipCategories.parent.includes(node.data.relationship || '')
+      );
+      
+      if (existingParents.length >= 2) {
+        return { 
+          valid: false, 
+          message: "A person can have max 2 parents. You can add a step-parent instead." 
+        };
+      }
+      
+      if (existingParents.length === 1) {
+        return {
+          valid: true,
+          requiresConfirmation: true,
+          message: `${selectedNode.data.name} already has one parent (${existingParents[0].data.name}). Is this new parent a spouse to the existing parent?`
+        };
+      }
+    }
+
+    if (category === 'spouse') {
+      // Check for existing married spouse
+      const existingSpouses = nodes.filter(node => 
+        edges.some(edge => 
+          (edge.source === selectedNode.id && edge.target === node.id) || 
+          (edge.target === selectedNode.id && edge.source === node.id)
+        ) &&
+        relationshipCategories.spouse.includes(node.data.relationship || '') &&
+        node.data.marriageStatus === 'married'
+      );
+      
+      if (existingSpouses.length > 0 && newMember.marriageStatus === 'married') {
+        return {
+          valid: true,
+          requiresConfirmation: true,
+          message: `${selectedNode.data.name} is already married to ${existingSpouses[0].data.name}. Do you want to end the current marriage and add a new spouse?`
+        };
+      }
+    }
+
+    if (category === 'sibling') {
+      // Check if selected person has parents
+      const hasParents = nodes.some(node => 
+        edges.some(edge => edge.target === selectedNode.id && edge.source === node.id) &&
+        relationshipCategories.parent.includes(node.data.relationship || '')
+      );
+      
+      if (!hasParents) {
+        return {
+          valid: false,
+          message: "Please add at least one parent first before adding siblings."
+        };
+      }
+    }
+
+    return { valid: true };
   };
 
   // Check if email already exists in current tree or in database
@@ -182,74 +281,92 @@ const FamilyTreeBuilder: React.FC<FamilyTreeBuilderProps> = ({ onComplete, onBac
     }
   };
 
-  // Calculate generation based on relationship
+  // Calculate generation based on hierarchical relationship
   const getGeneration = (relationship: string, parentGeneration: number): number => {
-    const parentRelationships = ['father', 'mother', 'grandfather', 'grandmother'];
-    const childRelationships = ['son', 'daughter', 'grandson', 'granddaughter'];
-    const siblingRelationships = ['brother', 'sister'];
-    const spouseRelationships = ['husband', 'wife'];
-
-    if (parentRelationships.includes(relationship)) {
+    if (relationshipCategories.parent.includes(relationship)) {
       return parentGeneration - 1;
-    } else if (childRelationships.includes(relationship)) {
+    } else if (relationshipCategories.child.includes(relationship)) {
       return parentGeneration + 1;
-    } else if (siblingRelationships.includes(relationship) || spouseRelationships.includes(relationship)) {
+    } else if (relationshipCategories.sibling.includes(relationship) || relationshipCategories.spouse.includes(relationship)) {
       return parentGeneration;
     }
     return parentGeneration;
   };
 
-  // Enhanced position calculation for proper tree structure
+  // Enhanced position calculation for hierarchical tree structure (top to bottom)
   const calculateNodePosition = (
     parentNode: Node,
     relationship: string,
-    existingNodes: Node[]
+    existingNodes: Node[],
+    category: string
   ): { x: number; y: number } => {
     const parentPos = parentNode.position;
     const parentGeneration = typeof parentNode.data?.generation === 'number' ? parentNode.data.generation : 0;
     const generation = getGeneration(relationship, parentGeneration);
 
-    const generationSpacing = 300;
-    const siblingSpacing = 400;
+    const generationSpacing = 200; // Vertical spacing between generations
+    const siblingSpacing = 250; // Horizontal spacing between siblings
 
-    const baseY = (generation * generationSpacing);
+    // Top-to-bottom layout: negative Y for ancestors, positive Y for descendants
+    const baseY = parentPos.y + (generation - parentGeneration) * generationSpacing;
 
-    const nodesInGeneration = existingNodes.filter(node => {
-      const nodeGeneration = typeof node.data?.generation === 'number' ? node.data.generation : 0;
-      return nodeGeneration === generation;
-    });
-
-    if (['husband', 'wife'].includes(relationship)) {
+    // Handle different relationship categories
+    if (category === 'spouse') {
+      // Place spouse horizontally adjacent
+      const spouseOffset = relationship === 'husband' ? -200 : 200;
       return {
-        x: parentPos.x + (relationship === 'husband' ? -300 : 300),
+        x: parentPos.x + spouseOffset,
         y: parentPos.y
       };
     }
 
-    if (['brother', 'sister'].includes(relationship)) {
-      const nodesInSiblingLevel = existingNodes.filter(node => {
-         const nodeGeneration = typeof node.data?.generation === 'number' ? node.data.generation : 0;
-         return nodeGeneration === parentGeneration && node.id !== parentNode.id; // Filter for siblings of the parent
+    if (category === 'parent') {
+      // Place parents above the current person
+      const parentsAtLevel = existingNodes.filter(node => {
+        const nodeGeneration = typeof node.data?.generation === 'number' ? node.data.generation : 0;
+        return nodeGeneration === generation && relationshipCategories.parent.includes((node.data.relationship as string) || '');
       });
-      const siblingCount = nodesInSiblingLevel.length;
+      
+      const parentIndex = parentsAtLevel.length;
       return {
-         x: parentPos.x + ((siblingCount + 1) * siblingSpacing) - (siblingCount * siblingSpacing / 2),
-         y: baseY
+        x: parentPos.x + (parentIndex === 0 ? -100 : 100), // First parent left, second parent right
+        y: baseY
       };
     }
 
-    const nodesCount = nodesInGeneration.length;
+    if (category === 'child') {
+      // Place children below the current person
+      const childrenAtLevel = existingNodes.filter(node => {
+        const nodeGeneration = typeof node.data?.generation === 'number' ? node.data.generation : 0;
+        return nodeGeneration === generation && relationshipCategories.child.includes((node.data.relationship as string) || '');
+      });
+      
+      const childIndex = childrenAtLevel.length;
+      return {
+        x: parentPos.x + (childIndex * siblingSpacing) - (childIndex > 0 ? siblingSpacing / 2 : 0),
+        y: baseY
+      };
+    }
 
-    if (generation < parentGeneration) {
-       // Position ancestors above the parent, spread out horizontally
-       return {
-         x: parentPos.x + (nodesCount * 300) - (nodesCount > 0 ? 150 : 0),
-         y: baseY
-       };
-     }
+    if (category === 'sibling') {
+      // Place siblings at the same level as the reference person
+      const siblingsAtLevel = existingNodes.filter(node => {
+        const nodeGeneration = typeof node.data?.generation === 'number' ? node.data.generation : 0;
+        return nodeGeneration === parentGeneration && 
+               relationshipCategories.sibling.includes((node.data.relationship as string) || '') &&
+               node.id !== parentNode.id;
+      });
+      
+      const siblingIndex = siblingsAtLevel.length;
+      return {
+        x: parentPos.x + ((siblingIndex + 1) * siblingSpacing),
+        y: parentPos.y
+      };
+    }
 
+    // Default positioning
     return {
-      x: parentPos.x + (nodesCount * 350) - (nodesCount > 0 ? 175 : 0),
+      x: parentPos.x + 200,
       y: baseY
     };
   };
@@ -257,6 +374,25 @@ const FamilyTreeBuilder: React.FC<FamilyTreeBuilderProps> = ({ onComplete, onBac
   const addFamilyMember = async () => {
     if (!newMember.name || !newMember.email || !newMember.relationship || !newMember.gender || !selectedNodeId) {
       return;
+    }
+
+    // Validate relationship addition
+    const validation = await validateRelationshipAddition(selectedNode, selectedRelationshipCategory);
+    if (!validation.valid) {
+      toast({
+        title: "Cannot add relationship",
+        description: validation.message,
+        variant: "destructive",
+      });
+      return;
+    }
+
+    // Handle confirmation cases
+    if (validation.requiresConfirmation) {
+      const confirmed = window.confirm(validation.message + "\n\nClick OK to continue or Cancel to abort.");
+      if (!confirmed) {
+        return;
+      }
     }
 
     // Check for email duplicates
@@ -270,14 +406,14 @@ const FamilyTreeBuilder: React.FC<FamilyTreeBuilderProps> = ({ onComplete, onBac
       return;
     }
 
-    const selectedNode = nodes.find(n => n.id === selectedNodeId);
-    if (!selectedNode) return;
+    const selectedNodeData = nodes.find(n => n.id === selectedNodeId);
+    if (!selectedNodeData) return;
 
     const newNodeId = `node-${Date.now()}`;
-    const selectedGeneration = typeof selectedNode.data?.generation === 'number' ? selectedNode.data.generation : 0;
+    const selectedGeneration = typeof selectedNodeData.data?.generation === 'number' ? selectedNodeData.data.generation : 0;
     const generation = getGeneration(newMember.relationship, selectedGeneration);
 
-    const position = calculateNodePosition(selectedNode, newMember.relationship, nodes);
+    const position = calculateNodePosition(selectedNodeData, newMember.relationship, nodes, selectedRelationshipCategory);
 
     const newNode: FamilyMemberNode = {
       id: newNodeId,
@@ -292,24 +428,100 @@ const FamilyTreeBuilder: React.FC<FamilyTreeBuilderProps> = ({ onComplete, onBac
         generation,
         onAddRelation: handleAddRelation,
         gender: newMember.gender,
+        dateOfBirth: newMember.dateOfBirth,
+        marriageDate: newMember.marriageDate,
+        marriageStatus: newMember.marriageStatus
       }
     };
 
-    // Create edge based on how the user connected nodes in the UI
+    // Create appropriate edge based on relationship hierarchy
+    let sourceId = selectedNodeId;
+    let targetId = newNodeId;
+    
+    // For hierarchical relationships, parent should be source, child should be target
+    if (selectedRelationshipCategory === 'parent') {
+      sourceId = newNodeId;
+      targetId = selectedNodeId;
+    }
+
     const newEdge: Edge = {
-      id: `edge-${selectedNodeId}-${newNodeId}`,
-      source: selectedNodeId,
-      target: newNodeId,
+      id: `edge-${sourceId}-${targetId}`,
+      source: sourceId,
+      target: targetId,
       type: 'smoothstep',
       style: {
         stroke: '#3b82f6',
-        strokeWidth: 3,
+        strokeWidth: 2,
       },
       markerEnd: {
         type: 'arrowclosed' as any,
         color: '#3b82f6'
       }
     };
+
+    // Auto-link logic for special cases
+    let additionalEdges: Edge[] = [];
+    
+    // If adding spouse and selected person has children, auto-link to children
+    if (selectedRelationshipCategory === 'spouse') {
+      const children = nodes.filter(node => 
+        edges.some(edge => edge.source === selectedNodeId && edge.target === node.id) &&
+        relationshipCategories.child.includes(node.data.relationship || '')
+      );
+      
+      if (children.length > 0) {
+        const linkToChildren = window.confirm(`Do you want to connect ${newMember.name} to all existing children of ${selectedNodeData.data.name}?`);
+        if (linkToChildren) {
+          additionalEdges = children.map(child => ({
+            id: `edge-${newNodeId}-${child.id}`,
+            source: newNodeId,
+            target: child.id,
+            type: 'smoothstep',
+            style: { stroke: '#10b981', strokeWidth: 2 },
+            markerEnd: { type: 'arrowclosed' as any, color: '#10b981' }
+          }));
+        }
+      }
+    }
+
+    // If adding child and selected person has spouse, auto-link to spouse
+    if (selectedRelationshipCategory === 'child') {
+      const spouse = nodes.find(node => 
+        edges.some(edge => 
+          (edge.source === selectedNodeId && edge.target === node.id) || 
+          (edge.target === selectedNodeId && edge.source === node.id)
+        ) &&
+        relationshipCategories.spouse.includes(node.data.relationship || '')
+      );
+      
+      if (spouse) {
+        additionalEdges.push({
+          id: `edge-${spouse.id}-${newNodeId}`,
+          source: spouse.id,
+          target: newNodeId,
+          type: 'smoothstep',
+          style: { stroke: '#10b981', strokeWidth: 2 },
+          markerEnd: { type: 'arrowclosed' as any, color: '#10b981' }
+        });
+      }
+    }
+
+    // If adding sibling, link to same parents
+    if (selectedRelationshipCategory === 'sibling') {
+      const parents = nodes.filter(node => 
+        edges.some(edge => edge.source === node.id && edge.target === selectedNodeId) &&
+        relationshipCategories.parent.includes(node.data.relationship || '')
+      );
+      
+      additionalEdges = parents.map(parent => ({
+        id: `edge-${parent.id}-${newNodeId}`,
+        source: parent.id,
+        target: newNodeId,
+        type: 'smoothstep',
+        style: { stroke: '#8b5cf6', strokeWidth: 2 },
+        markerEnd: { type: 'arrowclosed' as any, color: '#8b5cf6' }
+      }));
+    }
 
     setNodes((nds) => nds.map(node => ({
       ...node,
@@ -319,10 +531,25 @@ const FamilyTreeBuilder: React.FC<FamilyTreeBuilderProps> = ({ onComplete, onBac
       }
     })).concat([newNode]));
 
-    setEdges((eds) => [...eds, newEdge]);
+    setEdges((eds) => [...eds, newEdge, ...additionalEdges]);
 
     setShowAddDialog(false);
-    setNewMember({ name: '', email: '', phone: '', relationship: '', gender: '' });
+    setSelectedRelationshipCategory('');
+    setNewMember({ 
+      name: '', 
+      email: '', 
+      phone: '', 
+      relationship: '', 
+      gender: '',
+      dateOfBirth: '',
+      marriageDate: '',
+      marriageStatus: 'married'
+    });
+
+    toast({
+      title: "Family member added",
+      description: `${newMember.name} has been added to the family tree.`,
+    });
   };
 
    // This function is not needed for storing unidirectional relationships as per new requirement
@@ -553,7 +780,7 @@ const FamilyTreeBuilder: React.FC<FamilyTreeBuilderProps> = ({ onComplete, onBac
                   <SelectValue placeholder="Select relationship" />
                 </SelectTrigger>
                 <SelectContent>
-                  {relationshipTypes.map(type => (
+                  {relationshipCategories[selectedRelationshipCategory as keyof typeof relationshipCategories]?.map(type => (
                     <SelectItem key={type} value={type}>
                       {type.charAt(0).toUpperCase() + type.slice(1)}
                     </SelectItem>
@@ -570,6 +797,45 @@ const FamilyTreeBuilder: React.FC<FamilyTreeBuilderProps> = ({ onComplete, onBac
                 value={newMember.email}
                 onChange={(e) => setNewMember({ ...newMember, email: e.target.value })}
                 placeholder="Enter email address"
+                className="mt-1"
+              />
+            </div>
+
+            {selectedRelationshipCategory === 'spouse' && (
+              <>
+                <div>
+                  <Label htmlFor="marriageDate" className="text-sm font-medium">Marriage Date</Label>
+                  <Input
+                    id="marriageDate"
+                    type="date"
+                    value={newMember.marriageDate}
+                    onChange={(e) => setNewMember({ ...newMember, marriageDate: e.target.value })}
+                    className="mt-1"
+                  />
+                </div>
+                <div>
+                  <Label htmlFor="marriageStatus" className="text-sm font-medium">Marriage Status</Label>
+                  <Select value={newMember.marriageStatus} onValueChange={(value) => setNewMember({ ...newMember, marriageStatus: value })}>
+                    <SelectTrigger className="mt-1">
+                      <SelectValue placeholder="Select status" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="married">Married</SelectItem>
+                      <SelectItem value="divorced">Divorced</SelectItem>
+                      <SelectItem value="widowed">Widowed</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+              </>
+            )}
+
+            <div>
+              <Label htmlFor="dateOfBirth" className="text-sm font-medium">Date of Birth</Label>
+              <Input
+                id="dateOfBirth"
+                type="date"
+                value={newMember.dateOfBirth}
+                onChange={(e) => setNewMember({ ...newMember, dateOfBirth: e.target.value })}
                 className="mt-1"
               />
             </div>
@@ -601,6 +867,63 @@ const FamilyTreeBuilder: React.FC<FamilyTreeBuilderProps> = ({ onComplete, onBac
                 Add Member
               </Button>
             </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Relationship Category Selection Dialog */}
+      <Dialog open={showRelationshipChoice} onOpenChange={setShowRelationshipChoice}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle className="text-xl">
+              Add Relation to {selectedNode?.data?.name}
+            </DialogTitle>
+            <p className="text-sm text-slate-600 mt-2">
+              What relation do you want to add?
+            </p>
+          </DialogHeader>
+          <div className="grid grid-cols-2 gap-3 mt-4">
+            <Button
+              variant="outline"
+              className="h-20 flex flex-col items-center justify-center text-center space-y-2"
+              onClick={() => handleRelationshipCategorySelect('parent')}
+            >
+              <User className="w-6 h-6" />
+              <span className="text-sm font-medium">Add Parent</span>
+            </Button>
+            <Button
+              variant="outline"
+              className="h-20 flex flex-col items-center justify-center text-center space-y-2"
+              onClick={() => handleRelationshipCategorySelect('spouse')}
+            >
+              <User className="w-6 h-6" />
+              <span className="text-sm font-medium">Add Spouse</span>
+            </Button>
+            <Button
+              variant="outline"
+              className="h-20 flex flex-col items-center justify-center text-center space-y-2"
+              onClick={() => handleRelationshipCategorySelect('child')}
+            >
+              <User className="w-6 h-6" />
+              <span className="text-sm font-medium">Add Child</span>
+            </Button>
+            <Button
+              variant="outline"
+              className="h-20 flex flex-col items-center justify-center text-center space-y-2"
+              onClick={() => handleRelationshipCategorySelect('sibling')}
+            >
+              <User className="w-6 h-6" />
+              <span className="text-sm font-medium">Add Sibling</span>
+            </Button>
+          </div>
+          <div className="mt-4">
+            <Button
+              variant="ghost"
+              onClick={() => setShowRelationshipChoice(false)}
+              className="w-full"
+            >
+              Cancel
+            </Button>
           </div>
         </DialogContent>
       </Dialog>
