@@ -1,5 +1,4 @@
 import React, { useState, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
 import { User, Calendar, MessageSquare, Users, Settings, Home, Plus, Download, Mail, LogOut } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -15,7 +14,6 @@ interface DashboardProps {
 }
 
 const Dashboard: React.FC<DashboardProps> = ({ user: initialUser }) => {
-  const navigate = useNavigate();
   const { toast } = useToast();
   const [user, setUser] = useState<UserType>(initialUser);
   const [familyMembers, setFamilyMembers] = useState<any[]>([]);
@@ -108,10 +106,7 @@ const Dashboard: React.FC<DashboardProps> = ({ user: initialUser }) => {
                     <Users className="w-16 h-16 mb-4 text-indigo-400" />
                     <h3 className="text-xl font-semibold mb-2">No Family Members Yet</h3>
                     <p className="text-sm text-center px-4">Start building your family tree by inviting members</p>
-                    <Button 
-                      className="mt-4 bg-indigo-600 hover:bg-indigo-700"
-                      onClick={() => navigate('/add-member')}
-                    >
+                    <Button className="mt-4 bg-indigo-600 hover:bg-indigo-700">
                       <Plus className="w-4 h-4 mr-2" />
                       Add First Member
                     </Button>
@@ -123,10 +118,7 @@ const Dashboard: React.FC<DashboardProps> = ({ user: initialUser }) => {
 
           {/* Enhanced Quick Actions */}
           <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-            <Card 
-              className="shadow-lg border-0 bg-gradient-to-br from-green-50 to-emerald-100 hover:shadow-xl transition-all cursor-pointer group"
-              onClick={() => navigate('/add-member')}
-            >
+            <Card className="shadow-lg border-0 bg-gradient-to-br from-green-50 to-emerald-100 hover:shadow-xl transition-all cursor-pointer group">
               <CardContent className="p-6 text-center">
                 <div className="w-16 h-16 bg-green-500 rounded-full flex items-center justify-center mx-auto mb-4 group-hover:scale-110 transition-transform">
                   <Plus className="h-8 w-8 text-white" />
@@ -146,16 +138,13 @@ const Dashboard: React.FC<DashboardProps> = ({ user: initialUser }) => {
               </CardContent>
             </Card>
             
-            <Card 
-              className="shadow-lg border-0 bg-gradient-to-br from-purple-50 to-violet-100 hover:shadow-xl transition-all cursor-pointer group"
-              onClick={() => navigate('/family-tree')}
-            >
+            <Card className="shadow-lg border-0 bg-gradient-to-br from-purple-50 to-violet-100 hover:shadow-xl transition-all cursor-pointer group">
               <CardContent className="p-6 text-center">
                 <div className="w-16 h-16 bg-purple-500 rounded-full flex items-center justify-center mx-auto mb-4 group-hover:scale-110 transition-transform">
                   <Settings className="h-8 w-8 text-white" />
                 </div>
-                <h3 className="font-bold text-purple-800 text-lg mb-2">View Tree</h3>
-                <p className="text-purple-600 text-sm">View and analyze family relationships</p>
+                <h3 className="font-bold text-purple-800 text-lg mb-2">Manage Tree</h3>
+                <p className="text-purple-600 text-sm">Edit relationships and family details</p>
               </CardContent>
             </Card>
           </div>
@@ -249,11 +238,7 @@ const Dashboard: React.FC<DashboardProps> = ({ user: initialUser }) => {
                   <div className="text-center py-8">
                     <Users className="w-12 h-12 mx-auto text-gray-300 mb-3" />
                     <p className="text-sm text-gray-500">No relationships yet</p>
-                    <Button 
-                      size="sm" 
-                      className="mt-3 bg-indigo-600 hover:bg-indigo-700"
-                      onClick={() => navigate('/add-member')}
-                    >
+                    <Button size="sm" className="mt-3 bg-indigo-600 hover:bg-indigo-700">
                       <Plus className="w-3 h-3 mr-1" />
                       Add Relation
                     </Button>
