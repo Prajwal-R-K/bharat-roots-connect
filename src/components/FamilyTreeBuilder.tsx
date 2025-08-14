@@ -110,7 +110,11 @@ const FamilyNode = ({ data, id }: { data: any; id: string }) => {
           size="sm"
           variant="outline"
           className="w-8 h-8 rounded-full p-0 hover:bg-blue-50 border-blue-300"
-          onClick={() => data.onAddRelation && data.onAddRelation(id)}
+          onClick={() => {
+            console.log('Plus button clicked for node:', id);
+            console.log('onAddRelation function exists:', !!data.onAddRelation);
+            data.onAddRelation && data.onAddRelation(id);
+          }}
         >
           <Plus className="w-4 h-4" />
         </Button>
@@ -150,6 +154,32 @@ const FamilyTreeBuilder: React.FC<FamilyTreeBuilderProps> = ({ onComplete, onBac
   const [isLoading, setIsLoading] = useState(false);
   const [selectedNode, setSelectedNode] = useState<any>(null);
 
+  const handleAddRelation = useCallback((nodeId: string) => {
+    console.log('handleAddRelation called with nodeId:', nodeId);
+    const node = nodes.find(n => n.id === nodeId);
+    console.log('Found node:', node);
+    if (!node) {
+      console.log('Node not found!');
+      return;
+    }
+    
+    console.log('Setting selectedNodeId to:', nodeId);
+    setSelectedNodeId(nodeId);
+    setSelectedNode(node);
+    setShowRelationshipChoice(true);
+    console.log('showRelationshipChoice set to true');
+    setNewMember({ 
+      name: '', 
+      email: '', 
+      phone: '', 
+      relationship: '', 
+      gender: '',
+      dateOfBirth: '',
+      marriageDate: '',
+      marriageStatus: 'married'
+    });
+  }, [nodes]);
+
   // Initialize with "You" node in center using registration data
   useEffect(() => {
     if (registrationData) {
@@ -168,31 +198,12 @@ const FamilyTreeBuilder: React.FC<FamilyTreeBuilderProps> = ({ onComplete, onBac
       };
       setNodes([rootNode]);
     }
-  }, [registrationData]);
+  }, [registrationData, handleAddRelation]);
 
   const onConnect = useCallback(
     (params: Connection) => setEdges((eds) => addEdge(params, eds)),
     [setEdges],
   );
-
-  const handleAddRelation = (nodeId: string) => {
-    const node = nodes.find(n => n.id === nodeId);
-    if (!node) return;
-    
-    setSelectedNodeId(nodeId);
-    setSelectedNode(node);
-    setShowRelationshipChoice(true);
-    setNewMember({ 
-      name: '', 
-      email: '', 
-      phone: '', 
-      relationship: '', 
-      gender: '',
-      dateOfBirth: '',
-      marriageDate: '',
-      marriageStatus: 'married'
-    });
-  };
 
   const handleRelationshipCategorySelect = (category: string) => {
     setSelectedRelationshipCategory(category);
