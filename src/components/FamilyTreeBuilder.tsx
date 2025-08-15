@@ -1,4 +1,4 @@
-import React, { useState, useCallback, useEffect } from 'react';
+import React, { useState, useCallback, useEffect, useRef } from 'react';
 import {
   ReactFlow,
   Controls,
@@ -23,35 +23,71 @@ import { toast } from '@/hooks/use-toast';
 import { createUser, getUserByEmailOrId, createFamilyTree } from '@/lib/neo4j';
 import { generateId, getCurrentDateTime } from '@/lib/utils';
 import { useNavigate } from 'react-router-dom';
-import { runQuery } from '@/lib/neo4j/connection'; // Import runQuery
+import { runQuery } from '@/lib/neo4j/connection';
 
-// Helper function to create relationships in Neo4j - Defined OUTSIDE the component
-const createRelationshipInNeo4j = async (
-  familyTreeId: string,
-  sourceUserId: string,
-  targetUserId: string,
-  relationshipType: string
-) => {
-   try {
-      const cypher = `
-         MATCH (source:User {familyTreeId: $familyTreeId, userId: $sourceUserId})
-         MATCH (target:User {familyTreeId: $familyTreeId, userId: $targetUserId})
-         CREATE (source)-[:RELATES_TO {relationship: $relationshipType}]->(target)
-         RETURN source.userId as sourceId, target.userId as targetId
-      `;
+// Helper functions to create specific relationships
+const createParentsOf = async (familyTreeId: string, sourceUserId: string, targetUserId: string) => {
+  try {
+    const cypher = `
+      MATCH (source:User {familyTreeId: $familyTreeId, userId: $sourceUserId})
+      MATCH (target:User {familyTreeId: $familyTreeId, userId: $targetUserId})
+      CREATE (source)-[:PARENTS_OF]->(target)
+      RETURN source.userId as sourceId, target.userId as targetId
+    `;
+    const result = await runQuery(cypher, { familyTreeId, sourceUserId, targetUserId });
+    return !!result;
+  } catch (error) {
+    console.error('Error creating PARENTS_OF:', error);
+    return false;
+  }
+};
 
-      const result = await runQuery(cypher, {
-         familyTreeId,
-         sourceUserId,
-         targetUserId,
-         relationshipType: relationshipType.toLowerCase(), // Store in lowercase
-      });
+const createMarriedTo = async (familyTreeId: string, sourceUserId: string, targetUserId: string) => {
+  try {
+    const exists = await edgeExists(familyTreeId, sourceUserId, targetUserId, 'MARRIED_TO');
+    if (exists) {
+      return true; // Already exists, no need to create
+    }
+    const cypher = `
+      MATCH (source:User {familyTreeId: $familyTreeId, userId: $sourceUserId})
+      MATCH (target:User {familyTreeId: $familyTreeId, userId: $targetUserId})
+      CREATE (source)-[:MARRIED_TO]->(target)
+      RETURN source.userId as sourceId, target.userId as targetId
+    `;
+    const result = await runQuery(cypher, { familyTreeId, sourceUserId, targetUserId });
+    return !!result;
+  } catch (error) {
+    console.error('Error creating MARRIED_TO:', error);
+    return false;
+  }
+};
 
-      return !!result;
-   } catch (error) {
-      console.error(`Error creating ${relationshipType} relationship:`, error);
-      return false;
-   }
+const createSibling = async (familyTreeId: string, sourceUserId: string, targetUserId: string) => {
+  try {
+    const cypher = `
+      MATCH (source:User {familyTreeId: $familyTreeId, userId: $sourceUserId})
+      MATCH (target:User {familyTreeId: $familyTreeId, userId: $targetUserId})
+      CREATE (source)-[:SIBLING]->(target)
+    `;
+    await runQuery(cypher, { familyTreeId, sourceUserId, targetUserId });
+    return true;
+  } catch (error) {
+    console.error('Error creating SIBLING:', error);
+    return false;
+  }
+};
+const edgeExists = async (familyTreeId: string, sourceUserId: string, targetUserId: string, relType: string) => {
+  try {
+    const cypher = `
+      MATCH (source:User {familyTreeId: $familyTreeId, userId: $sourceUserId})-[:${relType}]->(target:User {userId: $targetUserId})
+      RETURN source
+    `;
+    const result = await runQuery(cypher, { familyTreeId, sourceUserId, targetUserId });
+    return result.length > 0;
+  } catch (error) {
+    console.error(`Error checking if ${relType} edge exists:`, error);
+    return false;
+  }
 };
 
 interface FamilyMemberNode extends Node {
@@ -68,23 +104,12 @@ interface FamilyMemberNode extends Node {
     dateOfBirth?: string;
     marriageDate?: string;
     marriageStatus?: string;
+    userId?: string;
   };
+  parentId?: string;
 }
 
-// Hierarchical relationship types based on the new flow
-const relationshipCategories = {
-  parent: ['father', 'mother'],
-  child: ['son', 'daughter'],
-  spouse: ['husband', 'wife'],
-  sibling: ['brother', 'sister']
-};
-
-const allRelationshipTypes = [
-  'father', 'mother', 'son', 'daughter', 'brother', 'sister',
-  'husband', 'wife', 'grandfather', 'grandmother', 'grandson', 'granddaughter'
-];
-
-// Custom node component
+// Custom node component for individual family members
 const FamilyNode = ({ data, id }: { data: any; id: string }) => {
   return (
     <div className="relative bg-white border-2 border-blue-200 rounded-xl p-4 min-w-[200px] shadow-lg hover:shadow-xl transition-shadow">
@@ -112,7 +137,6 @@ const FamilyNode = ({ data, id }: { data: any; id: string }) => {
           className="w-8 h-8 rounded-full p-0 hover:bg-blue-50 border-blue-300"
           onClick={() => {
             console.log('Plus button clicked for node:', id);
-            console.log('onAddRelation function exists:', !!data.onAddRelation);
             data.onAddRelation && data.onAddRelation(id);
           }}
         >
@@ -123,8 +147,22 @@ const FamilyNode = ({ data, id }: { data: any; id: string }) => {
   );
 };
 
+// Custom group node for couples
+const CoupleGroup = ({ data, id }: { data: any; id: string }) => {
+  return (
+    <div className="relative bg-blue-50 border-2 border-blue-400 rounded-xl p-2 shadow-md overflow-hidden">
+      <Handle type="target" position={Position.Top} className="w-3 h-3 bg-blue-500" />
+      <Handle type="source" position={Position.Bottom} className="w-3 h-3 bg-blue-500" />
+      <div className="flex justify-around items-center" style={{ maxWidth: '100%', maxHeight: '100%', overflow: 'hidden' }}>
+        {/* Placeholder for couple members, managed by child nodes */}
+      </div>
+    </div>
+  );
+};
+
 const nodeTypes = {
   familyMember: FamilyNode,
+  coupleGroup: CoupleGroup,
 };
 
 interface FamilyTreeBuilderProps {
@@ -132,6 +170,13 @@ interface FamilyTreeBuilderProps {
   onBack: () => void;
   registrationData: any;
 }
+
+const relationshipCategories = {
+  parent: ['father', 'mother'],
+  child: ['son', 'daughter'],
+  spouse: ['husband', 'wife'],
+  sibling: ['brother', 'sister']
+};
 
 const FamilyTreeBuilder: React.FC<FamilyTreeBuilderProps> = ({ onComplete, onBack, registrationData }) => {
   const navigate = useNavigate();
@@ -153,21 +198,26 @@ const FamilyTreeBuilder: React.FC<FamilyTreeBuilderProps> = ({ onComplete, onBac
   });
   const [isLoading, setIsLoading] = useState(false);
   const [selectedNode, setSelectedNode] = useState<any>(null);
+  const [familyTreeId, setFamilyTreeId] = useState<string | null>(null);
+  const [rootUser, setRootUser] = useState<any>(null);
+
+  const nodesRef = useRef(nodes);
+  useEffect(() => {
+    nodesRef.current = nodes;
+  }, [nodes]);
 
   const handleAddRelation = useCallback((nodeId: string) => {
     console.log('handleAddRelation called with nodeId:', nodeId);
-    const node = nodes.find(n => n.id === nodeId);
+    const node = nodesRef.current.find(n => n.id === nodeId);
     console.log('Found node:', node);
     if (!node) {
       console.log('Node not found!');
       return;
     }
     
-    console.log('Setting selectedNodeId to:', nodeId);
     setSelectedNodeId(nodeId);
     setSelectedNode(node);
     setShowRelationshipChoice(true);
-    console.log('showRelationshipChoice set to true');
     setNewMember({ 
       name: '', 
       email: '', 
@@ -178,95 +228,147 @@ const FamilyTreeBuilder: React.FC<FamilyTreeBuilderProps> = ({ onComplete, onBac
       marriageDate: '',
       marriageStatus: 'married'
     });
-  }, [nodes]);
+  }, []);
 
-  // Initialize with "You" node in center using registration data
+  // Initialize family tree, root user, and root node
   useEffect(() => {
-    if (registrationData) {
-      const rootNode: FamilyMemberNode = {
-        id: 'root',
-        type: 'familyMember',
-        position: { x: 0, y: 0 },
-        data: {
-          label: registrationData.name,
-          name: registrationData.name,
-          email: registrationData.email,
-          generation: 0,
-          isRoot: true,
-          onAddRelation: handleAddRelation
-        }
-      };
-      setNodes([rootNode]);
-    }
-  }, [registrationData, handleAddRelation]);
+    const initialize = async () => {
+      if (registrationData && !familyTreeId && nodes.length === 0) {
+        const ftId = generateId('FT');
+        await createFamilyTree({
+          familyTreeId: ftId,
+          createdBy: 'self',
+          createdAt: getCurrentDateTime(),
+        });
+        setFamilyTreeId(ftId);
+
+        const ru = await createUser({
+          userId: generateId('U'),
+          name: registrationData.name || 'You',
+          email: registrationData.email || '',
+          password: registrationData.password,
+          status: 'active',
+          familyTreeId: ftId,
+          createdBy: 'self',
+          createdAt: getCurrentDateTime(),
+          gender: registrationData.gender || 'other',
+        });
+        setRootUser(ru);
+        localStorage.setItem("userId", ru.userId);
+        localStorage.setItem("userData", JSON.stringify(ru));
+
+        const rootNode: FamilyMemberNode = {
+          id: 'root',
+          type: 'familyMember',
+          position: { x: window.innerWidth / 2 - 100, y: window.innerHeight / 2 - 100 },
+          data: {
+            label: ru.name,
+            name: ru.name,
+            email: ru.email,
+            generation: 0,
+            isRoot: true,
+            onAddRelation: handleAddRelation,
+            gender: ru.gender,
+            userId: ru.userId,
+          }
+        };
+        setNodes([rootNode]);
+      }
+    };
+    initialize();
+  }, [registrationData, handleAddRelation, setNodes, familyTreeId, nodes.length]);
 
   const onConnect = useCallback(
     (params: Connection) => setEdges((eds) => addEdge(params, eds)),
     [setEdges],
   );
 
-  const handleRelationshipCategorySelect = (category: string) => {
+  const handleRelationshipCategorySelect = async (category: string) => {
+    if (category === 'sibling') {
+      const parents = await getParents(selectedNode.data.userId);
+      if (parents.length === 0) {
+        const addParent = window.confirm("Please add parents first to connect siblings properly. Would you like to add a parent now?");
+        if (addParent) {
+          setSelectedRelationshipCategory('parent');
+          setShowRelationshipChoice(false);
+          setShowAddDialog(true);
+          return;
+        }
+        const direct = window.confirm("No parents exist. The sibling will be connected directly to you with a SIBLING relationship. OK?");
+        if (!direct) {
+          setShowRelationshipChoice(false);
+          return;
+        }
+      }
+    }
     setSelectedRelationshipCategory(category);
     setShowRelationshipChoice(false);
     setShowAddDialog(true);
   };
 
-  // Validation functions for edge cases
+  // Helper query functions with updated relationship types
+  const getParents = async (userId: string) => {
+    const cypher = `
+      MATCH (p:User)-[:PARENTS_OF]->(u:User {userId: $userId, familyTreeId: $familyTreeId})
+      RETURN p.userId as userId, p.name as name
+    `;
+    const result = await runQuery(cypher, { userId, familyTreeId });
+    return result.map((r: any) => ({ userId: r.userId, name: r.name }));
+  };
+
+  const getSpouses = async (userId: string) => {
+    const cypher = `
+      MATCH (u:User {userId: $userId, familyTreeId: $familyTreeId})-[:MARRIED_TO]->(s:User)
+      RETURN s.userId as userId, s.name as name, s.marriageStatus as marriageStatus
+      UNION
+      MATCH (s:User)-[:MARRIED_TO]->(u:User {userId: $userId, familyTreeId: $familyTreeId})
+      RETURN s.userId as userId, s.name as name, s.marriageStatus as marriageStatus
+    `;
+    const result = await runQuery(cypher, { userId, familyTreeId });
+    return result.map((r: any) => ({ userId: r.userId, name: r.name, marriageStatus: r.marriageStatus }));
+  };
+
+  const getChildren = async (userId: string) => {
+    const cypher = `
+      MATCH (u:User {userId: $userId, familyTreeId: $familyTreeId})-[:PARENTS_OF]->(c:User)
+      RETURN c.userId as userId, c.name as name
+    `;
+    const result = await runQuery(cypher, { userId, familyTreeId });
+    return result.map((r: any) => ({ userId: r.userId, name: r.name }));
+  };
+
+  const getSiblings = async (userId: string) => {
+    const cypher = `
+      MATCH (s:User)-[:SIBLING]->(u:User {userId: $userId, familyTreeId: $familyTreeId})
+      RETURN s.userId as userId, s.name as name
+    `;
+    const result = await runQuery(cypher, { userId, familyTreeId });
+    return result.map((r: any) => ({ userId: r.userId, name: r.name }));
+  };
+
+  // Validation using Neo4j queries
   const validateRelationshipAddition = async (selectedNode: any, category: string): Promise<{ valid: boolean; message?: string; requiresConfirmation?: boolean }> => {
+    if (!familyTreeId) return { valid: false, message: "Family tree not initialized." };
+    const selectedUserId = selectedNode.data.userId;
+
     if (category === 'parent') {
-      // Check parent count
-      const existingParents = nodes.filter(node => 
-        edges.some(edge => edge.target === selectedNode.id && edge.source === node.id) &&
-        relationshipCategories.parent.includes(node.data.relationship || '')
-      );
-      
-      if (existingParents.length >= 2) {
+      const parents = await getParents(selectedUserId);
+      if (parents.length >= 2) {
         return { 
           valid: false, 
           message: "A person can have max 2 parents. You can add a step-parent instead." 
         };
       }
-      
-      if (existingParents.length === 1) {
-        return {
-          valid: true,
-          requiresConfirmation: true,
-          message: `${selectedNode.data.name} already has one parent (${existingParents[0].data.name}). Is this new parent a spouse to the existing parent?`
-        };
-      }
     }
 
     if (category === 'spouse') {
-      // Check for existing married spouse
-      const existingSpouses = nodes.filter(node => 
-        edges.some(edge => 
-          (edge.source === selectedNode.id && edge.target === node.id) || 
-          (edge.target === selectedNode.id && edge.source === node.id)
-        ) &&
-        relationshipCategories.spouse.includes(node.data.relationship || '') &&
-        node.data.marriageStatus === 'married'
-      );
-      
-      if (existingSpouses.length > 0 && newMember.marriageStatus === 'married') {
+      const spouses = await getSpouses(selectedUserId);
+      const marriedSpouses = spouses.filter(s => s.marriageStatus === 'married');
+      if (marriedSpouses.length > 0 && newMember.marriageStatus === 'married') {
         return {
           valid: true,
           requiresConfirmation: true,
-          message: `${selectedNode.data.name} is already married to ${existingSpouses[0].data.name}. Do you want to end the current marriage and add a new spouse?`
-        };
-      }
-    }
-
-    if (category === 'sibling') {
-      // Check if selected person has parents
-      const hasParents = nodes.some(node => 
-        edges.some(edge => edge.target === selectedNode.id && edge.source === node.id) &&
-        relationshipCategories.parent.includes(node.data.relationship || '')
-      );
-      
-      if (!hasParents) {
-        return {
-          valid: false,
-          message: "Please add at least one parent first before adding siblings."
+          message: `${selectedNode.data.name} is already married to ${marriedSpouses[0].name}. Do you want to end the current marriage and add a new spouse?`
         };
       }
     }
@@ -274,15 +376,11 @@ const FamilyTreeBuilder: React.FC<FamilyTreeBuilderProps> = ({ onComplete, onBac
     return { valid: true };
   };
 
-  // Check if email already exists in current tree or in database
   const checkEmailExists = async (email: string): Promise<boolean> => {
-    // Check in current tree first
     const existsInTree = nodes.some(node => node.data.email === email);
     if (existsInTree) {
       return true;
     }
-
-    // Check in database
     try {
       const existingUser = await getUserByEmailOrId(email);
       return existingUser !== null;
@@ -292,7 +390,6 @@ const FamilyTreeBuilder: React.FC<FamilyTreeBuilderProps> = ({ onComplete, onBac
     }
   };
 
-  // Calculate generation based on hierarchical relationship
   const getGeneration = (relationship: string, parentGeneration: number): number => {
     if (relationshipCategories.parent.includes(relationship)) {
       return parentGeneration - 1;
@@ -304,7 +401,6 @@ const FamilyTreeBuilder: React.FC<FamilyTreeBuilderProps> = ({ onComplete, onBac
     return parentGeneration;
   };
 
-  // Enhanced position calculation for hierarchical tree structure (top to bottom)
   const calculateNodePosition = (
     parentNode: Node,
     relationship: string,
@@ -315,15 +411,12 @@ const FamilyTreeBuilder: React.FC<FamilyTreeBuilderProps> = ({ onComplete, onBac
     const parentGeneration = typeof parentNode.data?.generation === 'number' ? parentNode.data.generation : 0;
     const generation = getGeneration(relationship, parentGeneration);
 
-    const generationSpacing = 200; // Vertical spacing between generations
-    const siblingSpacing = 250; // Horizontal spacing between siblings
+    const generationSpacing = 200;
+    const siblingSpacing = 250;
 
-    // Top-to-bottom layout: negative Y for ancestors, positive Y for descendants
     const baseY = parentPos.y + (generation - parentGeneration) * generationSpacing;
 
-    // Handle different relationship categories
     if (category === 'spouse') {
-      // Place spouse horizontally adjacent
       const spouseOffset = relationship === 'husband' ? -200 : 200;
       return {
         x: parentPos.x + spouseOffset,
@@ -332,26 +425,22 @@ const FamilyTreeBuilder: React.FC<FamilyTreeBuilderProps> = ({ onComplete, onBac
     }
 
     if (category === 'parent') {
-      // Place parents above the current person
       const parentsAtLevel = existingNodes.filter(node => {
         const nodeGeneration = typeof node.data?.generation === 'number' ? node.data.generation : 0;
         return nodeGeneration === generation && relationshipCategories.parent.includes((node.data.relationship as string) || '');
       });
-      
       const parentIndex = parentsAtLevel.length;
       return {
-        x: parentPos.x + (parentIndex === 0 ? -100 : 100), // First parent left, second parent right
+        x: parentPos.x + (parentIndex === 0 ? -100 : 100),
         y: baseY
       };
     }
 
     if (category === 'child') {
-      // Place children below the current person
       const childrenAtLevel = existingNodes.filter(node => {
         const nodeGeneration = typeof node.data?.generation === 'number' ? node.data.generation : 0;
         return nodeGeneration === generation && relationshipCategories.child.includes((node.data.relationship as string) || '');
       });
-      
       const childIndex = childrenAtLevel.length;
       return {
         x: parentPos.x + (childIndex * siblingSpacing) - (childIndex > 0 ? siblingSpacing / 2 : 0),
@@ -360,14 +449,12 @@ const FamilyTreeBuilder: React.FC<FamilyTreeBuilderProps> = ({ onComplete, onBac
     }
 
     if (category === 'sibling') {
-      // Place siblings at the same level as the reference person
       const siblingsAtLevel = existingNodes.filter(node => {
         const nodeGeneration = typeof node.data?.generation === 'number' ? node.data.generation : 0;
         return nodeGeneration === parentGeneration && 
                relationshipCategories.sibling.includes((node.data.relationship as string) || '') &&
                node.id !== parentNode.id;
       });
-      
       const siblingIndex = siblingsAtLevel.length;
       return {
         x: parentPos.x + ((siblingIndex + 1) * siblingSpacing),
@@ -375,19 +462,32 @@ const FamilyTreeBuilder: React.FC<FamilyTreeBuilderProps> = ({ onComplete, onBac
       };
     }
 
-    // Default positioning
     return {
       x: parentPos.x + 200,
       y: baseY
     };
   };
 
+  const getEffectiveSource = (nodeId: string, nodes: Node[]): string => {
+    const node = nodes.find(n => n.id === nodeId);
+    return node?.parentId || nodeId;
+  };
+
+  const getNodeIdByUserId = (userId: string, nodes: Node[]): string | null => {
+    const node = nodes.find(n => n.data.userId === userId);
+    return node?.id || null;
+  };
+
   const addFamilyMember = async () => {
-    if (!newMember.name || !newMember.email || !newMember.relationship || !newMember.gender || !selectedNodeId) {
+    if (!newMember.name || !newMember.email || !newMember.relationship || !newMember.gender || !selectedNodeId || !familyTreeId || !rootUser) {
+      toast({
+        title: "Missing required fields",
+        description: "Please fill in all required fields (name, email, relationship, gender).",
+        variant: "destructive",
+      });
       return;
     }
 
-    // Validate relationship addition
     const validation = await validateRelationshipAddition(selectedNode, selectedRelationshipCategory);
     if (!validation.valid) {
       toast({
@@ -398,15 +498,21 @@ const FamilyTreeBuilder: React.FC<FamilyTreeBuilderProps> = ({ onComplete, onBac
       return;
     }
 
-    // Handle confirmation cases
+    let spouseConfirmation = false;
+    let endMarriageConfirmation = false;
+
     if (validation.requiresConfirmation) {
       const confirmed = window.confirm(validation.message + "\n\nClick OK to continue or Cancel to abort.");
       if (!confirmed) {
         return;
       }
+      if (selectedRelationshipCategory === 'parent') {
+        spouseConfirmation = true;
+      } else if (selectedRelationshipCategory === 'spouse') {
+        endMarriageConfirmation = true;
+      }
     }
 
-    // Check for email duplicates
     const emailExists = await checkEmailExists(newMember.email);
     if (emailExists) {
       toast({
@@ -418,15 +524,46 @@ const FamilyTreeBuilder: React.FC<FamilyTreeBuilderProps> = ({ onComplete, onBac
     }
 
     const selectedNodeData = nodes.find(n => n.id === selectedNodeId);
-    if (!selectedNodeData) return;
+    if (!selectedNodeData) {
+      toast({
+        title: "Error",
+        description: "Selected node not found.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    const selectedUserId = selectedNodeData.data.userId;
+
+    // Create new user in Neo4j
+    const memberData: any = {
+      userId: generateId('U'),
+      name: newMember.name,
+      email: newMember.email,
+      phone: newMember.phone,
+      status: 'invited' as const,
+      familyTreeId,
+      createdBy: rootUser.userId,
+      createdAt: getCurrentDateTime(),
+      myRelationship: newMember.relationship,
+      gender: newMember.gender || 'other',
+      dateOfBirth: newMember.dateOfBirth,
+    };
+
+    if (selectedRelationshipCategory === 'spouse') {
+      memberData.marriageStatus = newMember.marriageStatus;
+      memberData.marriageDate = newMember.marriageDate;
+    }
+
+    const createdMember = await createUser(memberData);
+    const newUserId = createdMember.userId;
 
     const newNodeId = `node-${Date.now()}`;
     const selectedGeneration = typeof selectedNodeData.data?.generation === 'number' ? selectedNodeData.data.generation : 0;
     const generation = getGeneration(newMember.relationship, selectedGeneration);
 
-    const position = calculateNodePosition(selectedNodeData, newMember.relationship, nodes, selectedRelationshipCategory);
-
-    const newNode: FamilyMemberNode = {
+    let position = calculateNodePosition(selectedNodeData, newMember.relationship, nodes, selectedRelationshipCategory);
+    let newNode: FamilyMemberNode = {
       id: newNodeId,
       type: 'familyMember',
       position,
@@ -441,99 +578,264 @@ const FamilyTreeBuilder: React.FC<FamilyTreeBuilderProps> = ({ onComplete, onBac
         gender: newMember.gender,
         dateOfBirth: newMember.dateOfBirth,
         marriageDate: newMember.marriageDate,
-        marriageStatus: newMember.marriageStatus
+        marriageStatus: newMember.marriageStatus,
+        userId: newUserId,
       }
     };
 
-    // Create appropriate edge based on relationship hierarchy
-    let sourceId = selectedNodeId;
-    let targetId = newNodeId;
-    
-    // For hierarchical relationships, parent should be source, child should be target
+    let additionalUiEdges: Edge[] = [];
+
+    // Handle relationship creation and visualization
     if (selectedRelationshipCategory === 'parent') {
-      sourceId = newNodeId;
-      targetId = selectedNodeId;
+  const existingParents = await getParents(selectedUserId);
+  if (existingParents.length === 1) {
+    // Create MARRIED_TO between existing parent and new parent
+    const existingParentId = existingParents[0].userId;
+    const existsMarriedTo = await edgeExists(familyTreeId, existingParentId, newUserId, 'MARRIED_TO');
+    if (!existsMarriedTo) {
+      await createMarriedTo(familyTreeId, existingParentId, newUserId);
     }
 
-    const newEdge: Edge = {
-      id: `edge-${sourceId}-${targetId}`,
-      source: sourceId,
-      target: targetId,
-      type: 'smoothstep',
-      style: {
-        stroke: '#3b82f6',
-        strokeWidth: 2,
-      },
-      markerEnd: {
-        type: 'arrowclosed' as any,
-        color: '#3b82f6'
-      }
-    };
+    // Create couple group for existing parent and new parent
+    const existingParentNode = nodes.find(n => n.data.userId === existingParentId);
+    if (existingParentNode) {
+      const selectedPos = existingParentNode.position;
+      const spousePos = position;
+      const minX = Math.min(selectedPos.x, spousePos.x);
+      const minY = Math.min(selectedPos.y, spousePos.y);
+      const maxX = minX + 200;
+      const maxY = minY + 120;
+      const groupPosition = { x: minX, y: minY };
+      const groupWidth = 220;
+      const groupHeight = 140;
 
-    // Auto-link logic for special cases
-    let additionalEdges: Edge[] = [];
-    
-    // If adding spouse and selected person has children, auto-link to children
-    if (selectedRelationshipCategory === 'spouse') {
-      const children = nodes.filter(node => 
-        edges.some(edge => edge.source === selectedNodeId && edge.target === node.id) &&
-        relationshipCategories.child.includes(node.data.relationship || '')
-      );
-      
+      const groupId = `group-${Date.now()}`;
+      const groupNode: Node = {
+        id: groupId,
+        type: 'coupleGroup',
+        position: groupPosition,
+        style: { width: groupWidth, height: groupHeight, position: 'relative', overflow: 'hidden' },
+        data: {},
+      };
+
+      // Update existing parent with parentId and relative position
+      const existingParentRelativePos = { x: (selectedPos.x - minX), y: (selectedPos.y - minY) };
+      const updatedNodes = nodes.map(n => n.data.userId === existingParentId ? { ...n, parentId: groupId, position: existingParentRelativePos } : n);
+
+      // Set new node parentId and relative position, ensuring it fits within group
+      const newRelativePos = { x: Math.min(180, Math.max(20, spousePos.x - minX)), y: Math.min(100, Math.max(20, spousePos.y - minY)) };
+      newNode.parentId = groupId;
+      newNode.position = newRelativePos;
+
+      // Add group node
+      updatedNodes.push(groupNode);
+
+      setNodes(updatedNodes);
+
+      // Update existing children edges to point from group
+      const children = await getChildren(existingParentId);
+      for (const child of children) {
+        const existsParentOf = await edgeExists(familyTreeId, newUserId, child.userId, 'PARENTS_OF');
+        if (!existsParentOf) {
+          await createParentsOf(familyTreeId, newUserId, child.userId);
+        }
+        const childNodeId = getNodeIdByUserId(child.userId, nodes);
+        if (childNodeId) {
+          const childEdge: Edge = {
+            id: `edge-${groupId}-${childNodeId}`,
+            source: groupId,
+            target: childNodeId,
+            type: 'smoothstep',
+            style: { stroke: '#3b82f6', strokeWidth: 2 },
+            markerEnd: { type: 'arrowclosed' as any, color: '#3b82f6' }
+          };
+          additionalUiEdges.push(childEdge);
+        }
+      }
+
+      // Remove old child edges from existing parent
+      setEdges((eds) => eds.filter(e => e.source !== existingParentNode.id));
+    }
+  }
+  // Create PARENTS_OF from new parent to current node only if it doesn't exist
+  const existsParentOf = await edgeExists(familyTreeId, newUserId, selectedUserId, 'PARENTS_OF');
+  if (!existsParentOf) {
+    await createParentsOf(familyTreeId, newUserId, selectedUserId);
+  }
+      // UI edge from effective source (parent's couple group if exists)
+      const effectiveSource = getEffectiveSource(newNodeId, [...nodes, newNode]);
+      const newEdge: Edge = {
+        id: `edge-${newNodeId}-${selectedNodeId}`,
+        source: effectiveSource,
+        target: selectedNodeId,
+        type: 'smoothstep',
+        style: { stroke: '#3b82f6', strokeWidth: 2 },
+        markerEnd: { type: 'arrowclosed' as any, color: '#3b82f6' }
+      };
+      additionalUiEdges.push(newEdge);
+    } else if (selectedRelationshipCategory === 'spouse') {
+      // Create MARRIED_TO in one direction only
+      const marriedToSuccess = await createMarriedTo(familyTreeId, selectedUserId, newUserId);
+      if (!marriedToSuccess) {
+        console.error('Failed to create MARRIED_TO edge from selected user to new user');
+        return;
+      }
+
+      // Create couple group
+      const selectedPos = selectedNodeData.position;
+      const spousePos = position;
+      const minX = Math.min(selectedPos.x, spousePos.x);
+      const minY = Math.min(selectedPos.y, spousePos.y);
+      const maxX = minX + 200;
+      const maxY = minY + 120;
+      const groupPosition = { x: minX, y: minY };
+      const groupWidth = 220;
+      const groupHeight = 140;
+
+      const groupId = `group-${Date.now()}`;
+      const groupNode: Node = {
+        id: groupId,
+        type: 'coupleGroup',
+        position: groupPosition,
+        style: { width: groupWidth, height: groupHeight, position: 'relative', overflow: 'hidden' },
+        data: {},
+      };
+
+      // Update selected node with parentId and relative position
+      const selectedRelativePos = { x: (selectedPos.x - minX), y: (selectedPos.y - minY) };
+      const updatedNodes = nodes.map(n => n.id === selectedNodeId ? { ...n, parentId: groupId, position: selectedRelativePos } : n);
+
+      // Set new node parentId and relative position, ensuring it fits within group
+      const newRelativePos = { x: Math.min(180, Math.max(20, spousePos.x - minX)), y: Math.min(100, Math.max(20, spousePos.y - minY)) };
+      newNode.parentId = groupId;
+      newNode.position = newRelativePos;
+
+      // Add group node
+      updatedNodes.push(groupNode);
+
+      setNodes(updatedNodes);
+
+      // Handle existing children
+      const children = await getChildren(selectedUserId);
       if (children.length > 0) {
         const linkToChildren = window.confirm(`Do you want to connect ${newMember.name} to all existing children of ${selectedNodeData.data.name}?`);
         if (linkToChildren) {
-          additionalEdges = children.map(child => ({
-            id: `edge-${newNodeId}-${child.id}`,
-            source: newNodeId,
-            target: child.id,
-            type: 'smoothstep',
-            style: { stroke: '#10b981', strokeWidth: 2 },
-            markerEnd: { type: 'arrowclosed' as any, color: '#10b981' }
-          }));
+          for (const child of children) {
+            await createParentsOf(familyTreeId, newUserId, child.userId);
+            const childNodeId = getNodeIdByUserId(child.userId, nodes);
+            if (childNodeId) {
+              const childEdge: Edge = {
+                id: `edge-${groupId}-${childNodeId}`,
+                source: groupId,
+                target: childNodeId,
+                type: 'smoothstep',
+                style: { stroke: '#3b82f6', strokeWidth: 2 },
+                markerEnd: { type: 'arrowclosed' as any, color: '#3b82f6' }
+              };
+              additionalUiEdges.push(childEdge);
+            }
+          }
+          // Remove old child edges from selected node
+          setEdges((eds) => eds.filter(e => e.source !== selectedNodeId));
         }
       }
-    }
+   } 
+  //else if (selectedRelationshipCategory === 'child') {
+  // // Check for spouse and create PARENTS_OF edges
+  // const spouses = await getSpouses(selectedUserId);
+  // for (const spouse of spouses) {
+  //   if (spouse.marriageStatus === 'married') {
+  //     const existsParentOfSpouse = await edgeExists(familyTreeId, spouse.userId, newUserId, 'PARENTS_OF');
+  //     if (!existsParentOfSpouse) {
+  //       await createParentsOf(familyTreeId, spouse.userId, newUserId);
+  //     }
+  //   }
+  // }
 
-    // If adding child and selected person has spouse, auto-link to spouse
-    if (selectedRelationshipCategory === 'child') {
-      const spouse = nodes.find(node => 
-        edges.some(edge => 
-          (edge.source === selectedNodeId && edge.target === node.id) || 
-          (edge.target === selectedNodeId && edge.source === node.id)
-        ) &&
-        relationshipCategories.spouse.includes(node.data.relationship || '')
-      );
-      
-      if (spouse) {
-        additionalEdges.push({
-          id: `edge-${spouse.id}-${newNodeId}`,
-          source: spouse.id,
+  // // Create PARENTS_OF from current node to child, avoiding duplicates
+  // const existsParentOfCurrent = await edgeExists(familyTreeId, selectedUserId, newUserId, 'PARENTS_OF');
+  // if (!existsParentOfCurrent) {
+  //   await createParentsOf(familyTreeId, selectedUserId, newUserId);
+  // }
+
+  // // UI edge from effective source (couple group if exists)
+  // const effectiveSource = getEffectiveSource(selectedNodeId, nodes);
+  // const newEdge: Edge = {
+  //   id: `edge-${effectiveSource}-${newNodeId}`,
+  //   source: effectiveSource,
+  //   target: newNodeId,
+  //   type: 'smoothstep',
+  //   style: { stroke: '#3b82f6', strokeWidth: 2 },
+  //   markerEnd: { type: 'arrowclosed' as any, color: '#3b82f6' }
+  // };
+  // additionalUiEdges.push(newEdge);
+//}
+
+else if (selectedRelationshipCategory === 'child') {
+  // Check for spouses and create PARENTS_OF edges
+  const spouses = await getSpouses(selectedUserId);
+  for (const spouse of spouses) {
+    const existsParentOfSpouse = await edgeExists(familyTreeId, spouse.userId, newUserId, 'PARENTS_OF');
+    if (!existsParentOfSpouse) {
+      await createParentsOf(familyTreeId, spouse.userId, newUserId);
+    }
+  }
+
+  // Create PARENTS_OF from current node to child, avoiding duplicates
+  const existsParentOfCurrent = await edgeExists(familyTreeId, selectedUserId, newUserId, 'PARENTS_OF');
+  if (!existsParentOfCurrent) {
+    await createParentsOf(familyTreeId, selectedUserId, newUserId);
+  }
+
+  // UI edge from effective source (couple group if exists)
+  const effectiveSource = getEffectiveSource(selectedNodeId, nodes);
+  const newEdge: Edge = {
+    id: `edge-${effectiveSource}-${newNodeId}`,
+    source: effectiveSource,
+    target: newNodeId,
+    type: 'smoothstep',
+    style: { stroke: '#3b82f6', strokeWidth: 2 },
+    markerEnd: { type: 'arrowclosed' as any, color: '#3b82f6' }
+  };
+  additionalUiEdges.push(newEdge);
+}
+
+else if (selectedRelationshipCategory === 'sibling') {
+      const parents = await getParents(selectedUserId);
+      if (parents.length > 0) {
+        for (const parent of parents) {
+          await createParentsOf(familyTreeId, parent.userId, newUserId);
+          const parentNodeId = getNodeIdByUserId(parent.userId, nodes);
+          if (parentNodeId) {
+            const effectiveSource = getEffectiveSource(parentNodeId, nodes);
+            const sibEdge: Edge = {
+              id: `edge-${effectiveSource}-${newNodeId}`,
+              source: effectiveSource,
+              target: newNodeId,
+              type: 'smoothstep',
+              style: { stroke: '#3b82f6', strokeWidth: 2 },
+              markerEnd: { type: 'arrowclosed' as any, color: '#3b82f6' }
+            };
+            additionalUiEdges.push(sibEdge);
+          }
+        }
+      } else {
+        // Direct SIBLING relationship
+        await createSibling(familyTreeId, selectedUserId, newUserId);
+        const effectiveSource = getEffectiveSource(selectedNodeId, nodes);
+        const newEdge: Edge = {
+          id: `edge-${effectiveSource}-${newNodeId}`,
+          source: effectiveSource,
           target: newNodeId,
           type: 'smoothstep',
-          style: { stroke: '#10b981', strokeWidth: 2 },
-          markerEnd: { type: 'arrowclosed' as any, color: '#10b981' }
-        });
+          style: { stroke: '#8b5cf6', strokeWidth: 2 },
+          markerEnd: { type: 'arrowclosed' as any, color: '#8b5cf6' }
+        };
+        additionalUiEdges.push(newEdge);
       }
     }
 
-    // If adding sibling, link to same parents
-    if (selectedRelationshipCategory === 'sibling') {
-      const parents = nodes.filter(node => 
-        edges.some(edge => edge.source === node.id && edge.target === selectedNodeId) &&
-        relationshipCategories.parent.includes(node.data.relationship || '')
-      );
-      
-      additionalEdges = parents.map(parent => ({
-        id: `edge-${parent.id}-${newNodeId}`,
-        source: parent.id,
-        target: newNodeId,
-        type: 'smoothstep',
-        style: { stroke: '#8b5cf6', strokeWidth: 2 },
-        markerEnd: { type: 'arrowclosed' as any, color: '#8b5cf6' }
-      }));
-    }
-
+    // Add new node
     setNodes((nds) => nds.map(node => ({
       ...node,
       data: {
@@ -542,7 +844,8 @@ const FamilyTreeBuilder: React.FC<FamilyTreeBuilderProps> = ({ onComplete, onBac
       }
     })).concat([newNode]));
 
-    setEdges((eds) => [...eds, newEdge, ...additionalEdges]);
+    // Add additional UI edges
+    setEdges((eds) => [...eds, ...additionalUiEdges]);
 
     setShowAddDialog(false);
     setSelectedRelationshipCategory('');
@@ -563,27 +866,6 @@ const FamilyTreeBuilder: React.FC<FamilyTreeBuilderProps> = ({ onComplete, onBac
     });
   };
 
-   // This function is not needed for storing unidirectional relationships as per new requirement
-   // const getOppositeRelationship = (relationship: string): string => {
-  //   if (!relationship || typeof relationship !== 'string') return "family";
-  //   const opposites: Record<string, string> = {
-  //     "father": "child",
-  //     "mother": "child",
-  //     "son": "parent",
-  //     "daughter": "parent",
-  //     "brother": "sibling",
-  //     "sister": "sibling",
-  //     "husband": "wife",
-  //     "wife": "husband",
-  //     "grandfather": "grandchild",
-  //     "grandmother": "grandchild",
-  //     "grandson": "grandparent",
-  //     "granddaughter": "grandparent"
-  //   };
-  //   return opposites[relationship.toLowerCase()] || "family";
-  // };
-
-
   const handleComplete = async () => {
     if (nodes.length <= 1) {
       toast({
@@ -596,85 +878,6 @@ const FamilyTreeBuilder: React.FC<FamilyTreeBuilderProps> = ({ onComplete, onBac
 
     setIsLoading(true);
     try {
-      console.log('Starting family tree creation...');
-      const familyTreeId = generateId('FT');
-      await createFamilyTree({
-        familyTreeId,
-        createdBy: 'self',
-        createdAt: getCurrentDateTime(),
-      });
-
-      // 1. Create all users and build a nodeId → userId map
-      const nodeIdToUserId: Record<string, string> = {};
-      // Create root user
-      const rootUser = await createUser({
-        userId: generateId('U'),
-        name: registrationData.name,
-        email: registrationData.email,
-        password: registrationData.password,
-        status: 'active' as const,
-        familyTreeId,
-        createdBy: 'self',
-        createdAt: getCurrentDateTime(),
-        gender: registrationData.gender,
-      });
-      nodeIdToUserId['root'] = rootUser.userId;
-      localStorage.setItem("userId", rootUser.userId);
-      localStorage.setItem("userData", JSON.stringify(rootUser));
-
-      // Create all other users
-      for (const node of nodes) {
-        if (node.id !== 'root') {
-          let createdMember = null;
-          let memberUserId = null;
-          let existingUser = await getUserByEmailOrId(node.data.email);
-          if (!existingUser && node.data.userId) {
-            existingUser = await getUserByEmailOrId(node.data.userId);
-          }
-          if (existingUser) {
-            createdMember = existingUser;
-            memberUserId = existingUser.userId;
-          } else {
-            const memberData = {
-              userId: generateId('U'),
-              name: node.data.name,
-              email: node.data.email,
-              phone: node.data.phone,
-              status: 'invited' as const,
-              familyTreeId,
-              createdBy: rootUser.userId,
-              createdAt: getCurrentDateTime(),
-              myRelationship: node.data.relationship,
-              gender: node.data.gender || 'other',
-            };
-            createdMember = await createUser(memberData);
-            memberUserId = createdMember.userId;
-          }
-          nodeIdToUserId[node.id] = memberUserId;
-        }
-      }
-
-      // 2. Create unidirectional relationships based on the edge direction and selected relationship
-      for (const edge of edges) {
-        const sourceNode = nodes.find(n => n.id === edge.source);
-        const targetNode = nodes.find(n => n.id === edge.target);
-        if (!sourceNode || !targetNode) continue;
-
-        const sourceUserId = nodeIdToUserId[sourceNode.id];
-        const targetUserId = nodeIdToUserId[targetNode.id];
-        const targetNodeRelationship = targetNode.data.relationship?.toLowerCase();
-
-        // Store the relationship as it was created in the UI with the selected label
-        if (targetNodeRelationship) {
-            await createRelationshipInNeo4j(
-                familyTreeId,
-                sourceUserId,
-                targetUserId,
-                targetNodeRelationship // Use the selected relationship directly
-            );
-        }
-      }
-
       toast({
         title: "Family Tree Created!",
         description: "Your family tree has been saved successfully.",
@@ -684,12 +887,11 @@ const FamilyTreeBuilder: React.FC<FamilyTreeBuilderProps> = ({ onComplete, onBac
         state: { user: rootUser },
         replace: true
       });
-
     } catch (error) {
-      console.error('Error saving family tree:', error);
+      console.error('Error completing family tree:', error);
       toast({
         title: "Error",
-        description: "Failed to save family tree. Please try again.",
+        description: "Failed to complete family tree. Please try again.",
         variant: "destructive",
       });
     } finally {
@@ -840,7 +1042,7 @@ const FamilyTreeBuilder: React.FC<FamilyTreeBuilderProps> = ({ onComplete, onBac
               </>
             )}
 
-            <div>
+           <div>
               <Label htmlFor="dateOfBirth" className="text-sm font-medium">Date of Birth</Label>
               <Input
                 id="dateOfBirth"
@@ -882,7 +1084,6 @@ const FamilyTreeBuilder: React.FC<FamilyTreeBuilderProps> = ({ onComplete, onBac
         </DialogContent>
       </Dialog>
 
-      {/* Relationship Category Selection Dialog */}
       <Dialog open={showRelationshipChoice} onOpenChange={setShowRelationshipChoice}>
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
