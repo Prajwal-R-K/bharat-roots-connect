@@ -215,8 +215,6 @@ const FamilyTreeViewPage: React.FC = () => {
                   viewMode="all"
                   minHeight="700px"
                   showControls={true}
-                  onNodeClick={handleNodeSelection}
-                  selectedNodes={selectedNodes}
                 />
               ) : (
                 <div className="h-full flex flex-col items-center justify-center bg-gray-50 text-gray-500">

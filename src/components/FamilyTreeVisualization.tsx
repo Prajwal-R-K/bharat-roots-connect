@@ -92,11 +92,9 @@ const getReciprocalRelationship = (relationship: string, targetGender: string, s
   return targetReciprocal;
 };
 
-// Custom family member node component
+// Custom family member node component for single person
 const FamilyMemberNode = ({ data, id }: { data: any; id: string }) => {
   const getNodeColor = () => {
-    // Use logged-in user (data.loginUserId) to determine crown color;
-    // the node whose id matches loginUserId gets the crown.
     if (data.userId === data.loginUserId) return 'border-amber-400 bg-amber-50';
     if (data.gender === 'male') return 'border-blue-400 bg-blue-50';
     if (data.gender === 'female') return 'border-pink-400 bg-pink-50';
@@ -125,10 +123,70 @@ const FamilyMemberNode = ({ data, id }: { data: any; id: string }) => {
               {data.relationship}
             </Badge>
           )}
-          {/* Show crown if this node is the logged-in user */}
           {data.userId === data.loginUserId && (
             <Crown className="w-4 h-4 text-amber-500 mx-auto mt-1" />
           )}
+        </div>
+      </div>
+    </div>
+  );
+};
+
+// Custom couple node component for married pairs
+const CoupleNode = ({ data, id }: { data: any; id: string }) => {
+  const spouse1 = data.spouse1;
+  const spouse2 = data.spouse2;
+  
+  const getPersonColor = (person: any) => {
+    if (person.userId === data.loginUserId) return 'border-amber-400 bg-amber-50';
+    if (person.gender === 'male') return 'border-blue-400 bg-blue-50';
+    if (person.gender === 'female') return 'border-pink-400 bg-pink-50';
+    return 'border-gray-400 bg-gray-50';
+  };
+
+  return (
+    <div className="relative bg-gray-100 border-2 border-gray-300 rounded-xl p-4 min-w-[320px] shadow-lg">
+      <Handle type="target" position={Position.Top} className="w-2 h-2 bg-gray-400" />
+      <Handle type="source" position={Position.Bottom} className="w-2 h-2 bg-gray-400" />
+      
+      <div className="flex items-center justify-center space-x-4">
+        {/* First spouse */}
+        <div className={`${getPersonColor(spouse1)} border-2 rounded-lg p-2 min-w-[120px] shadow-sm`}>
+          <div className="flex flex-col items-center space-y-1">
+            <Avatar className="w-8 h-8">
+              <AvatarImage src={spouse1.profilePicture} />
+              <AvatarFallback className="text-xs font-semibold">
+                {spouse1.name.split(' ').map((n: string) => n[0]).join('').toUpperCase()}
+              </AvatarFallback>
+            </Avatar>
+            <div className="text-center">
+              <div className="font-semibold text-xs text-gray-800">{spouse1.name}</div>
+              {spouse1.userId === data.loginUserId && (
+                <Crown className="w-3 h-3 text-amber-500 mx-auto mt-1" />
+              )}
+            </div>
+          </div>
+        </div>
+        
+        {/* Marriage symbol */}
+        <Heart className="w-6 h-6 text-red-500 flex-shrink-0" />
+        
+        {/* Second spouse */}
+        <div className={`${getPersonColor(spouse2)} border-2 rounded-lg p-2 min-w-[120px] shadow-sm`}>
+          <div className="flex flex-col items-center space-y-1">
+            <Avatar className="w-8 h-8">
+              <AvatarImage src={spouse2.profilePicture} />
+              <AvatarFallback className="text-xs font-semibold">
+                {spouse2.name.split(' ').map((n: string) => n[0]).join('').toUpperCase()}
+              </AvatarFallback>
+            </Avatar>
+            <div className="text-center">
+              <div className="font-semibold text-xs text-gray-800">{spouse2.name}</div>
+              {spouse2.userId === data.loginUserId && (
+                <Crown className="w-3 h-3 text-amber-500 mx-auto mt-1" />
+              )}
+            </div>
+          </div>
         </div>
       </div>
     </div>
@@ -146,35 +204,74 @@ const calculateNodePositions = (
   const nodeMap = new Map<string, FamilyMember>();
   members.forEach(member => nodeMap.set(member.userId, member));
   
+  // Find spouse relationships to create couple nodes
+  const spouseRelationships = relationships.filter(rel => 
+    ['spouse', 'husband', 'wife'].includes(rel.type.toLowerCase())
+  );
+  
+  const coupleGroups = new Map<string, string[]>();
+  const processedSpouses = new Set<string>();
+  
+  // Group spouses together
+  spouseRelationships.forEach(rel => {
+    if (!processedSpouses.has(rel.source) && !processedSpouses.has(rel.target)) {
+      const coupleId = `couple_${rel.source}_${rel.target}`;
+      coupleGroups.set(coupleId, [rel.source, rel.target]);
+      processedSpouses.add(rel.source);
+      processedSpouses.add(rel.target);
+    }
+  });
+  
   const positions = new Map<string, { x: number; y: number; generation: number }>();
   const processedNodes = new Set<string>();
   
   // Start with the createdBy node at center
   const rootPosition = { x: 0, y: 0, generation: 0 };
-  positions.set(createdByUserId, rootPosition);
   
-  const queue: Array<{ userId: string; fromUserId?: string }> = [{ userId: createdByUserId }];
+  // Check if root user is part of a couple
+  const rootCoupleId = Array.from(coupleGroups.entries()).find(([coupleId, spouses]) => 
+    spouses.includes(createdByUserId)
+  )?.[0];
+  
+  if (rootCoupleId) {
+    positions.set(rootCoupleId, rootPosition);
+    const spouses = coupleGroups.get(rootCoupleId)!;
+    spouses.forEach(spouseId => processedNodes.add(spouseId));
+  } else {
+    positions.set(createdByUserId, rootPosition);
+    processedNodes.add(createdByUserId);
+  }
+  
+  const queue: Array<{ nodeId: string; fromNodeId?: string }> = [
+    { nodeId: rootCoupleId || createdByUserId }
+  ];
   
   // Generation tracking for y-positioning
   const generationCounts = new Map<number, number>();
   generationCounts.set(0, 0);
   
   while (queue.length > 0) {
-    const { userId, fromUserId } = queue.shift()!;
+    const { nodeId, fromNodeId } = queue.shift()!;
     
-    if (processedNodes.has(userId)) continue;
-    processedNodes.add(userId);
+    const currentPos = positions.get(nodeId)!;
     
-    const currentPos = positions.get(userId)!;
-    
-    // Find all relationships from this node
-    const nodeRelationships = relationships.filter(rel => rel.source === userId);
+    // Find all relationships from this node (or couple)
+    const nodeRelationships = relationships.filter(rel => {
+      if (nodeId.startsWith('couple_')) {
+        const spouses = coupleGroups.get(nodeId)!;
+        return spouses.includes(rel.source);
+      }
+      return rel.source === nodeId;
+    });
     
     let ancestorCount = 0;
     let descendantCount = 0;
     let siblingCount = 0;
     
     nodeRelationships.forEach(rel => {
+      // Skip spouse relationships as they're handled in couples
+      if (['spouse', 'husband', 'wife'].includes(rel.type.toLowerCase())) return;
+      
       if (processedNodes.has(rel.target)) return;
       
       const category = getRelationshipCategory(rel.type);
@@ -183,126 +280,171 @@ const calculateNodePositions = (
       
       let targetGeneration: number;
       let xOffset: number;
+      const spacing = 350; // Increased spacing for bigger boxes
       
       switch (category) {
         case 'ancestor':
           targetGeneration = currentPos.generation - 1;
-          xOffset = ancestorCount * 200 - ((nodeRelationships.filter(r => getRelationshipCategory(r.type) === 'ancestor').length - 1) * 100);
+          xOffset = ancestorCount * spacing - ((nodeRelationships.filter(r => 
+            !['spouse', 'husband', 'wife'].includes(r.type.toLowerCase()) && 
+            getRelationshipCategory(r.type) === 'ancestor'
+          ).length - 1) * spacing / 2);
           ancestorCount++;
           break;
         case 'descendant':
           targetGeneration = currentPos.generation + 1;
-          xOffset = descendantCount * 200 - ((nodeRelationships.filter(r => getRelationshipCategory(r.type) === 'descendant').length - 1) * 100);
+          xOffset = descendantCount * spacing - ((nodeRelationships.filter(r => 
+            !['spouse', 'husband', 'wife'].includes(r.type.toLowerCase()) && 
+            getRelationshipCategory(r.type) === 'descendant'
+          ).length - 1) * spacing / 2);
           descendantCount++;
           break;
         case 'sibling':
         default:
           targetGeneration = currentPos.generation;
-          xOffset = currentPos.x + (siblingCount + 1) * 250;
+          xOffset = currentPos.x + (siblingCount + 1) * spacing;
           siblingCount++;
           break;
       }
       
-      // Count nodes in generation for x-positioning
-      const genCount = generationCounts.get(targetGeneration) || 0;
-      generationCounts.set(targetGeneration, genCount + 1);
-      
       const targetPosition = {
         x: category === 'sibling' ? xOffset : currentPos.x + xOffset,
-        y: targetGeneration * 200,
+        y: targetGeneration * 250, // Increased vertical spacing
         generation: targetGeneration
       };
       
-      positions.set(rel.target, targetPosition);
-      queue.push({ userId: rel.target, fromUserId: userId });
+      // Check if target is part of a couple
+      const targetCoupleId = Array.from(coupleGroups.entries()).find(([coupleId, spouses]) => 
+        spouses.includes(rel.target)
+      )?.[0];
+      
+      if (targetCoupleId && !positions.has(targetCoupleId)) {
+        positions.set(targetCoupleId, targetPosition);
+        const spouses = coupleGroups.get(targetCoupleId)!;
+        spouses.forEach(spouseId => processedNodes.add(spouseId));
+        queue.push({ nodeId: targetCoupleId, fromNodeId: nodeId });
+      } else if (!targetCoupleId && !processedNodes.has(rel.target)) {
+        positions.set(rel.target, targetPosition);
+        processedNodes.add(rel.target);
+        queue.push({ nodeId: rel.target, fromNodeId: nodeId });
+      }
     });
   }
   
-  // Convert to nodes and edges
-  const nodes: Node[] = Array.from(positions.entries()).map(([userId, pos]) => {
-    const member = nodeMap.get(userId)!;
-    return {
-      id: userId,
-      type: 'familyMember',
-      position: { x: pos.x + 1000, y: pos.y + 500 }, // Offset to center in viewport
-      data: {
-        name: member.name,
-        email: member.email,
-        relationship: member.relationship,
-        profilePicture: member.profilePicture,
-        gender: member.gender,
-        userId: member.userId,
-        // Pass loggedInUserId from auth (currently logged in user)
-        loginUserId: loggedInUserId,
-        isRoot: userId === createdByUserId,
-        status: member.status
-      }
-    };
+  // Convert to nodes
+  const nodes: Node[] = [];
+  
+  // Add couple nodes
+  coupleGroups.forEach((spouses, coupleId) => {
+    const pos = positions.get(coupleId);
+    if (pos) {
+      const spouse1 = nodeMap.get(spouses[0])!;
+      const spouse2 = nodeMap.get(spouses[1])!;
+      
+      nodes.push({
+        id: coupleId,
+        type: 'couple',
+        position: { x: pos.x + 1000, y: pos.y + 500 },
+        data: {
+          spouse1,
+          spouse2,
+          loginUserId: loggedInUserId,
+          isRoot: spouses.includes(createdByUserId)
+        }
+      });
+    }
   });
   
-  const edges: Edge[] = relationships.map(rel => {
-    const sourcePos = positions.get(rel.source)?.y || 0;
-    const targetPos = positions.get(rel.target)?.y || 0;
-    const isTopToBottom = sourcePos < targetPos; // Ensure top-to-bottom direction
-    const sourceId = isTopToBottom ? rel.source : rel.target;
-    const targetId = isTopToBottom ? rel.target : rel.source;
-    const sourceMember = nodeMap.get(rel.source); // Original source
-    const targetMember = nodeMap.get(rel.target); // Original target
-    
-    // Skip edges where members are missing or don't have gender
-    if (!sourceMember || !targetMember || !sourceMember.gender || !targetMember.gender) {
-      console.warn(`Skipping edge for missing members or gender: ${rel.source} -> ${rel.target}`);
-      return null;
+  // Add single nodes
+  Array.from(positions.entries()).forEach(([nodeId, pos]) => {
+    if (!nodeId.startsWith('couple_') && !processedSpouses.has(nodeId)) {
+      const member = nodeMap.get(nodeId)!;
+      nodes.push({
+        id: nodeId,
+        type: 'familyMember',
+        position: { x: pos.x + 1000, y: pos.y + 500 },
+        data: {
+          name: member.name,
+          email: member.email,
+          relationship: member.relationship,
+          profilePicture: member.profilePicture,
+          gender: member.gender,
+          userId: member.userId,
+          loginUserId: loggedInUserId,
+          isRoot: nodeId === createdByUserId,
+          status: member.status
+        }
+      });
     }
+  });
+  
+  // Create edges, handling couple nodes properly
+  const edges: Edge[] = relationships
+    .filter(rel => !['spouse', 'husband', 'wife'].includes(rel.type.toLowerCase())) // Skip spouse edges
+    .map(rel => {
+      const sourceMember = nodeMap.get(rel.source);
+      const targetMember = nodeMap.get(rel.target);
+      
+      if (!sourceMember || !targetMember) {
+        console.warn(`Skipping edge for missing members: ${rel.source} -> ${rel.target}`);
+        return null;
+      }
 
-    // Determine the display labels based on edge direction
-    const originalRel = rel.type.toLowerCase();
-    let directRel: string;
-    let reciprocalRel: string;
-
-    if (isTopToBottom) {
-      // From source → target (normal case)
-      directRel = originalRel;
-      reciprocalRel = getReciprocalRelationship(originalRel, targetMember.gender, sourceMember.gender);
+      // Find the actual node IDs (might be couple IDs)
+      let sourceNodeId = rel.source;
+      let targetNodeId = rel.target;
+      
+      // Check if source is part of a couple
+      const sourceCoupleId = Array.from(coupleGroups.entries()).find(([coupleId, spouses]) => 
+        spouses.includes(rel.source)
+      )?.[0];
+      if (sourceCoupleId) sourceNodeId = sourceCoupleId;
+      
+      // Check if target is part of a couple  
+      const targetCoupleId = Array.from(coupleGroups.entries()).find(([coupleId, spouses]) => 
+        spouses.includes(rel.target)
+      )?.[0];
+      if (targetCoupleId) targetNodeId = targetCoupleId;
+      
+      const sourcePos = positions.get(sourceNodeId)?.y || 0;
+      const targetPos = positions.get(targetNodeId)?.y || 0;
+      const isTopToBottom = sourcePos < targetPos;
+      
+      const finalSourceId = isTopToBottom ? sourceNodeId : targetNodeId;
+      const finalTargetId = isTopToBottom ? targetNodeId : sourceNodeId;
+      
+      // Determine relationship label
+      const originalRel = rel.type.toLowerCase();
+      let directRel = originalRel;
+      
       if (['father', 'mother'].includes(originalRel)) {
-        // Source is parent, target is child
         directRel = targetMember.gender === 'male' ? 'son' : 'daughter';
       }
-    } else {
-      // From target → source (reversed edge)
-      directRel = getReciprocalRelationship(originalRel, targetMember.gender, sourceMember.gender);
-      reciprocalRel = originalRel;
-      if (['father', 'mother'].includes(originalRel)) {
-        // Target is parent, source is child
-        directRel = sourceMember.gender === 'male' ? 'son' : 'daughter';
-      } else if (['son', 'daughter'].includes(originalRel)) {
-        // Target is child, source is parent
-        directRel = targetMember.gender === 'male' ? 'son' : 'daughter';
-      }
-    }
 
-    return {
-      id: `${sourceId}-${targetId}`,
-      source: sourceId,
-      target: targetId,
-      type: 'smoothstep',
-      animated: false,
-      style: { stroke: '#6366f1', strokeWidth: 2 },
-      markerEnd: { type: MarkerType.ArrowClosed, color: '#6366f1' },
-      data: {
-        relationship: directRel,
-        reciprocalRelationship: reciprocalRel,
-        sourceName: sourceMember.name,
-        targetName: targetMember.name
-      }
-    };
-  }).filter(edge => edge !== null) as Edge[];
+      return {
+        id: `${finalSourceId}-${finalTargetId}`,
+        source: finalSourceId,
+        target: finalTargetId,
+        type: 'smoothstep',
+        animated: false,
+        style: { stroke: '#6366f1', strokeWidth: 2 },
+        markerEnd: { type: MarkerType.ArrowClosed, color: '#6366f1' },
+        sourceHandle: finalSourceId.startsWith('couple_') ? 'bottom' : undefined,
+        targetHandle: finalTargetId.startsWith('couple_') ? 'top' : undefined,
+        data: {
+          relationship: directRel,
+          sourceName: sourceMember.name,
+          targetName: targetMember.name
+        }
+      };
+    }).filter(edge => edge !== null) as Edge[];
   
   return { nodes, edges };
 };
 
 const nodeTypes = {
   familyMember: FamilyMemberNode,
+  couple: CoupleNode,
 };
 
 const FamilyTreeVisualization: React.FC<FamilyTreeVisualizationProps> = ({ 
