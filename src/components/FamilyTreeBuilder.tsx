@@ -105,25 +105,35 @@ interface FamilyMemberNode extends Node {
     marriageDate?: string;
     marriageStatus?: string;
     userId?: string;
+    isInGroup?: boolean;
   };
   parentId?: string;
 }
 
 // Custom node component for individual family members
 const FamilyNode = ({ data, id }: { data: any; id: string }) => {
+  const isInGroup = data.isInGroup;
+  const nodeSize = isInGroup ? "min-w-[140px] max-w-[140px]" : "min-w-[180px] max-w-[180px]";
+  const padding = isInGroup ? "p-2" : "p-3";
+  const avatarSize = isInGroup ? "w-8 h-8" : "w-12 h-12";
+  const iconSize = isInGroup ? "w-4 h-4" : "w-6 h-6";
+  const buttonSize = isInGroup ? "w-5 h-5" : "w-6 h-6";
+  const iconButtonSize = isInGroup ? "w-2 h-2" : "w-3 h-3";
+  const maxEmailWidth = isInGroup ? "max-w-[100px]" : "max-w-[140px]";
+
   return (
-    <div className="relative bg-white border-2 border-blue-200 rounded-xl p-3 min-w-[180px] max-w-[180px] shadow-lg hover:shadow-xl transition-shadow">
-      <Handle type="target" position={Position.Top} className="w-3 h-3 bg-blue-500" />
-      <Handle type="source" position={Position.Bottom} className="w-3 h-3 bg-blue-500" />
+    <div className={`relative bg-white border-2 border-blue-200 rounded-xl ${padding} ${nodeSize} shadow-lg hover:shadow-xl transition-shadow ${isInGroup ? 'pointer-events-none' : ''}`}>
+      {!isInGroup && <Handle type="target" position={Position.Top} className="w-3 h-3 bg-blue-500" />}
+      {!isInGroup && <Handle type="source" position={Position.Bottom} className="w-3 h-3 bg-blue-500" />}
 
       <div className="flex flex-col items-center space-y-2">
-        <div className="w-12 h-12 bg-gradient-to-br from-blue-500 to-purple-600 rounded-full flex items-center justify-center">
-          <User className="w-6 h-6 text-white" />
+        <div className={`${avatarSize} bg-gradient-to-br from-blue-500 to-purple-600 rounded-full flex items-center justify-center`}>
+          <User className={`${iconSize} text-white`} />
         </div>
 
         <div className="text-center">
           <div className="font-semibold text-slate-800 text-xs">{data.name}</div>
-          <div className="text-xs text-slate-600 truncate max-w-[140px]">{data.email}</div>
+          <div className={`text-xs text-slate-600 truncate ${maxEmailWidth}`}>{data.email}</div>
           {data.relationship && !data.isRoot && (
             <div className="text-xs font-medium text-blue-600 mt-1 capitalize bg-blue-50 px-2 py-1 rounded">
               {data.relationship}
@@ -131,17 +141,19 @@ const FamilyNode = ({ data, id }: { data: any; id: string }) => {
           )}
         </div>
 
-        <Button
-          size="sm"
-          variant="outline"
-          className="w-6 h-6 rounded-full p-0 hover:bg-blue-50 border-blue-300"
-          onClick={() => {
-            console.log('Plus button clicked for node:', id);
-            data.onAddRelation && data.onAddRelation(id);
-          }}
-        >
-          <Plus className="w-3 h-3" />
-        </Button>
+        {!isInGroup && (
+          <Button
+            size="sm"
+            variant="outline"
+            className={`${buttonSize} rounded-full p-0 hover:bg-blue-50 border-blue-300`}
+            onClick={() => {
+              console.log('Plus button clicked for node:', id);
+              data.onAddRelation && data.onAddRelation(id);
+            }}
+          >
+            <Plus className={`${iconButtonSize}`} />
+          </Button>
+        )}
       </div>
     </div>
   );
@@ -153,9 +165,19 @@ const CoupleGroup = ({ data, id }: { data: any; id: string }) => {
     <div className="relative bg-gradient-to-r from-blue-50 to-purple-50 border-2 border-blue-300 rounded-xl p-4 shadow-lg min-w-[440px] min-h-[180px]">
       <Handle type="target" position={Position.Top} className="w-3 h-3 bg-blue-500" />
       <Handle type="source" position={Position.Bottom} className="w-3 h-3 bg-blue-500" />
-      <div className="flex justify-center items-center h-full">
-        <div className="text-sm text-blue-600 font-medium">Married Couple</div>
-      </div>
+      <div className="absolute top-2 left-2 text-xs text-blue-600 font-medium">Married Couple</div>
+      
+      <Button
+        size="sm"
+        variant="outline"
+        className="absolute top-2 right-2 w-6 h-6 rounded-full p-0 hover:bg-blue-50 border-blue-300"
+        onClick={() => {
+          console.log('Plus button clicked for couple group:', id);
+          data.onAddRelation && data.onAddRelation(id);
+        }}
+      >
+        <Plus className="w-3 h-3" />
+      </Button>
     </div>
   );
 };
@@ -615,17 +637,23 @@ const FamilyTreeBuilder: React.FC<FamilyTreeBuilderProps> = ({ onComplete, onBac
         type: 'coupleGroup',
         position: groupPosition,
         style: { width: groupWidth, height: groupHeight, position: 'relative', overflow: 'hidden' },
-        data: {},
+        data: { onAddRelation: handleAddRelation },
       };
 
       // Update existing parent with parentId and relative position
-      const existingParentRelativePos = { x: 40, y: 40 };
-      const updatedNodes = nodes.map(n => n.data.userId === existingParentId ? { ...n, parentId: groupId, position: existingParentRelativePos } : n);
+      const existingParentRelativePos = { x: 40, y: 50 };
+      const updatedNodes = nodes.map(n => n.data.userId === existingParentId ? { 
+        ...n, 
+        parentId: groupId, 
+        position: existingParentRelativePos,
+        data: { ...n.data, isInGroup: true }
+      } : n);
 
       // Set new node parentId and relative position, ensuring it fits within group
-      const newRelativePos = { x: 220, y: 40 };
+      const newRelativePos = { x: 250, y: 50 };
       newNode.parentId = groupId;
       newNode.position = newRelativePos;
+      newNode.data.isInGroup = true;
 
       // Add group node
       updatedNodes.push(groupNode);
@@ -646,6 +674,7 @@ const FamilyTreeBuilder: React.FC<FamilyTreeBuilderProps> = ({ onComplete, onBac
             source: groupId,
             target: childNodeId,
             type: 'smoothstep',
+            sourceHandle: null,
             style: { stroke: '#3b82f6', strokeWidth: 2 },
             markerEnd: { type: 'arrowclosed' as any, color: '#3b82f6' }
           };
@@ -698,17 +727,23 @@ const FamilyTreeBuilder: React.FC<FamilyTreeBuilderProps> = ({ onComplete, onBac
         type: 'coupleGroup',
         position: groupPosition,
         style: { width: groupWidth, height: groupHeight, position: 'relative', overflow: 'hidden' },
-        data: {},
+        data: { onAddRelation: handleAddRelation },
       };
 
       // Update selected node with parentId and relative position
-      const selectedRelativePos = { x: 40, y: 40 };
-      const updatedNodes = nodes.map(n => n.id === selectedNodeId ? { ...n, parentId: groupId, position: selectedRelativePos } : n);
+      const selectedRelativePos = { x: 40, y: 50 };
+      const updatedNodes = nodes.map(n => n.id === selectedNodeId ? { 
+        ...n, 
+        parentId: groupId, 
+        position: selectedRelativePos,
+        data: { ...n.data, isInGroup: true }
+      } : n);
 
       // Set new node parentId and relative position, ensuring it fits within group
-      const newRelativePos = { x: 220, y: 40 };
+      const newRelativePos = { x: 250, y: 50 };
       newNode.parentId = groupId;
       newNode.position = newRelativePos;
+      newNode.data.isInGroup = true;
 
       // Add group node
       updatedNodes.push(groupNode);
@@ -729,6 +764,7 @@ const FamilyTreeBuilder: React.FC<FamilyTreeBuilderProps> = ({ onComplete, onBac
                 source: groupId,
                 target: childNodeId,
                 type: 'smoothstep',
+                sourceHandle: null,
                 style: { stroke: '#3b82f6', strokeWidth: 2 },
                 markerEnd: { type: 'arrowclosed' as any, color: '#3b82f6' }
               };
