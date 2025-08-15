@@ -112,18 +112,18 @@ interface FamilyMemberNode extends Node {
 // Custom node component for individual family members
 const FamilyNode = ({ data, id }: { data: any; id: string }) => {
   return (
-    <div className="relative bg-white border-2 border-blue-200 rounded-xl p-4 min-w-[200px] shadow-lg hover:shadow-xl transition-shadow">
+    <div className="relative bg-white border-2 border-blue-200 rounded-xl p-3 min-w-[180px] max-w-[180px] shadow-lg hover:shadow-xl transition-shadow">
       <Handle type="target" position={Position.Top} className="w-3 h-3 bg-blue-500" />
       <Handle type="source" position={Position.Bottom} className="w-3 h-3 bg-blue-500" />
 
-      <div className="flex flex-col items-center space-y-3">
-        <div className="w-16 h-16 bg-gradient-to-br from-blue-500 to-purple-600 rounded-full flex items-center justify-center">
-          <User className="w-8 h-8 text-white" />
+      <div className="flex flex-col items-center space-y-2">
+        <div className="w-12 h-12 bg-gradient-to-br from-blue-500 to-purple-600 rounded-full flex items-center justify-center">
+          <User className="w-6 h-6 text-white" />
         </div>
 
         <div className="text-center">
-          <div className="font-semibold text-slate-800 text-sm">{data.name}</div>
-          <div className="text-xs text-slate-600">{data.email}</div>
+          <div className="font-semibold text-slate-800 text-xs">{data.name}</div>
+          <div className="text-xs text-slate-600 truncate max-w-[140px]">{data.email}</div>
           {data.relationship && !data.isRoot && (
             <div className="text-xs font-medium text-blue-600 mt-1 capitalize bg-blue-50 px-2 py-1 rounded">
               {data.relationship}
@@ -134,13 +134,13 @@ const FamilyNode = ({ data, id }: { data: any; id: string }) => {
         <Button
           size="sm"
           variant="outline"
-          className="w-8 h-8 rounded-full p-0 hover:bg-blue-50 border-blue-300"
+          className="w-6 h-6 rounded-full p-0 hover:bg-blue-50 border-blue-300"
           onClick={() => {
             console.log('Plus button clicked for node:', id);
             data.onAddRelation && data.onAddRelation(id);
           }}
         >
-          <Plus className="w-4 h-4" />
+          <Plus className="w-3 h-3" />
         </Button>
       </div>
     </div>
@@ -150,11 +150,11 @@ const FamilyNode = ({ data, id }: { data: any; id: string }) => {
 // Custom group node for couples
 const CoupleGroup = ({ data, id }: { data: any; id: string }) => {
   return (
-    <div className="relative bg-blue-50 border-2 border-blue-400 rounded-xl p-2 shadow-md overflow-hidden">
+    <div className="relative bg-gradient-to-r from-blue-50 to-purple-50 border-2 border-blue-300 rounded-xl p-4 shadow-lg min-w-[440px] min-h-[180px]">
       <Handle type="target" position={Position.Top} className="w-3 h-3 bg-blue-500" />
       <Handle type="source" position={Position.Bottom} className="w-3 h-3 bg-blue-500" />
-      <div className="flex justify-around items-center" style={{ maxWidth: '100%', maxHeight: '100%', overflow: 'hidden' }}>
-        {/* Placeholder for couple members, managed by child nodes */}
+      <div className="flex justify-center items-center h-full">
+        <div className="text-sm text-blue-600 font-medium">Married Couple</div>
       </div>
     </div>
   );
@@ -605,9 +605,9 @@ const FamilyTreeBuilder: React.FC<FamilyTreeBuilderProps> = ({ onComplete, onBac
       const minY = Math.min(selectedPos.y, spousePos.y);
       const maxX = minX + 200;
       const maxY = minY + 120;
-      const groupPosition = { x: minX, y: minY };
-      const groupWidth = 220;
-      const groupHeight = 140;
+      const groupPosition = { x: minX - 20, y: minY - 10 };
+      const groupWidth = 440;
+      const groupHeight = 180;
 
       const groupId = `group-${Date.now()}`;
       const groupNode: Node = {
@@ -619,11 +619,11 @@ const FamilyTreeBuilder: React.FC<FamilyTreeBuilderProps> = ({ onComplete, onBac
       };
 
       // Update existing parent with parentId and relative position
-      const existingParentRelativePos = { x: (selectedPos.x - minX), y: (selectedPos.y - minY) };
+      const existingParentRelativePos = { x: 40, y: 40 };
       const updatedNodes = nodes.map(n => n.data.userId === existingParentId ? { ...n, parentId: groupId, position: existingParentRelativePos } : n);
 
       // Set new node parentId and relative position, ensuring it fits within group
-      const newRelativePos = { x: Math.min(180, Math.max(20, spousePos.x - minX)), y: Math.min(100, Math.max(20, spousePos.y - minY)) };
+      const newRelativePos = { x: 220, y: 40 };
       newNode.parentId = groupId;
       newNode.position = newRelativePos;
 
@@ -688,9 +688,9 @@ const FamilyTreeBuilder: React.FC<FamilyTreeBuilderProps> = ({ onComplete, onBac
       const minY = Math.min(selectedPos.y, spousePos.y);
       const maxX = minX + 200;
       const maxY = minY + 120;
-      const groupPosition = { x: minX, y: minY };
-      const groupWidth = 220;
-      const groupHeight = 140;
+      const groupPosition = { x: minX - 20, y: minY - 10 };
+      const groupWidth = 440;
+      const groupHeight = 180;
 
       const groupId = `group-${Date.now()}`;
       const groupNode: Node = {
@@ -702,11 +702,11 @@ const FamilyTreeBuilder: React.FC<FamilyTreeBuilderProps> = ({ onComplete, onBac
       };
 
       // Update selected node with parentId and relative position
-      const selectedRelativePos = { x: (selectedPos.x - minX), y: (selectedPos.y - minY) };
+      const selectedRelativePos = { x: 40, y: 40 };
       const updatedNodes = nodes.map(n => n.id === selectedNodeId ? { ...n, parentId: groupId, position: selectedRelativePos } : n);
 
       // Set new node parentId and relative position, ensuring it fits within group
-      const newRelativePos = { x: Math.min(180, Math.max(20, spousePos.x - minX)), y: Math.min(100, Math.max(20, spousePos.y - minY)) };
+      const newRelativePos = { x: 220, y: 40 };
       newNode.parentId = groupId;
       newNode.position = newRelativePos;
 
