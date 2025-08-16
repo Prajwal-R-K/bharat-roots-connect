@@ -150,13 +150,27 @@ const FamilyNode = ({ data, id }: { data: any; id: string }) => {
   );
 };
 
+// Marriage center node component (invisible but provides connection point)
+const MarriageCenterNode = ({ data }: { data: any }) => {
+  return (
+    <div 
+      className="w-2 h-2 bg-red-500 rounded-full opacity-0 pointer-events-none"
+      style={{ position: 'relative', zIndex: -1 }}
+    >
+      <Handle type="target" position={Position.Top} className="w-1 h-1 opacity-0" />
+      <Handle type="source" position={Position.Bottom} className="w-1 h-1 opacity-0" />
+    </div>
+  );
+};
+
 const nodeTypes = {
   familyMember: FamilyNode,
+  marriageCenter: MarriageCenterNode,
 };
 
 // Custom edge types for marriage connections
 const MarriageEdge = ({ id, sourceX, sourceY, targetX, targetY, source, target, style = {}, markerEnd, markerStart }: any) => {
-  // Force horizontal line by using same Y coordinate (middle of both nodes)
+  // Force horizontal line by using same Y coordinate
   const midY = (sourceY + targetY) / 2;
   const centerX = (sourceX + targetX) / 2;
   const edgePath = `M ${sourceX},${midY} L ${targetX},${midY}`;
@@ -201,9 +215,9 @@ const MarriageEdge = ({ id, sourceX, sourceY, targetX, targetY, source, target, 
       <circle
         cx={centerX}
         cy={midY}
-        r="3"
+        r="4"
         fill="#ef4444"
-        stroke="#ef4444"
+        stroke="#ffffff"
         strokeWidth="2"
         className="marriage-center-point"
         data-marriage-id={id}
@@ -230,63 +244,65 @@ const MarriageChildEdge = ({
   sourcePosition,
   targetPosition 
 }: any) => {
-  // If this is from a marriage, use the marriage center point
-  if (data?.isFromMarriage && data?.marriageCenterX !== undefined && data?.marriageCenterY !== undefined) {
-    const marriageCenterX = data.marriageCenterX;
-    const marriageCenterY = data.marriageCenterY;
-    
-    // Create path from marriage center to child with proper spacing
-    const dropDistance = 60; // Distance to drop down from marriage line
-    const horizontalOffset = targetX - marriageCenterX;
-    
-    // Path: from marriage center, drop down, then go to child
-    const edgePath = `M ${marriageCenterX},${marriageCenterY} 
-                      L ${marriageCenterX},${marriageCenterY + dropDistance} 
-                      L ${targetX},${marriageCenterY + dropDistance} 
-                      L ${targetX},${targetY}`;
-    
-    return (
-      <>
-        <defs>
-          <marker
-            id={`marriage-child-arrow-${id}`}
-            markerWidth="8"
-            markerHeight="8"
-            refX="6"
-            refY="4"
-            orient="auto"
-            markerUnits="strokeWidth"
-          >
-            <polygon
-              points="0,0 0,8 8,4"
-              fill="#3b82f6"
-            />
-          </marker>
-        </defs>
-        <path
-          id={id}
-          style={{
-            ...style,
-            strokeWidth: 3,
-            stroke: '#3b82f6',
-            fill: 'none'
-          }}
-          className="react-flow__edge-path"
-          d={edgePath}
-          markerEnd={`url(#marriage-child-arrow-${id})`}
-        />
-      </>
-    );
-  }
+  // Create path from marriage center node to child with proper spacing
+  const dropDistance = 80; // Distance to drop down from marriage line
   
-  // Regular parent-child edge
+  // Path: from marriage center, drop down, then go to child
+  const edgePath = `M ${sourceX},${sourceY} 
+                    L ${sourceX},${sourceY + dropDistance} 
+                    L ${targetX},${sourceY + dropDistance} 
+                    L ${targetX},${targetY}`;
+  
+  return (
+    <>
+      <defs>
+        <marker
+          id={`marriage-child-arrow-${id}`}
+          markerWidth="8"
+          markerHeight="8"
+          refX="6"
+          refY="4"
+          orient="auto"
+          markerUnits="strokeWidth"
+        >
+          <polygon
+            points="0,0 0,8 8,4"
+            fill="#3b82f6"
+          />
+        </marker>
+      </defs>
+      <path
+        id={id}
+        style={{
+          ...style,
+          strokeWidth: 3,
+          stroke: '#3b82f6',
+          fill: 'none'
+        }}
+        className="react-flow__edge-path"
+        d={edgePath}
+        markerEnd={`url(#marriage-child-arrow-${id})`}
+      />
+    </>
+  );
+};
+
+// Regular parent-child edge
+const ParentChildEdge = ({ 
+  id, 
+  sourceX, 
+  sourceY, 
+  targetX, 
+  targetY, 
+  style = {} 
+}: any) => {
   const edgePath = `M ${sourceX},${sourceY} C ${sourceX},${(sourceY + targetY) / 2} ${targetX},${(sourceY + targetY) / 2} ${targetX},${targetY}`;
   
   return (
     <>
       <defs>
         <marker
-          id={`regular-arrow-${id}`}
+          id={`parent-arrow-${id}`}
           markerWidth="8"
           markerHeight="8"
           refX="6"
@@ -310,7 +326,7 @@ const MarriageChildEdge = ({
         }}
         className="react-flow__edge-path"
         d={edgePath}
-        markerEnd={`url(#regular-arrow-${id})`}
+        markerEnd={`url(#parent-arrow-${id})`}
       />
     </>
   );
@@ -319,6 +335,65 @@ const MarriageChildEdge = ({
 const edgeTypes = {
   marriage: MarriageEdge,
   marriageChild: MarriageChildEdge,
+  parentChild: ParentChildEdge,
+};
+
+// Add dynamic node/edge update system to maintain marriage center positions
+const useDynamicMarriageUpdates = (nodes: Node[], edges: Edge[], setNodes: any, setEdges: any) => {
+  useEffect(() => {
+    // Find all marriage edges and update marriage center nodes
+    const marriageEdges = edges.filter(e => e.type === 'marriage');
+    const marriageCenterNodes = nodes.filter(n => n.type === 'marriageCenter');
+    
+    // Create or update marriage center nodes
+    const updatedNodes = [...nodes];
+    const updatedEdges = [...edges];
+    
+    marriageEdges.forEach(marriageEdge => {
+      const sourceNode = nodes.find(n => n.id === marriageEdge.source);
+      const targetNode = nodes.find(n => n.id === marriageEdge.target);
+      
+      if (sourceNode && targetNode) {
+        const centerNodeId = `marriage-center-${marriageEdge.source}-${marriageEdge.target}`;
+        const centerX = (sourceNode.position.x + targetNode.position.x) / 2;
+        const centerY = sourceNode.position.y + 50; // Slightly below marriage line
+        
+        // Check if marriage center node exists
+        const existingCenterNode = updatedNodes.find(n => n.id === centerNodeId);
+        
+        if (existingCenterNode) {
+          // Update position
+          existingCenterNode.position = { x: centerX, y: centerY };
+        } else {
+          // Create new marriage center node
+          updatedNodes.push({
+            id: centerNodeId,
+            type: 'marriageCenter',
+            position: { x: centerX, y: centerY },
+            data: { marriageId: marriageEdge.id },
+            draggable: false,
+            selectable: false,
+          });
+        }
+        
+        // Update child edges to connect from marriage center node
+        updatedEdges.forEach(edge => {
+          if (edge.type === 'marriageChild' && edge.data?.marriageId === marriageEdge.id) {
+            edge.source = centerNodeId;
+          }
+        });
+      }
+    });
+    
+    // Clean up orphaned marriage center nodes
+    const validMarriageCenterIds = marriageEdges.map(e => `marriage-center-${e.source}-${e.target}`);
+    const filteredNodes = updatedNodes.filter(n => 
+      n.type !== 'marriageCenter' || validMarriageCenterIds.includes(n.id)
+    );
+    
+    setNodes(filteredNodes);
+    setEdges(updatedEdges);
+  }, [nodes, edges, setNodes, setEdges]);
 };
 
 interface FamilyTreeBuilderProps {
@@ -356,6 +431,9 @@ const FamilyTreeBuilder: React.FC<FamilyTreeBuilderProps> = ({ onComplete, onBac
   const [selectedNode, setSelectedNode] = useState<any>(null);
   const [familyTreeId, setFamilyTreeId] = useState<string | null>(null);
   const [rootUser, setRootUser] = useState<any>(null);
+
+  // Use dynamic marriage updates to maintain center nodes
+  useDynamicMarriageUpdates(nodes, edges, setNodes, setEdges);
 
   const nodesRef = useRef(nodes);
   useEffect(() => {
@@ -777,18 +855,16 @@ const FamilyTreeBuilder: React.FC<FamilyTreeBuilderProps> = ({ onComplete, onBac
               ));
               
               // Add new marriage-based child edge
+              const marriageCenterNodeId = `marriage-center-${existingParentNode.id}-${newNodeId}`;
               additionalUiEdges.push({
                 id: `marriage-child-${existingParentNode.id}-${newNodeId}-${childNodeId}`,
-                source: `marriage-${existingParentNode.id}-${newNodeId}`,
+                source: marriageCenterNodeId,
                 target: childNodeId,
                 type: 'marriageChild',
                 style: { stroke: '#3b82f6', strokeWidth: 3 },
                 markerEnd: { type: MarkerType.ArrowClosed, color: '#3b82f6' },
                 data: { 
-                  isFromMarriage: true, 
-                  marriagePartner: existingParentNode.id,
-                  marriageCenterX: marriageCenterX,
-                  marriageCenterY: marriageCenterY
+                  marriageId: `marriage-${existingParentNode.id}-${newNodeId}`
                 }
               });
             }
@@ -851,18 +927,16 @@ const FamilyTreeBuilder: React.FC<FamilyTreeBuilderProps> = ({ onComplete, onBac
               ));
               
               // Add marriage-based child edge
+              const marriageCenterNodeId = `marriage-center-${selectedNodeId}-${newNodeId}`;
               additionalUiEdges.push({
                 id: `marriage-child-${selectedNodeId}-${newNodeId}-${childNodeId}`,
-                source: `marriage-${selectedNodeId}-${newNodeId}`,
+                source: marriageCenterNodeId,
                 target: childNodeId,
                 type: 'marriageChild',
                 style: { stroke: '#3b82f6', strokeWidth: 3 },
                 markerEnd: { type: MarkerType.ArrowClosed, color: '#3b82f6' },
                 data: { 
-                  isFromMarriage: true, 
-                  marriagePartner: newNodeId,
-                  marriageCenterX: marriageCenterX,
-                  marriageCenterY: marriageCenterY
+                  marriageId: `marriage-${selectedNodeId}-${newNodeId}`
                 }
               });
             }
@@ -892,18 +966,16 @@ const FamilyTreeBuilder: React.FC<FamilyTreeBuilderProps> = ({ onComplete, onBac
         const marriageCenterX = partnerNode ? (selectedNodeData.position.x + partnerNode.position.x) / 2 : selectedNodeData.position.x;
         const marriageCenterY = selectedNodeData.position.y;
         
+        const marriageCenterNodeId = `marriage-center-${selectedNodeId}-${marriagePartner}`;
         additionalUiEdges.push({
           id: `marriage-child-${selectedNodeId}-${marriagePartner}-${newNodeId}`,
-          source: marriageEdge.id,
+          source: marriageCenterNodeId,
           target: newNodeId,
           type: 'marriageChild',
           style: { stroke: '#3b82f6', strokeWidth: 3 },
           markerEnd: { type: MarkerType.ArrowClosed, color: '#3b82f6' },
           data: { 
-            isFromMarriage: true, 
-            marriagePartner: marriagePartner,
-            marriageCenterX: marriageCenterX,
-            marriageCenterY: marriageCenterY
+            marriageId: marriageEdge.id
           }
         });
       } else {
@@ -943,18 +1015,16 @@ const FamilyTreeBuilder: React.FC<FamilyTreeBuilderProps> = ({ onComplete, onBac
               );
               
               if (!existingMarriageChildEdge) {
+                const marriageCenterNodeId = `marriage-center-${parentNodeId}-${marriagePartner}`;
                 additionalUiEdges.push({
                   id: `marriage-child-${parentNodeId}-${marriagePartner}-${newNodeId}`,
-                  source: parentMarriageEdge.id,
+                  source: marriageCenterNodeId,
                   target: newNodeId,
                   type: 'marriageChild',
                   style: { stroke: '#3b82f6', strokeWidth: 3 },
                   markerEnd: { type: MarkerType.ArrowClosed, color: '#3b82f6' },
                   data: { 
-                    isFromMarriage: true, 
-                    marriagePartner: marriagePartner,
-                    marriageCenterX: marriageCenterX,
-                    marriageCenterY: marriageCenterY
+                    marriageId: parentMarriageEdge.id
                   }
                 });
               }
