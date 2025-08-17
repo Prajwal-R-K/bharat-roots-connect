@@ -93,11 +93,11 @@ const FamilyTreeBuilder: React.FC<FamilyTreeBuilderProps> = ({ onComplete, onBac
     setSelectedNodeId(nodeId);
     setSelectedNode(node);
     setShowRelationshipChoice(true);
-    setNewMember({ 
-      name: '', 
-      email: '', 
-      phone: '', 
-      relationship: '', 
+    setNewMember({
+      name: '',
+      email: '',
+      phone: '',
+      relationship: '',
       gender: '',
       dateOfBirth: '',
       marriageDate: '',

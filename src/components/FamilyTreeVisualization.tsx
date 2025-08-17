@@ -941,3 +941,5 @@ export const highlightRelatedNodes = (selectedNodeId: string, nodes: Node[], edg
     }
   }));
 };
+
+export default FamilyNode;
