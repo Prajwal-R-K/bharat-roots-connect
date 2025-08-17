@@ -92,42 +92,122 @@ const getReciprocalRelationship = (relationship: string, targetGender: string, s
   return targetReciprocal;
 };
 
-// Custom family member node component
-const FamilyMemberNode = ({ data, id }: { data: any; id: string }) => {
-  const getNodeColor = () => {
-    // Use logged-in user (data.loginUserId) to determine crown color;
-    // the node whose id matches loginUserId gets the crown.
-    if (data.userId === data.loginUserId) return 'border-amber-400 bg-amber-50';
-    if (data.gender === 'male') return 'border-blue-400 bg-blue-50';
-    if (data.gender === 'female') return 'border-pink-400 bg-pink-50';
-    return 'border-gray-400 bg-gray-50';
+// Enhanced family member node component matching the working version
+const FamilyMemberNode = ({ data, id, selected }: { data: any; id: string; selected?: boolean }) => {
+  const [isHovered, setIsHovered] = React.useState(false);
+
+  const getNodeColor = (relationship?: string, isRoot?: boolean, gender?: string) => {
+    if (isRoot) return 'from-purple-600 via-purple-500 to-indigo-600';
+    
+    const baseColors = {
+      parent: gender === 'male' ? 'from-blue-500 via-blue-400 to-cyan-500' : 'from-pink-500 via-pink-400 to-rose-500',
+      child: gender === 'male' ? 'from-green-500 via-emerald-400 to-teal-500' : 'from-yellow-500 via-orange-400 to-red-500',
+      spouse: 'from-red-500 via-pink-500 to-rose-600',
+      sibling: gender === 'male' ? 'from-indigo-500 via-purple-400 to-violet-500' : 'from-purple-500 via-fuchsia-400 to-pink-500'
+    };
+
+    switch (relationship) {
+      case 'father':
+      case 'mother':
+        return baseColors.parent;
+      case 'son':
+      case 'daughter':
+        return baseColors.child;
+      case 'husband':
+      case 'wife':
+        return baseColors.spouse;
+      case 'brother':
+      case 'sister':
+        return baseColors.sibling;
+      default:
+        return 'from-gray-500 via-slate-400 to-gray-600';
+    }
+  };
+
+  const getRelationshipIcon = (relationship?: string, isRoot?: boolean) => {
+    if (isRoot) return <Crown className="w-6 h-6 text-yellow-300" />;
+    
+    switch (relationship) {
+      case 'father':
+      case 'mother':
+        return <UserIcon className="w-6 h-6 text-white" />;
+      case 'husband':
+      case 'wife':
+        return <Heart className="w-6 h-6 text-white" />;
+      default:
+        return <UserIcon className="w-6 h-6 text-white" />;
+    }
+  };
+
+  const getBorderStyle = () => {
+    if (selected) return 'border-4 border-blue-400 shadow-2xl shadow-blue-200';
+    if (isHovered) return 'border-3 border-purple-300 shadow-xl shadow-purple-100';
+    return 'border-2 border-slate-200 shadow-lg';
+  };
+
+  const getStatusBadge = () => {
+    if (data.status === 'invited') {
+      return (
+        <div className="absolute -top-2 -right-2 bg-yellow-500 text-white text-xs px-2 py-1 rounded-full font-semibold shadow-md">
+          Invited
+        </div>
+      );
+    }
+    return null;
   };
 
   return (
-    <div className={`relative ${getNodeColor()} border-2 rounded-xl p-3 min-w-[160px] shadow-lg hover:shadow-xl transition-shadow`}>
-      <Handle type="target" position={Position.Top} className="w-2 h-2 bg-gray-400" />
-      <Handle type="source" position={Position.Bottom} className="w-2 h-2 bg-gray-400" />
-      <Handle type="target" position={Position.Left} className="w-2 h-2 bg-gray-400" />
-      <Handle type="source" position={Position.Right} className="w-2 h-2 bg-gray-400" />
-      
-      <div className="flex flex-col items-center space-y-2">
-        <Avatar className="w-12 h-12">
-          <AvatarImage src={data.profilePicture} />
-          <AvatarFallback className="text-xs font-semibold">
-            {data.name.split(' ').map((n: string) => n[0]).join('').toUpperCase()}
-          </AvatarFallback>
-        </Avatar>
-        
-        <div className="text-center">
-          <div className="font-semibold text-sm text-gray-800">{data.name}</div>
-          {data.relationship && (
-            <Badge variant="secondary" className="text-xs mt-1">
-              {data.relationship}
-            </Badge>
+    <div 
+      className={`relative bg-white ${getBorderStyle()} rounded-2xl p-4 w-[200px] h-[240px] flex flex-col justify-between transition-all duration-300 hover:scale-105 cursor-pointer`}
+      onMouseEnter={() => setIsHovered(true)}
+      onMouseLeave={() => setIsHovered(false)}
+    >
+      {/* Connection Handles */}
+      <Handle 
+        type="target" 
+        position={Position.Top} 
+        className="w-4 h-4 bg-gradient-to-r from-blue-500 to-purple-500 border-3 border-white shadow-lg" 
+      />
+      <Handle 
+        type="source" 
+        position={Position.Bottom} 
+        className="w-4 h-4 bg-gradient-to-r from-green-500 to-blue-500 border-3 border-white shadow-lg" 
+      />
+      <Handle 
+        type="target" 
+        position={Position.Left} 
+        className="w-4 h-4 bg-gradient-to-r from-red-500 to-pink-500 border-3 border-white shadow-lg" 
+      />
+      <Handle 
+        type="source" 
+        position={Position.Right} 
+        className="w-4 h-4 bg-gradient-to-r from-red-500 to-pink-500 border-3 border-white shadow-lg" 
+      />
+
+      {getStatusBadge()}
+
+      <div className="flex flex-col items-center space-y-3">
+        {/* Avatar */}
+        <div className={`w-16 h-16 bg-gradient-to-br ${getNodeColor(data.relationship, data.isRoot, data.gender)} rounded-full flex items-center justify-center shadow-xl ring-4 ring-white`}>
+          {getRelationshipIcon(data.relationship, data.isRoot)}
+        </div>
+
+        {/* Main Info */}
+        <div className="text-center space-y-2">
+          <div className="font-bold text-slate-800 text-sm">{data.name}</div>
+          
+          {/* Relationship Badge */}
+          {data.relationship && !data.isRoot && (
+            <div className="inline-flex items-center text-xs font-semibold text-white px-2 py-1 rounded-full bg-gradient-to-r from-blue-500 to-purple-500 shadow-md">
+              {data.relationship.charAt(0).toUpperCase() + data.relationship.slice(1)}
+            </div>
           )}
-          {/* Show crown if this node is the logged-in user */}
-          {data.userId === data.loginUserId && (
-            <Crown className="w-4 h-4 text-amber-500 mx-auto mt-1" />
+          
+          {data.isRoot && (
+            <div className="inline-flex items-center text-xs font-semibold text-white px-2 py-1 rounded-full bg-gradient-to-r from-purple-500 to-indigo-500 shadow-md">
+              <Crown className="w-3 h-3 mr-1" />
+              You
+            </div>
           )}
         </div>
       </div>
@@ -234,7 +314,7 @@ const calculateNodePositions = (
         userId: member.userId,
         // Pass loggedInUserId from auth (currently logged in user)
         loginUserId: loggedInUserId,
-        isRoot: userId === createdByUserId,
+        isRoot: userId === loggedInUserId, // Show crown for logged-in user
         status: member.status
       }
     };
