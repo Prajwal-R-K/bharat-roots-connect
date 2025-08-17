@@ -1,3 +1,4 @@
+// src/components/FamilyTreeBuilder.tsx
 import React, { useState, useCallback, useEffect, useRef } from 'react';
 import {
   ReactFlow,
@@ -9,9 +10,6 @@ import {
   Connection,
   Edge,
   Node,
-  Handle,
-  Position,
-  MarkerType,
 } from '@xyflow/react';
 import '@xyflow/react/dist/style.css';
 import { Button } from '@/components/ui/button';
@@ -21,393 +19,31 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Plus, User, Save, ArrowLeft } from 'lucide-react';
 import { toast } from '@/hooks/use-toast';
-import { createUser, getUserByEmailOrId, createFamilyTree } from '@/lib/neo4j';
 import { generateId, getCurrentDateTime } from '@/lib/utils';
 import { useNavigate } from 'react-router-dom';
-import { runQuery } from '@/lib/neo4j/connection';
 
-// Helper functions to create specific relationships
-const createParentsOf = async (familyTreeId: string, sourceUserId: string, targetUserId: string) => {
-  try {
-    const cypher = `
-      MATCH (source:User {familyTreeId: $familyTreeId, userId: $sourceUserId})
-      MATCH (target:User {familyTreeId: $familyTreeId, userId: $targetUserId})
-      CREATE (source)-[:PARENTS_OF]->(target)
-      RETURN source.userId as sourceId, target.userId as targetId
-    `;
-    const result = await runQuery(cypher, { familyTreeId, sourceUserId, targetUserId });
-    return !!result;
-  } catch (error) {
-    console.error('Error creating PARENTS_OF:', error);
-    return false;
-  }
-};
-
-const createMarriedTo = async (familyTreeId: string, sourceUserId: string, targetUserId: string) => {
-  try {
-    const exists = await edgeExists(familyTreeId, sourceUserId, targetUserId, 'MARRIED_TO');
-    if (exists) {
-      return true; // Already exists, no need to create
-    }
-    const cypher = `
-      MATCH (source:User {familyTreeId: $familyTreeId, userId: $sourceUserId})
-      MATCH (target:User {familyTreeId: $familyTreeId, userId: $targetUserId})
-      CREATE (source)-[:MARRIED_TO]->(target)
-      RETURN source.userId as sourceId, target.userId as targetId
-    `;
-    const result = await runQuery(cypher, { familyTreeId, sourceUserId, targetUserId });
-    return !!result;
-  } catch (error) {
-    console.error('Error creating MARRIED_TO:', error);
-    return false;
-  }
-};
-
-const createSibling = async (familyTreeId: string, sourceUserId: string, targetUserId: string) => {
-  try {
-    const cypher = `
-      MATCH (source:User {familyTreeId: $familyTreeId, userId: $sourceUserId})
-      MATCH (target:User {familyTreeId: $familyTreeId, userId: $targetUserId})
-      CREATE (source)-[:SIBLING]->(target)
-    `;
-    await runQuery(cypher, { familyTreeId, sourceUserId, targetUserId });
-    return true;
-  } catch (error) {
-    console.error('Error creating SIBLING:', error);
-    return false;
-  }
-};
-
-const edgeExists = async (familyTreeId: string, sourceUserId: string, targetUserId: string, relType: string) => {
-  try {
-    const cypher = `
-      MATCH (source:User {familyTreeId: $familyTreeId, userId: $sourceUserId})-[:${relType}]->(target:User {userId: $targetUserId})
-      RETURN source
-    `;
-    const result = await runQuery(cypher, { familyTreeId, sourceUserId, targetUserId });
-    return result.length > 0;
-  } catch (error) {
-    console.error(`Error checking if ${relType} edge exists:`, error);
-    return false;
-  }
-};
-
-interface FamilyMemberNode extends Node {
-  data: {
-    label: string;
-    name: string;
-    email: string;
-    phone?: string;
-    relationship?: string;
-    generation: number;
-    isRoot?: boolean;
-    onAddRelation?: (nodeId: string) => void;
-    gender?: string;
-    dateOfBirth?: string;
-    marriageDate?: string;
-    marriageStatus?: string;
-    userId?: string;
-  };
-}
-
-// Custom node component for individual family members
-const FamilyNode = ({ data, id }: { data: any; id: string }) => {
-  return (
-    <div className="relative bg-white border-2 border-blue-200 rounded-xl p-4 min-w-[200px] shadow-lg hover:shadow-xl transition-shadow">
-      <Handle type="target" position={Position.Top} className="w-3 h-3 bg-blue-500" />
-      <Handle type="source" position={Position.Bottom} className="w-3 h-3 bg-blue-500" />
-      <Handle type="target" position={Position.Left} className="w-3 h-3 bg-red-500" />
-      <Handle type="source" position={Position.Right} className="w-3 h-3 bg-red-500" />
-
-      <div className="flex flex-col items-center space-y-3">
-        <div className="w-16 h-16 bg-gradient-to-br from-blue-500 to-purple-600 rounded-full flex items-center justify-center">
-          <User className="w-8 h-8 text-white" />
-        </div>
-
-        <div className="text-center">
-          <div className="font-semibold text-slate-800 text-sm">{data.name}</div>
-          <div className="text-xs text-slate-600">{data.email}</div>
-          {data.relationship && !data.isRoot && (
-            <div className="text-xs font-medium text-blue-600 mt-1 capitalize bg-blue-50 px-2 py-1 rounded">
-              {data.relationship}
-            </div>
-          )}
-        </div>
-
-        <Button
-          size="sm"
-          variant="outline"
-          className="w-8 h-8 rounded-full p-0 hover:bg-blue-50 border-blue-300"
-          onClick={() => {
-            console.log('Plus button clicked for node:', id);
-            data.onAddRelation && data.onAddRelation(id);
-          }}
-        >
-          <Plus className="w-4 h-4" />
-        </Button>
-      </div>
-    </div>
-  );
-};
-
-// Marriage center node component (invisible but provides connection point)
-const MarriageCenterNode = ({ data }: { data: any }) => {
-  return (
-    <div 
-      className="w-2 h-2 bg-red-500 rounded-full opacity-0 pointer-events-none"
-      style={{ position: 'relative', zIndex: -1 }}
-    >
-      <Handle type="target" position={Position.Top} className="w-1 h-1 opacity-0" />
-      <Handle type="source" position={Position.Bottom} className="w-1 h-1 opacity-0" />
-    </div>
-  );
-};
-
-const nodeTypes = {
-  familyMember: FamilyNode,
-  marriageCenter: MarriageCenterNode,
-};
-
-// Custom edge types for marriage connections
-const MarriageEdge = ({ id, sourceX, sourceY, targetX, targetY, source, target, style = {}, markerEnd, markerStart }: any) => {
-  // Force horizontal line by using same Y coordinate
-  const midY = (sourceY + targetY) / 2;
-  const centerX = (sourceX + targetX) / 2;
-  const edgePath = `M ${sourceX},${midY} L ${targetX},${midY}`;
-  
-  return (
-    <>
-      <defs>
-        <marker
-          id={`marriage-arrow-${id}`}
-          markerWidth="8"
-          markerHeight="8"
-          refX="4"
-          refY="4"
-          orient="auto"
-          markerUnits="strokeWidth"
-        >
-          <polygon
-            points="0,0 0,8 8,4"
-            fill="#ef4444"
-          />
-        </marker>
-      </defs>
-      <path
-        id={id}
-        style={{
-          ...style,
-          strokeWidth: 6,
-          stroke: '#ef4444',
-          strokeDasharray: '8,4',
-        }}
-        className="react-flow__edge-path"
-        d={edgePath}
-        markerEnd={`url(#marriage-arrow-${id})`}
-        markerStart={`url(#marriage-arrow-${id})`}
-      />
-      <text>
-        <textPath href={`#${id}`} style={{ fontSize: '16px', fill: '#ef4444', fontWeight: 'bold' }} startOffset="50%" textAnchor="middle">
-          ♥
-        </textPath>
-      </text>
-      {/* Visible center point for marriage connection */}
-      <circle
-        cx={centerX}
-        cy={midY}
-        r="4"
-        fill="#ef4444"
-        stroke="#ffffff"
-        strokeWidth="2"
-        className="marriage-center-point"
-        data-marriage-id={id}
-        data-source={source}
-        data-target={target}
-        data-center-x={centerX}
-        data-center-y={midY}
-      />
-    </>
-  );
-};
-
-// Custom edge for children connecting from marriage center
-const MarriageChildEdge = ({ 
-  id, 
-  sourceX, 
-  sourceY, 
-  targetX, 
-  targetY, 
-  source, 
-  target, 
-  data, 
-  style = {},
-  sourcePosition,
-  targetPosition 
-}: any) => {
-  // Create path from marriage center node to child with proper spacing
-  const dropDistance = 80; // Distance to drop down from marriage line
-  
-  // Path: from marriage center, drop down, then go to child
-  const edgePath = `M ${sourceX},${sourceY} 
-                    L ${sourceX},${sourceY + dropDistance} 
-                    L ${targetX},${sourceY + dropDistance} 
-                    L ${targetX},${targetY}`;
-  
-  return (
-    <>
-      <defs>
-        <marker
-          id={`marriage-child-arrow-${id}`}
-          markerWidth="8"
-          markerHeight="8"
-          refX="6"
-          refY="4"
-          orient="auto"
-          markerUnits="strokeWidth"
-        >
-          <polygon
-            points="0,0 0,8 8,4"
-            fill="#3b82f6"
-          />
-        </marker>
-      </defs>
-      <path
-        id={id}
-        style={{
-          ...style,
-          strokeWidth: 3,
-          stroke: '#3b82f6',
-          fill: 'none'
-        }}
-        className="react-flow__edge-path"
-        d={edgePath}
-        markerEnd={`url(#marriage-child-arrow-${id})`}
-      />
-    </>
-  );
-};
-
-// Regular parent-child edge
-const ParentChildEdge = ({ 
-  id, 
-  sourceX, 
-  sourceY, 
-  targetX, 
-  targetY, 
-  style = {} 
-}: any) => {
-  const edgePath = `M ${sourceX},${sourceY} C ${sourceX},${(sourceY + targetY) / 2} ${targetX},${(sourceY + targetY) / 2} ${targetX},${targetY}`;
-  
-  return (
-    <>
-      <defs>
-        <marker
-          id={`parent-arrow-${id}`}
-          markerWidth="8"
-          markerHeight="8"
-          refX="6"
-          refY="4"
-          orient="auto"
-          markerUnits="strokeWidth"
-        >
-          <polygon
-            points="0,0 0,8 8,4"
-            fill="#3b82f6"
-          />
-        </marker>
-      </defs>
-      <path
-        id={id}
-        style={{
-          ...style,
-          strokeWidth: 2,
-          stroke: '#3b82f6',
-          fill: 'none'
-        }}
-        className="react-flow__edge-path"
-        d={edgePath}
-        markerEnd={`url(#parent-arrow-${id})`}
-      />
-    </>
-  );
-};
-
-const edgeTypes = {
-  marriage: MarriageEdge,
-  marriageChild: MarriageChildEdge,
-  parentChild: ParentChildEdge,
-};
-
-// Add dynamic node/edge update system to maintain marriage center positions
-const useDynamicMarriageUpdates = (nodes: Node[], edges: Edge[], setNodes: any, setEdges: any) => {
-  useEffect(() => {
-    // Find all marriage edges and update marriage center nodes
-    const marriageEdges = edges.filter(e => e.type === 'marriage');
-    const marriageCenterNodes = nodes.filter(n => n.type === 'marriageCenter');
-    
-    // Create or update marriage center nodes
-    const updatedNodes = [...nodes];
-    const updatedEdges = [...edges];
-    
-    marriageEdges.forEach(marriageEdge => {
-      const sourceNode = nodes.find(n => n.id === marriageEdge.source);
-      const targetNode = nodes.find(n => n.id === marriageEdge.target);
-      
-      if (sourceNode && targetNode) {
-        const centerNodeId = `marriage-center-${marriageEdge.source}-${marriageEdge.target}`;
-        const centerX = (sourceNode.position.x + targetNode.position.x) / 2;
-        const centerY = sourceNode.position.y + 50; // Slightly below marriage line
-        
-        // Check if marriage center node exists
-        const existingCenterNode = updatedNodes.find(n => n.id === centerNodeId);
-        
-        if (existingCenterNode) {
-          // Update position
-          existingCenterNode.position = { x: centerX, y: centerY };
-        } else {
-          // Create new marriage center node
-          updatedNodes.push({
-            id: centerNodeId,
-            type: 'marriageCenter',
-            position: { x: centerX, y: centerY },
-            data: { marriageId: marriageEdge.id },
-            draggable: false,
-            selectable: false,
-          });
-        }
-        
-        // Update child edges to connect from marriage center node
-        updatedEdges.forEach(edge => {
-          if (edge.type === 'marriageChild' && edge.data?.marriageId === marriageEdge.id) {
-            edge.source = centerNodeId;
-          }
-        });
-      }
-    });
-    
-    // Clean up orphaned marriage center nodes
-    const validMarriageCenterIds = marriageEdges.map(e => `marriage-center-${e.source}-${e.target}`);
-    const filteredNodes = updatedNodes.filter(n => 
-      n.type !== 'marriageCenter' || validMarriageCenterIds.includes(n.id)
-    );
-    
-    setNodes(filteredNodes);
-    setEdges(updatedEdges);
-  }, [nodes, edges, setNodes, setEdges]);
-};
+// Import the separated modules
+import { 
+  initializeFamilyTree, 
+  validateRelationshipAddition, 
+  checkEmailExists 
+} from './FamilyTreeStore';
+import { 
+  nodeTypes, 
+  edgeTypes, 
+  FamilyMemberNode 
+} from './FamilyTreeVisualization';
+import { 
+  relationshipCategories,
+  addFamilyMemberWithRelationships,
+  validateSiblingRelationship
+} from './FamilyTreeLogic';
 
 interface FamilyTreeBuilderProps {
   onComplete: (familyData: any) => void;
   onBack: () => void;
   registrationData: any;
 }
-
-const relationshipCategories = {
-  parent: ['father', 'mother'],
-  child: ['son', 'daughter'],
-  spouse: ['husband', 'wife'],
-  sibling: ['brother', 'sister']
-};
 
 const FamilyTreeBuilder: React.FC<FamilyTreeBuilderProps> = ({ onComplete, onBack, registrationData }) => {
   const navigate = useNavigate();
@@ -431,14 +67,19 @@ const FamilyTreeBuilder: React.FC<FamilyTreeBuilderProps> = ({ onComplete, onBac
   const [selectedNode, setSelectedNode] = useState<any>(null);
   const [familyTreeId, setFamilyTreeId] = useState<string | null>(null);
   const [rootUser, setRootUser] = useState<any>(null);
-
-  // Use dynamic marriage updates to maintain center nodes
-  useDynamicMarriageUpdates(nodes, edges, setNodes, setEdges);
+  const [draggingNodeId, setDraggingNodeId] = useState<string | null>(null);
+  const [draggingNodeInitialPos, setDraggingNodeInitialPos] = useState<{ x: number; y: number } | null>(null);
 
   const nodesRef = useRef(nodes);
+  const edgesRef = useRef(edges);
+  
   useEffect(() => {
     nodesRef.current = nodes;
   }, [nodes]);
+
+  useEffect(() => {
+    edgesRef.current = edges;
+  }, [edges]);
 
   const handleAddRelation = useCallback((nodeId: string) => {
     console.log('handleAddRelation called with nodeId:', nodeId);
@@ -468,28 +109,9 @@ const FamilyTreeBuilder: React.FC<FamilyTreeBuilderProps> = ({ onComplete, onBac
   useEffect(() => {
     const initialize = async () => {
       if (registrationData && !familyTreeId && nodes.length === 0) {
-        const ftId = generateId('FT');
-        await createFamilyTree({
-          familyTreeId: ftId,
-          createdBy: 'self',
-          createdAt: getCurrentDateTime(),
-        });
+        const { familyTreeId: ftId, rootUser: ru } = await initializeFamilyTree(registrationData);
         setFamilyTreeId(ftId);
-
-        const ru = await createUser({
-          userId: generateId('U'),
-          name: registrationData.name || 'You',
-          email: registrationData.email || '',
-          password: registrationData.password,
-          status: 'active',
-          familyTreeId: ftId,
-          createdBy: 'self',
-          createdAt: getCurrentDateTime(),
-          gender: registrationData.gender || 'other',
-        });
         setRootUser(ru);
-        localStorage.setItem("userId", ru.userId);
-        localStorage.setItem("userData", JSON.stringify(ru));
 
         const rootNode: FamilyMemberNode = {
           id: 'root',
@@ -519,201 +141,21 @@ const FamilyTreeBuilder: React.FC<FamilyTreeBuilderProps> = ({ onComplete, onBac
 
   const handleRelationshipCategorySelect = async (category: string) => {
     if (category === 'sibling') {
-      const parents = await getParents(selectedNode.data.userId);
-      if (parents.length === 0) {
-        const addParent = window.confirm("Please add parents first to connect siblings properly. Would you like to add a parent now?");
-        if (addParent) {
-          setSelectedRelationshipCategory('parent');
-          setShowRelationshipChoice(false);
-          setShowAddDialog(true);
-          return;
-        }
-        const direct = window.confirm("No parents exist. The sibling will be connected directly to you with a SIBLING relationship. OK?");
-        if (!direct) {
-          setShowRelationshipChoice(false);
-          return;
-        }
+      const validation = await validateSiblingRelationship(selectedNode, familyTreeId!);
+      if (validation.shouldAddParent) {
+        setSelectedRelationshipCategory('parent');
+        setShowRelationshipChoice(false);
+        setShowAddDialog(true);
+        return;
+      }
+      if (validation.shouldCancel) {
+        setShowRelationshipChoice(false);
+        return;
       }
     }
     setSelectedRelationshipCategory(category);
     setShowRelationshipChoice(false);
     setShowAddDialog(true);
-  };
-
-  // Helper query functions with updated relationship types
-  const getParents = async (userId: string) => {
-    const cypher = `
-      MATCH (p:User)-[:PARENTS_OF]->(u:User {userId: $userId, familyTreeId: $familyTreeId})
-      RETURN p.userId as userId, p.name as name
-    `;
-    const result = await runQuery(cypher, { userId, familyTreeId });
-    return result.map((r: any) => ({ userId: r.userId, name: r.name }));
-  };
-
-  const getSpouses = async (userId: string) => {
-    const cypher = `
-      MATCH (u:User {userId: $userId, familyTreeId: $familyTreeId})-[:MARRIED_TO]->(s:User)
-      RETURN s.userId as userId, s.name as name, s.marriageStatus as marriageStatus
-      UNION
-      MATCH (s:User)-[:MARRIED_TO]->(u:User {userId: $userId, familyTreeId: $familyTreeId})
-      RETURN s.userId as userId, s.name as name, s.marriageStatus as marriageStatus
-    `;
-    const result = await runQuery(cypher, { userId, familyTreeId });
-    return result.map((r: any) => ({ userId: r.userId, name: r.name, marriageStatus: r.marriageStatus }));
-  };
-
-  const getChildren = async (userId: string) => {
-    const cypher = `
-      MATCH (u:User {userId: $userId, familyTreeId: $familyTreeId})-[:PARENTS_OF]->(c:User)
-      RETURN c.userId as userId, c.name as name
-    `;
-    const result = await runQuery(cypher, { userId, familyTreeId });
-    return result.map((r: any) => ({ userId: r.userId, name: r.name }));
-  };
-
-  const getSiblings = async (userId: string) => {
-    const cypher = `
-      MATCH (s:User)-[:SIBLING]->(u:User {userId: $userId, familyTreeId: $familyTreeId})
-      RETURN s.userId as userId, s.name as name
-    `;
-    const result = await runQuery(cypher, { userId, familyTreeId });
-    return result.map((r: any) => ({ userId: r.userId, name: r.name }));
-  };
-
-  // Validation using Neo4j queries
-  const validateRelationshipAddition = async (selectedNode: any, category: string): Promise<{ valid: boolean; message?: string; requiresConfirmation?: boolean }> => {
-    if (!familyTreeId) return { valid: false, message: "Family tree not initialized." };
-    const selectedUserId = selectedNode.data.userId;
-
-    if (category === 'parent') {
-      const parents = await getParents(selectedUserId);
-      if (parents.length >= 2) {
-        return { 
-          valid: false, 
-          message: "A person can have max 2 parents. You can add a step-parent instead." 
-        };
-      }
-    }
-
-    if (category === 'spouse') {
-      const spouses = await getSpouses(selectedUserId);
-      const marriedSpouses = spouses.filter(s => s.marriageStatus === 'married');
-      if (marriedSpouses.length > 0 && newMember.marriageStatus === 'married') {
-        return {
-          valid: true,
-          requiresConfirmation: true,
-          message: `${selectedNode.data.name} is already married to ${marriedSpouses[0].name}. Do you want to end the current marriage and add a new spouse?`
-        };
-      }
-    }
-
-    return { valid: true };
-  };
-
-  const checkEmailExists = async (email: string): Promise<boolean> => {
-    const existsInTree = nodes.some(node => node.data.email === email);
-    if (existsInTree) {
-      return true;
-    }
-    try {
-      const existingUser = await getUserByEmailOrId(email);
-      return existingUser !== null;
-    } catch (error) {
-      console.error('Error checking email:', error);
-      return false;
-    }
-  };
-
-  const getGeneration = (relationship: string, parentGeneration: number): number => {
-    if (relationshipCategories.parent.includes(relationship)) {
-      return parentGeneration - 1;
-    } else if (relationshipCategories.child.includes(relationship)) {
-      return parentGeneration + 1;
-    } else if (relationshipCategories.sibling.includes(relationship) || relationshipCategories.spouse.includes(relationship)) {
-      return parentGeneration;
-    }
-    return parentGeneration;
-  };
-
-  const calculateNodePosition = (
-    parentNode: Node,
-    relationship: string,
-    existingNodes: Node[],
-    category: string
-  ): { x: number; y: number } => {
-    const parentPos = parentNode.position;
-    const parentGeneration = typeof parentNode.data?.generation === 'number' ? parentNode.data.generation : 0;
-    const generation = getGeneration(relationship, parentGeneration);
-
-    const generationSpacing = 200;
-    const siblingSpacing = 250;
-
-    const baseY = parentPos.y + (generation - parentGeneration) * generationSpacing;
-
-    if (category === 'spouse') {
-      // Position spouse horizontally next to the selected node, ensuring same Y coordinate
-      const spouseOffset = relationship === 'husband' ? -250 : 250;
-      return {
-        x: parentPos.x + spouseOffset,
-        y: parentPos.y // Same Y coordinate for horizontal marriage line
-      };
-    }
-
-    if (category === 'parent') {
-      const parentsAtLevel = existingNodes.filter(node => {
-        const nodeGeneration = typeof node.data?.generation === 'number' ? node.data.generation : 0;
-        return nodeGeneration === generation && relationshipCategories.parent.includes((node.data.relationship as string) || '');
-      });
-      const parentIndex = parentsAtLevel.length;
-      return {
-        x: parentPos.x + (parentIndex === 0 ? -125 : 125),
-        y: baseY
-      };
-    }
-
-    if (category === 'child') {
-      const childrenAtLevel = existingNodes.filter(node => {
-        const nodeGeneration = typeof node.data?.generation === 'number' ? node.data.generation : 0;
-        return nodeGeneration === generation && relationshipCategories.child.includes((node.data.relationship as string) || '');
-      });
-      const childIndex = childrenAtLevel.length;
-      return {
-        x: parentPos.x + (childIndex * siblingSpacing) - (childIndex > 0 ? siblingSpacing / 2 : 0),
-        y: baseY
-      };
-    }
-
-    if (category === 'sibling') {
-      const siblingsAtLevel = existingNodes.filter(node => {
-        const nodeGeneration = typeof node.data?.generation === 'number' ? node.data.generation : 0;
-        return nodeGeneration === parentGeneration && 
-               relationshipCategories.sibling.includes((node.data.relationship as string) || '') &&
-               node.id !== parentNode.id;
-      });
-      const siblingIndex = siblingsAtLevel.length;
-      return {
-        x: parentPos.x + ((siblingIndex + 1) * siblingSpacing),
-        y: parentPos.y
-      };
-    }
-
-    return {
-      x: parentPos.x + 200,
-      y: baseY
-    };
-  };
-
-  const getNodeIdByUserId = (userId: string, nodes: Node[]): string | null => {
-    const node = nodes.find(n => n.data.userId === userId);
-    return node?.id || null;
-  };
-
-  // Helper function to find marriage partner midpoint for children connections
-  const findMarriageMidpoint = (node1: Node, node2: Node): { x: number; y: number } => {
-    return {
-      x: (node1.position.x + node2.position.x) / 2,
-      y: Math.max(node1.position.y, node2.position.y) + 50
-    };
   };
 
   const addFamilyMember = async () => {
@@ -726,7 +168,7 @@ const FamilyTreeBuilder: React.FC<FamilyTreeBuilderProps> = ({ onComplete, onBac
       return;
     }
 
-    const validation = await validateRelationshipAddition(selectedNode, selectedRelationshipCategory);
+    const validation = await validateRelationshipAddition(selectedNode, selectedRelationshipCategory, familyTreeId, newMember);
     if (!validation.valid) {
       toast({
         title: "Cannot add relationship",
@@ -743,7 +185,7 @@ const FamilyTreeBuilder: React.FC<FamilyTreeBuilderProps> = ({ onComplete, onBac
       }
     }
 
-    const emailExists = await checkEmailExists(newMember.email);
+    const emailExists = await checkEmailExists(newMember.email, nodes);
     if (emailExists) {
       toast({
         title: "Email already exists",
@@ -753,336 +195,46 @@ const FamilyTreeBuilder: React.FC<FamilyTreeBuilderProps> = ({ onComplete, onBac
       return;
     }
 
-    const selectedNodeData = nodes.find(n => n.id === selectedNodeId);
-    if (!selectedNodeData) {
+    try {
+      await addFamilyMemberWithRelationships(
+        newMember,
+        selectedNodeId,
+        selectedRelationshipCategory,
+        familyTreeId,
+        rootUser,
+        nodes,
+        edges,
+        setNodes,
+        setEdges,
+        selectedNode,
+        handleAddRelation
+      );
+
+      setShowAddDialog(false);
+      setSelectedRelationshipCategory('');
+      setNewMember({ 
+        name: '', 
+        email: '', 
+        phone: '', 
+        relationship: '', 
+        gender: '',
+        dateOfBirth: '',
+        marriageDate: '',
+        marriageStatus: 'married'
+      });
+
+      toast({
+        title: "Family member added",
+        description: `${newMember.name} has been added to the family tree.`,
+      });
+    } catch (error) {
+      console.error('Error adding family member:', error);
       toast({
         title: "Error",
-        description: "Selected node not found.",
+        description: "Failed to add family member. Please try again.",
         variant: "destructive",
       });
-      return;
     }
-
-    const selectedUserId = selectedNodeData.data.userId;
-
-    // Create new user in Neo4j
-    const memberData: any = {
-      userId: generateId('U'),
-      name: newMember.name,
-      email: newMember.email,
-      phone: newMember.phone,
-      status: 'invited' as const,
-      familyTreeId,
-      createdBy: rootUser.userId,
-      createdAt: getCurrentDateTime(),
-      myRelationship: newMember.relationship,
-      gender: newMember.gender || 'other',
-      dateOfBirth: newMember.dateOfBirth,
-    };
-
-    if (selectedRelationshipCategory === 'spouse') {
-      memberData.marriageStatus = newMember.marriageStatus;
-      memberData.marriageDate = newMember.marriageDate;
-    }
-
-    const createdMember = await createUser(memberData);
-    const newUserId = createdMember.userId;
-
-    const newNodeId = `node-${Date.now()}`;
-    const selectedGeneration = typeof selectedNodeData.data?.generation === 'number' ? selectedNodeData.data.generation : 0;
-    const generation = getGeneration(newMember.relationship, selectedGeneration);
-
-    let position = calculateNodePosition(selectedNodeData, newMember.relationship, nodes, selectedRelationshipCategory);
-    let newNode: FamilyMemberNode = {
-      id: newNodeId,
-      type: 'familyMember',
-      position,
-      data: {
-        label: newMember.name,
-        name: newMember.name,
-        email: newMember.email,
-        phone: newMember.phone,
-        relationship: newMember.relationship,
-        generation,
-        onAddRelation: handleAddRelation,
-        gender: newMember.gender,
-        dateOfBirth: newMember.dateOfBirth,
-        marriageDate: newMember.marriageDate,
-        marriageStatus: newMember.marriageStatus,
-        userId: newUserId,
-      }
-    };
-
-    let additionalUiEdges: Edge[] = [];
-
-    // Handle relationship creation and visualization
-    if (selectedRelationshipCategory === 'parent') {
-      const existingParents = await getParents(selectedUserId);
-      if (existingParents.length === 1) {
-        const existingParentId = existingParents[0].userId;
-        if (!await edgeExists(familyTreeId, existingParentId, newUserId, 'MARRIED_TO')) {
-          await createMarriedTo(familyTreeId, existingParentId, newUserId);
-        }
-        
-        const existingParentNode = nodes.find(n => n.data.userId === existingParentId);
-        if (existingParentNode) {
-          // Create marriage edge between parents
-          additionalUiEdges.push({
-            id: `marriage-${existingParentNode.id}-${newNodeId}`,
-            source: existingParentNode.id,
-            target: newNodeId,
-            type: 'marriage',
-            style: { strokeWidth: 4, stroke: '#ef4444' },
-            markerEnd: { type: MarkerType.ArrowClosed, color: '#ef4444' },
-            markerStart: { type: MarkerType.ArrowClosed, color: '#ef4444' },
-          });
-
-          // Connect children from marriage center point
-          const children = await getChildren(existingParentId);
-          const marriageCenterX = (existingParentNode.position.x + position.x) / 2;
-          const marriageCenterY = existingParentNode.position.y;
-          
-          for (const child of children) {
-            if (!await edgeExists(familyTreeId, newUserId, child.userId, 'PARENTS_OF')) {
-              await createParentsOf(familyTreeId, newUserId, child.userId);
-            }
-            const childNodeId = getNodeIdByUserId(child.userId, nodes);
-            if (childNodeId) {
-              // Remove existing parent-child edges from both parents
-              setEdges((eds) => eds.filter((e) => 
-                !(e.source === existingParentNode.id && e.target === childNodeId) &&
-                !(e.source === newNodeId && e.target === childNodeId)
-              ));
-              
-              // Add new marriage-based child edge
-              const marriageCenterNodeId = `marriage-center-${existingParentNode.id}-${newNodeId}`;
-              additionalUiEdges.push({
-                id: `marriage-child-${existingParentNode.id}-${newNodeId}-${childNodeId}`,
-                source: marriageCenterNodeId,
-                target: childNodeId,
-                type: 'marriageChild',
-                style: { stroke: '#3b82f6', strokeWidth: 3 },
-                markerEnd: { type: MarkerType.ArrowClosed, color: '#3b82f6' },
-                data: { 
-                  marriageId: `marriage-${existingParentNode.id}-${newNodeId}`
-                }
-              });
-            }
-          }
-        }
-      }
-      
-      if (!await edgeExists(familyTreeId, newUserId, selectedUserId, 'PARENTS_OF')) {
-        await createParentsOf(familyTreeId, newUserId, selectedUserId);
-      }
-      
-      // Only add parent-child edge if no marriage exists
-      const hasMarriagePartner = await getSpouses(selectedUserId);
-      if (hasMarriagePartner.length === 0) {
-        additionalUiEdges.push({
-          id: `parent-child-${newNodeId}-${selectedNodeId}`,
-          source: newNodeId,
-          target: selectedNodeId,
-          type: 'default',
-          style: { stroke: '#3b82f6', strokeWidth: 2 },
-          markerEnd: { type: MarkerType.ArrowClosed, color: '#3b82f6' },
-        });
-      }
-
-    } else if (selectedRelationshipCategory === 'spouse') {
-      if (!await createMarriedTo(familyTreeId, selectedUserId, newUserId)) {
-        console.error('Failed to create MARRIED_TO edge');
-        return;
-      }
-
-      // Create special marriage edge
-      additionalUiEdges.push({
-        id: `marriage-${selectedNodeId}-${newNodeId}`,
-        source: selectedNodeId,
-        target: newNodeId,
-        type: 'marriage',
-        style: { strokeWidth: 4, stroke: '#ef4444' },
-        markerEnd: { type: MarkerType.ArrowClosed, color: '#ef4444' },
-        markerStart: { type: MarkerType.ArrowClosed, color: '#ef4444' },
-      });
-
-      // Handle existing children
-      const children = await getChildren(selectedUserId);
-      if (children.length > 0) {
-        const linkToChildren = window.confirm(`Connect ${newMember.name} to ${selectedNodeData.data.name}'s children?`);
-        if (linkToChildren) {
-          const marriageCenterX = (selectedNodeData.position.x + position.x) / 2;
-          const marriageCenterY = selectedNodeData.position.y;
-          
-          for (const child of children) {
-            if (!await edgeExists(familyTreeId, newUserId, child.userId, 'PARENTS_OF')) {
-              await createParentsOf(familyTreeId, newUserId, child.userId);
-            }
-            const childNodeId = getNodeIdByUserId(child.userId, nodes);
-            if (childNodeId) {
-              // Remove existing single parent edges
-              setEdges((eds) => eds.filter((e) => 
-                !(e.source === selectedNodeId && e.target === childNodeId) &&
-                !(e.source === newNodeId && e.target === childNodeId)
-              ));
-              
-              // Add marriage-based child edge
-              const marriageCenterNodeId = `marriage-center-${selectedNodeId}-${newNodeId}`;
-              additionalUiEdges.push({
-                id: `marriage-child-${selectedNodeId}-${newNodeId}-${childNodeId}`,
-                source: marriageCenterNodeId,
-                target: childNodeId,
-                type: 'marriageChild',
-                style: { stroke: '#3b82f6', strokeWidth: 3 },
-                markerEnd: { type: MarkerType.ArrowClosed, color: '#3b82f6' },
-                data: { 
-                  marriageId: `marriage-${selectedNodeId}-${newNodeId}`
-                }
-              });
-            }
-          }
-        }
-      }
-
-    } else if (selectedRelationshipCategory === 'child') {
-      const spouses = await getSpouses(selectedUserId);
-      for (const spouse of spouses) {
-        if (!await edgeExists(familyTreeId, spouse.userId, newUserId, 'PARENTS_OF')) {
-          await createParentsOf(familyTreeId, spouse.userId, newUserId);
-        }
-      }
-      if (!await edgeExists(familyTreeId, selectedUserId, newUserId, 'PARENTS_OF')) {
-        await createParentsOf(familyTreeId, selectedUserId, newUserId);
-      }
-
-      // Check if selected node has a marriage edge to create marriage-based child connection
-      const marriageEdge = edges.find(e => 
-        (e.source === selectedNodeId || e.target === selectedNodeId) && e.type === 'marriage'
-      );
-      
-      if (marriageEdge) {
-        const marriagePartner = marriageEdge.source === selectedNodeId ? marriageEdge.target : marriageEdge.source;
-        const partnerNode = nodes.find(n => n.id === marriagePartner);
-        const marriageCenterX = partnerNode ? (selectedNodeData.position.x + partnerNode.position.x) / 2 : selectedNodeData.position.x;
-        const marriageCenterY = selectedNodeData.position.y;
-        
-        const marriageCenterNodeId = `marriage-center-${selectedNodeId}-${marriagePartner}`;
-        additionalUiEdges.push({
-          id: `marriage-child-${selectedNodeId}-${marriagePartner}-${newNodeId}`,
-          source: marriageCenterNodeId,
-          target: newNodeId,
-          type: 'marriageChild',
-          style: { stroke: '#3b82f6', strokeWidth: 3 },
-          markerEnd: { type: MarkerType.ArrowClosed, color: '#3b82f6' },
-          data: { 
-            marriageId: marriageEdge.id
-          }
-        });
-      } else {
-        // No marriage, create regular parent-child edge
-        additionalUiEdges.push({
-          id: `parent-child-${selectedNodeId}-${newNodeId}`,
-          source: selectedNodeId,
-          target: newNodeId,
-          type: 'default',
-          style: { stroke: '#3b82f6', strokeWidth: 2 },
-          markerEnd: { type: MarkerType.ArrowClosed, color: '#3b82f6' },
-        });
-      }
-
-    } else if (selectedRelationshipCategory === 'sibling') {
-      const parents = await getParents(selectedUserId);
-      if (parents.length > 0) {
-        for (const parent of parents) {
-          await createParentsOf(familyTreeId, parent.userId, newUserId);
-          const parentNodeId = getNodeIdByUserId(parent.userId, nodes);
-          if (parentNodeId) {
-            // Check if this parent has a marriage edge
-            const parentMarriageEdge = edges.find(e => 
-              (e.source === parentNodeId || e.target === parentNodeId) && e.type === 'marriage'
-            );
-            
-            if (parentMarriageEdge) {
-              const marriagePartner = parentMarriageEdge.source === parentNodeId ? parentMarriageEdge.target : parentMarriageEdge.source;
-              const partnerNode = nodes.find(n => n.id === marriagePartner);
-              const parentNode = nodes.find(n => n.id === parentNodeId);
-              const marriageCenterX = partnerNode && parentNode ? (parentNode.position.x + partnerNode.position.x) / 2 : (parentNode?.position.x || 0);
-              const marriageCenterY = parentNode?.position.y || 0;
-              
-              // Only add one marriage-child edge per marriage
-              const existingMarriageChildEdge = additionalUiEdges.find(e => 
-                e.source === parentMarriageEdge.id && e.target === newNodeId
-              );
-              
-              if (!existingMarriageChildEdge) {
-                const marriageCenterNodeId = `marriage-center-${parentNodeId}-${marriagePartner}`;
-                additionalUiEdges.push({
-                  id: `marriage-child-${parentNodeId}-${marriagePartner}-${newNodeId}`,
-                  source: marriageCenterNodeId,
-                  target: newNodeId,
-                  type: 'marriageChild',
-                  style: { stroke: '#3b82f6', strokeWidth: 3 },
-                  markerEnd: { type: MarkerType.ArrowClosed, color: '#3b82f6' },
-                  data: { 
-                    marriageId: parentMarriageEdge.id
-                  }
-                });
-              }
-              break; // Only need one marriage-based connection for siblings
-            } else {
-              additionalUiEdges.push({
-                id: `parent-child-${parentNodeId}-${newNodeId}`,
-                source: parentNodeId,
-                target: newNodeId,
-                type: 'default',
-                style: { stroke: '#3b82f6', strokeWidth: 2 },
-                markerEnd: { type: MarkerType.ArrowClosed, color: '#3b82f6' },
-              });
-            }
-          }
-        }
-      } else {
-        await createSibling(familyTreeId, selectedUserId, newUserId);
-        additionalUiEdges.push({
-          id: `sibling-${selectedNodeId}-${newNodeId}`,
-          source: selectedNodeId,
-          target: newNodeId,
-          type: 'default',
-          style: { stroke: '#8b5cf6', strokeWidth: 2 },
-          markerEnd: { type: MarkerType.ArrowClosed, color: '#8b5cf6' },
-        });
-      }
-    }
-
-    // Add new node
-    setNodes((nds) => nds.map(node => ({
-      ...node,
-      data: {
-        ...node.data,
-        onAddRelation: handleAddRelation
-      }
-    })).concat([newNode]));
-
-    // Add additional UI edges
-    setEdges((eds) => [...eds, ...additionalUiEdges]);
-
-    setShowAddDialog(false);
-    setSelectedRelationshipCategory('');
-    setNewMember({ 
-      name: '', 
-      email: '', 
-      phone: '', 
-      relationship: '', 
-      gender: '',
-      dateOfBirth: '',
-      marriageDate: '',
-      marriageStatus: 'married'
-    });
-
-    toast({
-      title: "Family member added",
-      description: `${newMember.name} has been added to the family tree.`,
-    });
   };
 
   const handleComplete = async () => {
@@ -1165,6 +317,38 @@ const FamilyTreeBuilder: React.FC<FamilyTreeBuilderProps> = ({ onComplete, onBac
           zoomOnPinch={true}
           panOnDrag={true}
           selectNodesOnDrag={false}
+          onNodeDragStart={(event, node) => {
+            setDraggingNodeId(node.id);
+            setDraggingNodeInitialPos(node.position);
+          }}
+          onNodeDrag={(event, node) => {
+            if (node.id === draggingNodeId) {
+              const marriageEdge = edges.find(e => e.type === 'marriage' && (e.source === node.id || e.target === node.id));
+              if (marriageEdge) {
+                const spouseId = marriageEdge.source === node.id ? marriageEdge.target : marriageEdge.source;
+                const deltaX = node.position.x - draggingNodeInitialPos!.x;
+                const deltaY = node.position.y - draggingNodeInitialPos!.y;
+                setNodes((nds) => nds.map(n => {
+                  if (n.id === spouseId) {
+                    return {
+                      ...n,
+                      position: {
+                        x: n.position.x + deltaX,
+                        y: n.position.y + deltaY
+                      }
+                    };
+                  }
+                  return n;
+                }));
+                // Update initial for next increment
+                setDraggingNodeInitialPos(node.position);
+              }
+            }
+          }}
+          onNodeDragStop={() => {
+            setDraggingNodeId(null);
+            setDraggingNodeInitialPos(null);
+          }}
         >
           <Controls className="bg-white shadow-lg border border-slate-200" />
           <Background color="#e2e8f0" gap={30} size={2} />
@@ -1262,7 +446,7 @@ const FamilyTreeBuilder: React.FC<FamilyTreeBuilderProps> = ({ onComplete, onBac
               </>
             )}
 
-           <div>
+            <div>
               <Label htmlFor="dateOfBirth" className="text-sm font-medium">Date of Birth</Label>
               <Input
                 id="dateOfBirth"
