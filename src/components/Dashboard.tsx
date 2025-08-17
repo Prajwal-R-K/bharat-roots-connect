@@ -7,7 +7,7 @@ import { Badge } from '@/components/ui/badge';
 import { useToast } from '@/hooks/use-toast';
 import { updateUserProfile, getFamilyMembers } from '@/lib/neo4j';
 import { User as UserType } from '@/types';
-import FamilyTreeVisualization from './FamilyTreeVisualization1';
+import FamilyTreeVisualization from './FamilyTreeVisualization';
 
 interface DashboardProps {
   user: UserType;
