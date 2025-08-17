@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { User, Calendar, MessageSquare, Users, Settings, Home, Plus, Download, Mail, LogOut } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
@@ -15,6 +16,7 @@ interface DashboardProps {
 
 const Dashboard: React.FC<DashboardProps> = ({ user: initialUser }) => {
   const { toast } = useToast();
+  const navigate = useNavigate();
   const [user, setUser] = useState<UserType>(initialUser);
   const [familyMembers, setFamilyMembers] = useState<any[]>([]);
 
@@ -35,7 +37,7 @@ const Dashboard: React.FC<DashboardProps> = ({ user: initialUser }) => {
 
   const activeMembers = familyMembers.filter(m => m.status === 'active');
   const pendingInvites = familyMembers.filter(m => m.status === 'invited');
-  const currentDate = new Date().toLocaleDateString();
+  const treeCreatedDate = user.createdAt ? new Date(user.createdAt).toLocaleDateString() : new Date().toLocaleDateString();
 
   const myRelations = familyMembers
     .filter(member => member.relationship && member.email !== user.email)
@@ -72,7 +74,15 @@ const Dashboard: React.FC<DashboardProps> = ({ user: initialUser }) => {
           <div className="flex flex-col items-start">
             <div className="font-bold text-indigo-700 text-lg">{user.name}</div>
             <div className="text-xs text-gray-500 font-mono">ID: {user.familyTreeId}</div>
-            <Button variant="ghost" size="sm" className="mt-2 text-red-500 flex items-center gap-1 hover:bg-red-50">
+            <Button 
+              variant="ghost" 
+              size="sm" 
+              className="mt-2 text-red-500 flex items-center gap-1 hover:bg-red-50"
+              onClick={() => {
+                localStorage.removeItem('userData');
+                navigate('/');
+              }}
+            >
               <LogOut className="w-4 h-4" /> Logout
             </Button>
           </div>
@@ -106,7 +116,10 @@ const Dashboard: React.FC<DashboardProps> = ({ user: initialUser }) => {
                     <Users className="w-16 h-16 mb-4 text-indigo-400" />
                     <h3 className="text-xl font-semibold mb-2">No Family Members Yet</h3>
                     <p className="text-sm text-center px-4">Start building your family tree by inviting members</p>
-                    <Button className="mt-4 bg-indigo-600 hover:bg-indigo-700">
+                    <Button 
+                      className="mt-4 bg-indigo-600 hover:bg-indigo-700"
+                      onClick={() => navigate('/family-tree-builder')}
+                    >
                       <Plus className="w-4 h-4 mr-2" />
                       Add First Member
                     </Button>
@@ -118,7 +131,10 @@ const Dashboard: React.FC<DashboardProps> = ({ user: initialUser }) => {
 
           {/* Enhanced Quick Actions */}
           <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-            <Card className="shadow-lg border-0 bg-gradient-to-br from-green-50 to-emerald-100 hover:shadow-xl transition-all cursor-pointer group">
+            <Card 
+              className="shadow-lg border-0 bg-gradient-to-br from-green-50 to-emerald-100 hover:shadow-xl transition-all cursor-pointer group"
+              onClick={() => navigate('/family-tree-builder')}
+            >
               <CardContent className="p-6 text-center">
                 <div className="w-16 h-16 bg-green-500 rounded-full flex items-center justify-center mx-auto mb-4 group-hover:scale-110 transition-transform">
                   <Plus className="h-8 w-8 text-white" />
@@ -138,7 +154,10 @@ const Dashboard: React.FC<DashboardProps> = ({ user: initialUser }) => {
               </CardContent>
             </Card>
             
-            <Card className="shadow-lg border-0 bg-gradient-to-br from-purple-50 to-violet-100 hover:shadow-xl transition-all cursor-pointer group">
+            <Card 
+              className="shadow-lg border-0 bg-gradient-to-br from-purple-50 to-violet-100 hover:shadow-xl transition-all cursor-pointer group"
+              onClick={() => navigate('/family-tree')}
+            >
               <CardContent className="p-6 text-center">
                 <div className="w-16 h-16 bg-purple-500 rounded-full flex items-center justify-center mx-auto mb-4 group-hover:scale-110 transition-transform">
                   <Settings className="h-8 w-8 text-white" />
@@ -203,7 +222,7 @@ const Dashboard: React.FC<DashboardProps> = ({ user: initialUser }) => {
             <Card className="shadow-lg border-0 bg-gradient-to-br from-blue-500 to-cyan-600 text-white">
               <CardContent className="p-6 text-center">
                 <Calendar className="w-12 h-12 mx-auto mb-3 opacity-80" />
-                <div className="text-lg font-semibold mb-1">{currentDate}</div>
+                <div className="text-lg font-semibold mb-1">{treeCreatedDate}</div>
                 <p className="text-blue-100 text-sm">Tree Created</p>
               </CardContent>
             </Card>
@@ -238,7 +257,11 @@ const Dashboard: React.FC<DashboardProps> = ({ user: initialUser }) => {
                   <div className="text-center py-8">
                     <Users className="w-12 h-12 mx-auto text-gray-300 mb-3" />
                     <p className="text-sm text-gray-500">No relationships yet</p>
-                    <Button size="sm" className="mt-3 bg-indigo-600 hover:bg-indigo-700">
+                    <Button 
+                      size="sm" 
+                      className="mt-3 bg-indigo-600 hover:bg-indigo-700"
+                      onClick={() => navigate('/family-tree-builder')}
+                    >
                       <Plus className="w-3 h-3 mr-1" />
                       Add Relation
                     </Button>

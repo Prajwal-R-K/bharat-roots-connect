@@ -117,41 +117,49 @@ export const addFamilyMemberWithRelationships = async (
   switch (selectedRelationshipCategory) {
     case 'parent':
       additionalUiEdges = await handleParentRelationship(
-        familyTreeId, selectedUserId, newUserId, newNodeId, selectedNodeId, 
+        familyTreeId, selectedUserId as string, newUserId as string, newNodeId, selectedNodeId, 
         nodes, edges, setNodes, setEdges, position
       );
       break;
     
     case 'spouse':
       additionalUiEdges = await handleSpouseRelationship(
-        familyTreeId, selectedUserId, newUserId, newNodeId, selectedNodeId,
+        familyTreeId, selectedUserId as string, newUserId as string, newNodeId, selectedNodeId,
         selectedNodeData, position, newMember, nodes, setNodes, setEdges
       );
       break;
     
     case 'child':
       additionalUiEdges = await handleChildRelationship(
-        familyTreeId, selectedUserId, newUserId, newNodeId, selectedNodeId,
+        familyTreeId, selectedUserId as string, newUserId as string, newNodeId, selectedNodeId,
         nodes, edges
       );
       break;
     
     case 'sibling':
       additionalUiEdges = await handleSiblingRelationship(
-        familyTreeId, selectedUserId, newUserId, newNodeId, selectedNodeId,
+        familyTreeId, selectedUserId as string, newUserId as string, newNodeId, selectedNodeId,
         nodes, edges
       );
       break;
   }
 
   // Add new node with enhanced callback system
-  setNodes((nds: Node[]) => nds.map(node => ({
+  const nodeWithCallback = {
+    ...newNode,
+    data: {
+      ...newNode.data,
+      onAddRelation: handleAddRelation
+    }
+  };
+  
+  setNodes((nds: Node[]) => [...nds.map(node => ({
     ...node,
     data: {
       ...node.data,
       onAddRelation: handleAddRelation
     }
-  })).concat([newNode]));
+  })), nodeWithCallback]);
 
   // Add edges with animation support
   setEdges((eds: Edge[]) => [...eds, ...additionalUiEdges]);
@@ -229,8 +237,7 @@ const handleParentRelationship = async (
             const childEdge = createParentChildEdge(
               newNodeId, 
               childNodeId, 
-              true, 
-              marriageCenter
+              true
             );
             additionalUiEdges.push(childEdge);
           }
@@ -319,8 +326,7 @@ const handleSpouseRelationship = async (
           const childEdge = createParentChildEdge(
             selectedNodeId,
             childNodeId,
-            true,
-            marriageCenter
+            true
           );
           additionalUiEdges.push(childEdge);
         }
@@ -405,11 +411,7 @@ const handleChildRelationship = async (
     const childEdge = createParentChildEdge(
       selectedNodeId,
       newNodeId,
-      true,
-      {
-        x: marriageCenter.x,
-        y: marriageCenter.y + 20 // Slight offset for better visual connection
-      }
+      true
     );
     additionalUiEdges.push(childEdge);
   } else {
@@ -464,8 +466,7 @@ const handleSiblingRelationship = async (
             const childEdge = createParentChildEdge(
               parent1NodeId,
               newNodeId,
-              true,
-              marriageCenter
+              true
             );
             additionalUiEdges.push(childEdge);
           }
@@ -577,12 +578,15 @@ export const reorganizeFamilyTreeLayout = (
 // Enhanced utility function to get all family members at a specific generation with metadata
 export const getFamilyMembersByGeneration = (nodes: Node[], generation: number) => {
   const members = nodes.filter(node => node.data?.generation === generation);
+  const relations = members.map(m => m.data);
   
   return {
     members,
     count: members.length,
-    relationships: members.map(m => m.data?.relationship).filter(Boolean),
-    hasMarriedCouples: members.some(m => ['husband', 'wife'].includes(m.data?.relationship))
+    stats: {
+      relationships: relations.map((r: any) => r?.relationship as string).filter(Boolean),
+      hasMarriedCouples: members.some((m: any) => ['husband', 'wife'].includes(m.data?.relationship))
+    }
   };
 };
 
@@ -598,8 +602,8 @@ export const findRootNode = (nodes: Node[]): Node | null => {
   
   // Fallback 2: Look for oldest generation
   if (!root) {
-    const minGeneration = Math.min(...nodes.map(n => n.data?.generation || 0));
-    root = nodes.find(node => (node.data?.generation || 0) === minGeneration);
+    const minGeneration = Math.min(...nodes.map(n => Number(n.data?.generation) || 0));
+    root = nodes.find(node => Number(node.data?.generation || 0) === minGeneration);
   }
   
   // Fallback 3: First node
@@ -642,8 +646,10 @@ export const detectLayoutConflicts = (nodes: Node[]) => {
   
   // Check for generation consistency
   const generationGroups = new Map<number, Node[]>();
+  
+  // Group nodes by generation first
   nodes.forEach(node => {
-    const gen = node.data?.generation || 0;
+    const gen = Number(node.data?.generation) || 0;
     if (!generationGroups.has(gen)) {
       generationGroups.set(gen, []);
     }
@@ -651,7 +657,7 @@ export const detectLayoutConflicts = (nodes: Node[]) => {
   });
   
   generationGroups.forEach((nodesInGen, generation) => {
-    const yPositions = nodesInGen.map(n => n.position.y);
+    const yPositions = nodesInGen.map(n => Number(n.position.y));
     const yVariance = Math.max(...yPositions) - Math.min(...yPositions);
     
     if (yVariance > 100) { // Nodes in same generation should be roughly aligned
@@ -940,7 +946,7 @@ export const calculateFamilyTreeStatistics = (nodes: Node[], edges: Edge[]) => {
   
   // Calculate generation breakdown
   nodes.forEach(node => {
-    const gen = node.data?.generation || 0;
+    const gen = Number(node.data?.generation) || 0;
     stats.generationBreakdown[gen] = (stats.generationBreakdown[gen] || 0) + 1;
   });
   

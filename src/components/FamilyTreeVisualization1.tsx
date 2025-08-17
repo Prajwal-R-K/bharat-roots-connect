@@ -66,123 +66,82 @@ interface FamilyTreeVisualizationProps {
   defaultZoom?: number;
 }
 
-// Enhanced compact family member node component
-const FamilyMemberNode = ({ data, id, selected }: { data: any; id: string; selected?: boolean }) => {
-  const [isHovered, setIsHovered] = useState(false);
+// Relationship categorization for positioning
+const getRelationshipCategory = (relationship: string): 'ancestor' | 'descendant' | 'sibling' => {
+  const ancestors = ['father', 'mother', 'grandfather', 'grandmother', 'great-grandfather', 'great-grandmother'];
+  const descendants = ['son', 'daughter', 'grandson', 'granddaughter', 'great-grandson', 'great-granddaughter'];
+  const siblings = ['brother', 'sister', 'spouse', 'wife', 'husband'];
+  
+  if (ancestors.includes(relationship.toLowerCase())) return 'ancestor';
+  if (descendants.includes(relationship.toLowerCase())) return 'descendant';
+  return 'sibling';
+};
 
-  const getNodeColor = (isRoot?: boolean, gender?: string, isCurrentUser?: boolean) => {
-    if (isCurrentUser) return 'from-violet-500 via-purple-500 to-indigo-500';
-    if (isRoot) return 'from-amber-400 via-yellow-400 to-orange-400';
-    
-    if (gender === 'male') return 'from-blue-400 via-sky-400 to-cyan-400';
-    if (gender === 'female') return 'from-pink-400 via-rose-400 to-red-400';
-    return 'from-slate-400 via-gray-400 to-zinc-400';
+// Get reciprocal relationship with gender
+const getReciprocalRelationship = (relationship: string, targetGender: string, sourceGender?: string): string => {
+  const reciprocals: Record<string, Record<string, string>> = {
+    father: { male: 'son', female: 'daughter' },
+    mother: { male: 'son', female: 'daughter' },
+    son: { male: 'father', female: 'mother' },
+    daughter: { male: 'father', female: 'mother' },
+    brother: { male: 'brother', female: 'sister' },
+    sister: { male: 'brother', female: 'sister' },
+    grandfather: { male: 'grandson', female: 'granddaughter' },
+    grandmother: { male: 'grandson', female: 'granddaughter' },
+    grandson: { male: 'grandfather', female: 'grandmother' },
+    granddaughter: { male: 'grandfather', female: 'grandmother' },
+    husband: { female: 'wife' },
+    wife: { male: 'husband' },
+    spouse: { male: 'husband', female: 'wife' }
   };
+  
+  const targetReciprocal = reciprocals[relationship.toLowerCase()]?.[targetGender] || relationship;
+  if (sourceGender && ['spouse', 'husband', 'wife'].includes(relationship.toLowerCase())) {
+    return reciprocals[targetReciprocal.toLowerCase()]?.[sourceGender] || targetReciprocal;
+  }
+  // Ensure reciprocal matches the source's perspective for parent-child
+  if (['son', 'daughter'].includes(relationship.toLowerCase()) && sourceGender) {
+    return reciprocals[relationship.toLowerCase()]?.[sourceGender] || relationship;
+  }
+  return targetReciprocal;
+};
 
-  const getRelationshipIcon = (relationship?: string, isRoot?: boolean, isCurrentUser?: boolean) => {
-    if (isCurrentUser) return <Crown className="w-4 h-4 text-yellow-200" />;
-    if (isRoot) return <Crown className="w-4 h-4 text-yellow-200" />;
-    
-    switch (relationship) {
-      case 'father':
-      case 'mother':
-        return <Users className="w-4 h-4 text-white" />;
-      case 'husband':
-      case 'wife':
-        return <Heart className="w-4 h-4 text-white" />;
-      default:
-        return <UserIcon className="w-4 h-4 text-white" />;
-    }
+// Custom family member node component
+const FamilyMemberNode = ({ data, id }: { data: any; id: string }) => {
+  const getNodeColor = () => {
+    // Use logged-in user (data.loginUserId) to determine crown color;
+    // the node whose id matches loginUserId gets the crown.
+    if (data.userId === data.loginUserId) return 'border-amber-400 bg-amber-50';
+    if (data.gender === 'male') return 'border-blue-400 bg-blue-50';
+    if (data.gender === 'female') return 'border-pink-400 bg-pink-50';
+    return 'border-gray-400 bg-gray-50';
   };
-
-  const getBorderStyle = () => {
-    if (selected) return 'border-3 border-blue-400 shadow-xl shadow-blue-200/50';
-    if (isHovered) return 'border-2 border-purple-300 shadow-lg shadow-purple-100/50';
-    return 'border border-slate-200/60 shadow-md';
-  };
-
-  const getStatusBadge = () => {
-    if (data.status === 'invited') {
-      return (
-        <div className="absolute -top-1 -right-1 bg-yellow-500 text-white text-xs px-1.5 py-0.5 rounded-full font-semibold shadow-sm">
-          !
-        </div>
-      );
-    }
-    return null;
-  };
-
-  const isCurrentUser = data.userId === data.loginUserId;
 
   return (
-    <div 
-      className={`group relative bg-white ${getBorderStyle()} rounded-xl p-3 w-[140px] h-[180px] flex flex-col justify-between transition-all duration-300 hover:scale-110 cursor-pointer backdrop-blur-sm`}
-      onMouseEnter={() => setIsHovered(true)}
-      onMouseLeave={() => setIsHovered(false)}
-      title={`${data.name}${data.relationship ? ` (${data.relationship})` : ''}${data.email ? ` - ${data.email}` : ''}`}
-    >
-      {/* Connection Handles - Smaller and more subtle */}
-      <Handle 
-        type="target" 
-        position={Position.Top} 
-        className="w-2 h-2 bg-gradient-to-r from-blue-400 to-purple-400 border border-white shadow-sm opacity-0 group-hover:opacity-100 transition-opacity" 
-      />
-      <Handle 
-        type="source" 
-        position={Position.Bottom} 
-        className="w-2 h-2 bg-gradient-to-r from-green-400 to-blue-400 border border-white shadow-sm opacity-0 group-hover:opacity-100 transition-opacity" 
-      />
-      <Handle 
-        type="target" 
-        position={Position.Left} 
-        className="w-2 h-2 bg-gradient-to-r from-red-400 to-pink-400 border border-white shadow-sm opacity-0 group-hover:opacity-100 transition-opacity" 
-      />
-      <Handle 
-        type="source" 
-        position={Position.Right} 
-        className="w-2 h-2 bg-gradient-to-r from-red-400 to-pink-400 border border-white shadow-sm opacity-0 group-hover:opacity-100 transition-opacity" 
-      />
-
-      {getStatusBadge()}
-
+    <div className={`relative ${getNodeColor()} border-2 rounded-xl p-3 min-w-[160px] shadow-lg hover:shadow-xl transition-shadow`}>
+      <Handle type="target" position={Position.Top} className="w-2 h-2 bg-gray-400" />
+      <Handle type="source" position={Position.Bottom} className="w-2 h-2 bg-gray-400" />
+      <Handle type="target" position={Position.Left} className="w-2 h-2 bg-gray-400" />
+      <Handle type="source" position={Position.Right} className="w-2 h-2 bg-gray-400" />
+      
       <div className="flex flex-col items-center space-y-2">
-        {/* Compact Avatar */}
-        <div className={`w-12 h-12 bg-gradient-to-br ${getNodeColor(data.isRoot, data.gender, isCurrentUser)} rounded-full flex items-center justify-center shadow-lg ring-2 ring-white/80`}>
-          {data.profilePicture ? (
-            <Avatar className="w-12 h-12">
-              <AvatarImage src={data.profilePicture} />
-              <AvatarFallback className="text-xs font-semibold text-white">
-                {data.name.split(' ').map((n: string) => n[0]).join('').toUpperCase()}
-              </AvatarFallback>
-            </Avatar>
-          ) : (
-            getRelationshipIcon(data.relationship, data.isRoot, isCurrentUser)
-          )}
-        </div>
-
-        {/* Compact Info */}
-        <div className="text-center space-y-1">
-          <div className="font-semibold text-slate-800 text-xs leading-tight truncate max-w-[120px]">{data.name}</div>
-          
-          {/* Compact Contact Info */}
-          {data.email && (
-            <div className="text-xs text-slate-500 truncate max-w-[120px]" title={data.email}>
-              {data.email.split('@')[0]}
-            </div>
-          )}
-
-          {/* Compact Relationship Badge */}
-          {data.relationship && !data.isRoot && !isCurrentUser && (
-            <Badge variant="secondary" className="text-xs px-1.5 py-0.5 h-auto">
-              {data.relationship.charAt(0).toUpperCase() + data.relationship.slice(1)}
+        <Avatar className="w-12 h-12">
+          <AvatarImage src={data.profilePicture} />
+          <AvatarFallback className="text-xs font-semibold">
+            {data.name.split(' ').map((n: string) => n[0]).join('').toUpperCase()}
+          </AvatarFallback>
+        </Avatar>
+        
+        <div className="text-center">
+          <div className="font-semibold text-sm text-gray-800">{data.name}</div>
+          {data.relationship && (
+            <Badge variant="secondary" className="text-xs mt-1">
+              {data.relationship}
             </Badge>
           )}
-          
-          {(data.isRoot || isCurrentUser) && (
-            <div className="inline-flex items-center text-xs font-semibold text-white px-2 py-0.5 rounded-full bg-gradient-to-r from-purple-500 to-indigo-500 shadow-sm">
-              <Crown className="w-2 h-2 mr-1" />
-              {isCurrentUser ? 'You' : 'Root'}
-            </div>
+          {/* Show crown if this node is the logged-in user */}
+          {data.userId === data.loginUserId && (
+            <Crown className="w-4 h-4 text-amber-500 mx-auto mt-1" />
           )}
         </div>
       </div>
@@ -623,8 +582,7 @@ const calculateNodePositions = (
         userId: member.userId,
         loginUserId: loggedInUserId,
         isRoot: userId === createdByUserId,
-        status: member.status,
-        generation: pos.generation
+        status: member.status
       }
     };
   });
