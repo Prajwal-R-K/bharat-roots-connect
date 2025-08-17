@@ -1,19 +1,81 @@
-
+// src/lib/neo4j/relationships.ts
 import { Relationship } from '@/types';
 import { runQuery } from './connection';
 
+// Core relationship creation functions
+export const createCoreRelationship = async (
+  familyTreeId: string,
+  sourceUserId: string,
+  targetUserId: string,
+  relationshipType: 'PARENTS_OF' | 'SIBLING' | 'MARRIED_TO'
+): Promise<boolean> => {
+  try {
+    let cypher: string;
+    
+    if (relationshipType === 'MARRIED_TO' || relationshipType === 'SIBLING') {
+      // Bidirectional relationships
+      cypher = `
+        MATCH (source:User {familyTreeId: $familyTreeId, userId: $sourceUserId})
+        MATCH (target:User {familyTreeId: $familyTreeId, userId: $targetUserId})
+        MERGE (source)-[:${relationshipType}]->(target)
+        MERGE (target)-[:${relationshipType}]->(source)
+        RETURN source.userId as sourceId, target.userId as targetId
+      `;
+    } else {
+      // Unidirectional relationship (PARENTS_OF)
+      cypher = `
+        MATCH (source:User {familyTreeId: $familyTreeId, userId: $sourceUserId})
+        MATCH (target:User {familyTreeId: $familyTreeId, userId: $targetUserId})
+        MERGE (source)-[:${relationshipType}]->(target)
+        RETURN source.userId as sourceId, target.userId as targetId
+      `;
+    }
+
+    const result = await runQuery(cypher, {
+      familyTreeId,
+      sourceUserId,
+      targetUserId,
+    });
+
+    return !!result && result.length > 0;
+  } catch (error) {
+    console.error(`Error creating ${relationshipType} relationship:`, error);
+    return false;
+  }
+};
+
+// Legacy function for backward compatibility
 export const createRelationship = async (relationshipData: Relationship): Promise<Relationship> => {
   const { from, to, type, fromUserId } = relationshipData;
   
-  // Check if relationship already exists to prevent duplicate relationships
-  const checkCypher = `
-    MATCH (fromUser:User {email: $from})-[r:RELATES_TO {relationship: $type}]->(toUser:User {email: $to})
-    RETURN count(r) as count
+  // Map semantic relationships to core relationships
+  const coreRelationship = mapSemanticToCore(type);
+  if (!coreRelationship) {
+    throw new Error(`Unsupported relationship type: ${type}`);
+  }
+
+  // Get user IDs from emails
+  const getUserCypher = `
+    MATCH (fromUser:User {email: $from})
+    MATCH (toUser:User {email: $to})
+    RETURN fromUser.userId as fromUserId, toUser.userId as toUserId, fromUser.familyTreeId as familyTreeId
   `;
   
-  const checkResult = await runQuery(checkCypher, { from, to, type });
-  if (checkResult[0].count > 0) {
-    console.log(`Relationship from ${from} to ${to} of type ${type} already exists. Skipping.`);
+  const userResult = await runQuery(getUserCypher, { from, to });
+  if (!userResult || userResult.length === 0) {
+    throw new Error('Users not found');
+  }
+  
+  const { fromUserId: sourceUserId, toUserId: targetUserId, familyTreeId } = userResult[0];
+  
+  const success = await createCoreRelationship(
+    familyTreeId,
+    sourceUserId,
+    targetUserId,
+    coreRelationship.type
+  );
+  
+  if (success) {
     return {
       from,
       to,
@@ -22,26 +84,34 @@ export const createRelationship = async (relationshipData: Relationship): Promis
     };
   }
   
-  // Create RELATES_TO relationship with the relationship type as a property
-  const cypher = `
-    MATCH (fromUser:User {email: $from})
-    MATCH (toUser:User {email: $to})
-    CREATE (fromUser)-[r:RELATES_TO {relationship: $type, fromUserId: $fromUserId}]->(toUser)
-    RETURN r.relationship as type, r.fromUserId as fromUserId, fromUser.email as from, toUser.email as to
-  `;
-  
-  const result = await runQuery(cypher, { from, to, type, fromUserId });
-  if (result && result.length > 0) {
-    return {
-      from: result[0].from,
-      to: result[0].to,
-      type: result[0].type.toLowerCase(),
-      fromUserId: result[0].fromUserId
-    };
-  }
   throw new Error('Failed to create relationship');
 };
 
+// Map semantic relationships to core relationship types
+const mapSemanticToCore = (semanticType: string): { type: 'PARENTS_OF' | 'SIBLING' | 'MARRIED_TO', direction?: 'forward' | 'reverse' } | null => {
+  const type = semanticType.toLowerCase();
+  
+  switch (type) {
+    case 'father':
+    case 'mother':
+      return { type: 'PARENTS_OF', direction: 'forward' };
+    case 'son':
+    case 'daughter':
+      return { type: 'PARENTS_OF', direction: 'reverse' };
+    case 'husband':
+    case 'wife':
+    case 'spouse':
+      return { type: 'MARRIED_TO' };
+    case 'brother':
+    case 'sister':
+    case 'sibling':
+      return { type: 'SIBLING' };
+    default:
+      return null;
+  }
+};
+
+// Updated bidirectional relationship function
 export const updateBidirectionalRelationship = async (
   sourceEmail: string, 
   targetEmail: string, 
@@ -49,40 +119,65 @@ export const updateBidirectionalRelationship = async (
   targetRelationship: string
 ): Promise<boolean> => {
   try {
-    // Clear console for debugging
     console.log(`Creating bidirectional relationship between ${sourceEmail} and ${targetEmail}`);
-    console.log(`${sourceEmail} is ${sourceRelationship} to ${targetEmail}`);
-    console.log(`${targetEmail} is ${targetRelationship} to ${sourceEmail}`);
     
-    const cypher = `
+    // Get user details
+    const getUsersCypher = `
       MATCH (source:User {email: $sourceEmail})
       MATCH (target:User {email: $targetEmail})
-      // First clear any existing relationships in both directions to avoid duplicates
-      OPTIONAL MATCH (source)-[r1:RELATES_TO]->(target)
-      OPTIONAL MATCH (target)-[r2:RELATES_TO]->(source)
-      DELETE r1, r2
-      // Now create the new relationships
-      WITH source, target
-      CREATE (source)-[r1:RELATES_TO {relationship: $sourceRelationship}]->(target)
-      CREATE (target)-[r2:RELATES_TO {relationship: $targetRelationship}]->(source)
-      RETURN r1.relationship as sourceRel, r2.relationship as targetRel
+      RETURN source.userId as sourceUserId, target.userId as targetUserId,
+             source.familyTreeId as familyTreeId, source.gender as sourceGender,
+             target.gender as targetGender
     `;
     
-    const result = await runQuery(cypher, { 
-      sourceEmail, 
-      targetEmail,
-      sourceRelationship,
-      targetRelationship
-    });
-    console.log("Bidirectional relationship result:", result);
-    return result && result.length > 0;
+    const userResult = await runQuery(getUsersCypher, { sourceEmail, targetEmail });
+    if (!userResult || userResult.length === 0) {
+      throw new Error('Users not found');
+    }
+    
+    const { sourceUserId, targetUserId, familyTreeId, sourceGender, targetGender } = userResult[0];
+    
+    // Clear existing relationships
+    const clearCypher = `
+      MATCH (source:User {userId: $sourceUserId})
+      MATCH (target:User {userId: $targetUserId})
+      OPTIONAL MATCH (source)-[r1]->(target)
+      OPTIONAL MATCH (target)-[r2]->(source)
+      WHERE type(r1) IN ['PARENTS_OF', 'SIBLING', 'MARRIED_TO'] 
+        OR type(r2) IN ['PARENTS_OF', 'SIBLING', 'MARRIED_TO']
+      DELETE r1, r2
+    `;
+    
+    await runQuery(clearCypher, { sourceUserId, targetUserId });
+    
+    // Create new core relationships based on semantic types
+    const sourceCoreRel = mapSemanticToCore(sourceRelationship);
+    const targetCoreRel = mapSemanticToCore(targetRelationship);
+    
+    if (sourceCoreRel && targetCoreRel) {
+      // Handle parent-child relationships
+      if (sourceCoreRel.type === 'PARENTS_OF' && targetCoreRel.type === 'PARENTS_OF') {
+        if (sourceCoreRel.direction === 'forward') {
+          await createCoreRelationship(familyTreeId, sourceUserId, targetUserId, 'PARENTS_OF');
+        } else {
+          await createCoreRelationship(familyTreeId, targetUserId, sourceUserId, 'PARENTS_OF');
+        }
+      }
+      // Handle bidirectional relationships
+      else if (sourceCoreRel.type === targetCoreRel.type && 
+               (sourceCoreRel.type === 'MARRIED_TO' || sourceCoreRel.type === 'SIBLING')) {
+        await createCoreRelationship(familyTreeId, sourceUserId, targetUserId, sourceCoreRel.type);
+      }
+    }
+    
+    return true;
   } catch (error) {
     console.error("Error creating bidirectional relationship:", error);
     return false;
   }
 };
 
-// New function to connect users from different family trees
+// Connect family trees function
 export const connectFamilyTrees = async (
   sourceUser: { userId: string, email: string, familyTreeId: string },
   targetUser: { userId: string, email: string, familyTreeId: string },
@@ -101,12 +196,10 @@ export const connectFamilyTrees = async (
     }
     
     console.log(`Connecting family trees: ${sourceUser.familyTreeId} and ${targetUser.familyTreeId}`);
-    console.log(`${sourceUser.email} (${sourceUser.familyTreeId}) is ${sourceToTargetRelationship} to ${targetUser.email} (${targetUser.familyTreeId})`);
     
     const cypher = `
       MATCH (source:User {userId: $sourceUserId})
       MATCH (target:User {userId: $targetUserId})
-      // Create cross-tree relationships
       CREATE (source)-[r1:CONNECTS_TO {
         relationship: $sourceToTargetRelationship,
         sourceFamilyTreeId: $sourceFamilyTreeId,
@@ -163,7 +256,7 @@ export const getConnectedFamilyTrees = async (familyTreeId: string): Promise<any
   }
 };
 
-// Hierarchical relationship types - only these are used now
+// Semantic relationship types for UI
 export const getRelationshipTypes = (): string[] => {
   return [
     "father",
@@ -198,42 +291,65 @@ export const getRelationshipCategory = (relationship: string): string => {
   return 'other';
 };
 
-// Updated to handle hierarchical relationships properly
+// Get opposite relationship based on gender
 export const getOppositeRelationship = (relationship: string, gender?: string): string => {
   const rel = relationship.toLowerCase();
   
-  // For hierarchical relationships, we determine based on category and gender
-  const category = getRelationshipCategory(rel);
+  const opposites: Record<string, Record<string, string>> = {
+    'father': { 'male': 'son', 'female': 'daughter' },
+    'mother': { 'male': 'son', 'female': 'daughter' },
+    'son': { 'male': 'father', 'female': 'mother' },
+    'daughter': { 'male': 'father', 'female': 'mother' },
+    'husband': { 'female': 'wife' },
+    'wife': { 'male': 'husband' },
+    'brother': { 'male': 'brother', 'female': 'sister' },
+    'sister': { 'male': 'brother', 'female': 'sister' },
+    'grandfather': { 'male': 'grandson', 'female': 'granddaughter' },
+    'grandmother': { 'male': 'grandson', 'female': 'granddaughter' },
+    'grandson': { 'male': 'grandfather', 'female': 'grandmother' },
+    'granddaughter': { 'male': 'grandfather', 'female': 'grandmother' }
+  };
   
+  if (opposites[rel] && gender && opposites[rel][gender]) {
+    return opposites[rel][gender];
+  }
+  
+  // Fallback for generic cases
+  const category = getRelationshipCategory(rel);
   switch (category) {
     case 'parent':
-      // Parent's opposite is child, specific type depends on gender
       return gender === 'female' ? 'daughter' : 'son';
     case 'child':
-      // Child's opposite is parent, specific type depends on gender  
       return gender === 'female' ? 'mother' : 'father';
     case 'spouse':
-      // Spouse relationships are direct opposites
       return rel === 'husband' ? 'wife' : 'husband';
     case 'sibling':
-      // Sibling relationships depend on gender
       return gender === 'female' ? 'sister' : 'brother';
     default:
       return 'family';
   }
 };
 
-// Function to create reciprocal relationships when a user confirms their relationship
-export const createReciprocateRelationships = async (
-  user: { email: string, userId: string },
+// Create reciprocal relationships when a user confirms their relationship
+export const createReciprocalRelationship = async (
+  user: { email: string, userId: string, gender?: string },
   inviterEmail: string,
   userRelationship: string
 ): Promise<boolean> => {
   try {
-    // Get the appropriate relationship type from inviter to user
-    const inviterRelationship = getOppositeRelationship(userRelationship);
+    // Get inviter details
+    const getInviterCypher = `
+      MATCH (inviter:User {email: $inviterEmail})
+      RETURN inviter.gender as gender
+    `;
     
-    // Clear any existing relationships first then create both directional relationships
+    const inviterResult = await runQuery(getInviterCypher, { inviterEmail });
+    const inviterGender = inviterResult[0]?.gender;
+    
+    // Get the appropriate relationship type from inviter to user
+    const inviterRelationship = getOppositeRelationship(userRelationship, inviterGender);
+    
+    // Create bidirectional relationship
     await updateBidirectionalRelationship(
       user.email,
       inviterEmail,
@@ -249,42 +365,190 @@ export const createReciprocateRelationships = async (
   }
 };
 
-// Function to get user's personalized view of the family tree
+// Get user's personalized view of the family tree with derived relationships
 export const getUserPersonalizedFamilyTree = async (userId: string, familyTreeId: string): Promise<any[]> => {
   console.log(`Getting personalized family tree for user ${userId} in tree ${familyTreeId}`);
   
-  const cypher = `
+  try {
+    const cypher = `
       MATCH (user:User {userId: $userId, familyTreeId: $familyTreeId})
-      MATCH (user)-[r:RELATES_TO]->(member:User {familyTreeId: $familyTreeId})
+      
+      // Get all users in the family tree and their relationships to/from the current user
+      MATCH (member:User {familyTreeId: $familyTreeId})
+      WHERE member.userId <> $userId
+      
+      // Check for direct core relationships from user to member
+      OPTIONAL MATCH (user)-[r1]->(member)
+      WHERE type(r1) IN ['PARENTS_OF', 'SIBLING', 'MARRIED_TO']
+      
+      // Check for direct core relationships from member to user
+      OPTIONAL MATCH (member)-[r2]->(user)
+      WHERE type(r2) IN ['PARENTS_OF', 'SIBLING', 'MARRIED_TO']
+      
+      WITH user, member, r1, r2
+      WHERE r1 IS NOT NULL OR r2 IS NOT NULL
+      
       RETURN 
         user.userId as source,
         user.name as sourceName,
         member.userId as target, 
         member.name as targetName,
-        r.relationship as type
-  `;
-  
-  const result = await runQuery(cypher, { userId, familyTreeId });
-  console.log(`Found ${result.length} personal relationships for user ${userId}`);
-  return result;
+        CASE 
+          WHEN r1 IS NOT NULL THEN type(r1)
+          WHEN r2 IS NOT NULL THEN type(r2)
+          ELSE null
+        END as coreRelType,
+        CASE 
+          WHEN r1 IS NOT NULL THEN true
+          ELSE false
+        END as isOutgoing,
+        member.gender as targetGender,
+        user.gender as sourceGender
+    `;
+    
+    const result = await runQuery(cypher, { userId, familyTreeId });
+    
+    // Convert core relationships to semantic relationships for display
+    const semanticRelationships = result.map((record: any) => {
+      let semanticType = '';
+      
+      if (record.coreRelType === 'PARENTS_OF') {
+        if (record.isOutgoing) {
+          // User is parent of target
+          semanticType = record.targetGender === 'male' ? 'son' : 'daughter';
+        } else {
+          // Target is parent of user (reverse relationship for display)
+          semanticType = record.targetGender === 'male' ? 'father' : 'mother';
+        }
+      } else if (record.coreRelType === 'MARRIED_TO') {
+        semanticType = record.targetGender === 'male' ? 'husband' : 'wife';
+      } else if (record.coreRelType === 'SIBLING') {
+        semanticType = record.targetGender === 'male' ? 'brother' : 'sister';
+      }
+      
+      return {
+        source: record.source,
+        sourceName: record.sourceName,
+        target: record.target,
+        targetName: record.targetName,
+        type: semanticType
+      };
+    });
+    
+    console.log(`Found ${semanticRelationships.length} personal relationships for user ${userId}`);
+    return semanticRelationships;
+  } catch (error) {
+    console.error("Error getting personalized family tree:", error);
+    return [];
+  }
 };
 
-// Function to get family tree relationships
+// Get family tree relationships with semantic conversion
 export const getUserRelationships = async (email: string, familyTreeId: string): Promise<Relationship[]> => {
   console.log(`Getting relationships for user ${email} in family tree ${familyTreeId}`);
   
-  const cypher = `
+  try {
+    const cypher = `
       MATCH (u:User {email: $email, familyTreeId: $familyTreeId})
-      MATCH (u)-[r:RELATES_TO]->(target:User {familyTreeId: $familyTreeId})
-      RETURN u.email as from, target.email as to, r.relationship as type, r.fromUserId as fromUserId
-  `;
-  
-  const result = await runQuery(cypher, { email, familyTreeId });
-  console.log(`Found ${result.length} relationships for user ${email}`);
-  return result.map(row => ({
-    from: row.from,
-    to: row.to,
-    type: row.type,
-    fromUserId: row.fromUserId
-  }));
+      
+      // Get outgoing core relationships
+      OPTIONAL MATCH (u)-[r1]->(target:User {familyTreeId: $familyTreeId})
+      WHERE type(r1) IN ['PARENTS_OF', 'SIBLING', 'MARRIED_TO']
+      
+      // Get incoming core relationships 
+      OPTIONAL MATCH (source:User {familyTreeId: $familyTreeId})-[r2]->(u)
+      WHERE type(r2) IN ['PARENTS_OF', 'SIBLING', 'MARRIED_TO']
+      
+      // Return both directions
+      RETURN 
+        u.email as userEmail,
+        COLLECT(DISTINCT {
+          targetEmail: target.email,
+          coreType: type(r1),
+          targetGender: target.gender,
+          direction: 'outgoing'
+        }) + COLLECT(DISTINCT {
+          targetEmail: source.email,
+          coreType: type(r2),
+          targetGender: source.gender,
+          direction: 'incoming'
+        }) as relationships,
+        u.userId as fromUserId
+    `;
+    
+    const result = await runQuery(cypher, { email, familyTreeId });
+    
+    if (!result || result.length === 0) {
+      return [];
+    }
+    
+    const relationships: Relationship[] = [];
+    const userRelationships = result[0].relationships.filter((rel: any) => rel.targetEmail);
+    
+    userRelationships.forEach((rel: any) => {
+      let semanticType = '';
+      
+      if (rel.coreType === 'PARENTS_OF') {
+        if (rel.direction === 'outgoing') {
+          semanticType = rel.targetGender === 'male' ? 'son' : 'daughter';
+        } else {
+          semanticType = rel.targetGender === 'male' ? 'father' : 'mother';
+        }
+      } else if (rel.coreType === 'MARRIED_TO') {
+        semanticType = rel.targetGender === 'male' ? 'husband' : 'wife';
+      } else if (rel.coreType === 'SIBLING') {
+        semanticType = rel.targetGender === 'male' ? 'brother' : 'sister';
+      }
+      
+      if (semanticType) {
+        relationships.push({
+          from: email,
+          to: rel.targetEmail,
+          type: semanticType,
+          fromUserId: result[0].fromUserId
+        });
+      }
+    });
+    
+    console.log(`Found ${relationships.length} semantic relationships for user ${email}`);
+    return relationships;
+  } catch (error) {
+    console.error("Error getting user relationships:", error);
+    return [];
+  }
+};
+
+// Derive extended relationships from core relationships
+export const deriveExtendedRelationships = async (familyTreeId: string) => {
+  try {
+    console.log(`Deriving extended relationships for tree: ${familyTreeId}`);
+    
+    // This function can be used to derive grandparent/grandchild relationships
+    // and other extended family relationships from the core PARENTS_OF relationships
+    
+    const cypher = `
+      MATCH (gp:User {familyTreeId: $familyTreeId})-[:PARENTS_OF]->(p:User {familyTreeId: $familyTreeId})-[:PARENTS_OF]->(gc:User {familyTreeId: $familyTreeId})
+      RETURN gp.userId as grandparent, gp.name as grandparentName, gp.gender as gpGender,
+             gc.userId as grandchild, gc.name as grandchildName, gc.gender as gcGender
+    `;
+    
+    const result = await runQuery(cypher, { familyTreeId });
+    
+    const extendedRelationships = result.map((record: any) => ({
+      source: record.grandparent,
+      target: record.grandchild,
+      type: record.gcGender === 'male' ? 'grandson' : 'granddaughter',
+      sourceName: record.grandparentName,
+      targetName: record.grandchildName,
+      sourceGender: record.gpGender,
+      targetGender: record.gcGender,
+      isExtended: true
+    }));
+    
+    console.log(`Derived ${extendedRelationships.length} extended relationships`);
+    return extendedRelationships;
+  } catch (error) {
+    console.error("Error deriving extended relationships:", error);
+    return [];
+  }
 };
