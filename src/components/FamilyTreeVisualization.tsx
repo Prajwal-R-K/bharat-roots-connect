@@ -505,7 +505,7 @@ export const calculateOptimalPosition = (
   edges: Edge[]
 ): { x: number; y: number } => {
   const parentPos = parentNode.position;
-  const parentGeneration = parentNode.data?.generation || 0;
+  const parentGeneration = Number(parentNode.data?.generation) || 0;
   const newGeneration = calculateGeneration(relationship, 0, parentGeneration);
   
   // Enhanced spacing constants for better visual hierarchy
@@ -563,8 +563,8 @@ export const calculateOptimalPosition = (
     case 'mother': {
       // Position parents above with proper spacing and gender-based positioning
       const existingParents = existingNodes.filter(node => 
-        node.data?.generation === newGeneration && 
-        ['father', 'mother'].includes(node.data?.relationship)
+        Number(node.data?.generation) === newGeneration && 
+        ['father', 'mother'].includes(node.data?.relationship as string)
       );
       
       let parentOffset;
@@ -591,7 +591,7 @@ export const calculateOptimalPosition = (
       // Get existing children at this generation
       const existingChildren = existingNodes.filter(node => 
         node.data?.generation === newGeneration &&
-        ['son', 'daughter'].includes(node.data?.relationship)
+        ['son', 'daughter'].includes(node.data?.relationship as string)
       );
       
       // Calculate child position with better distribution
@@ -616,7 +616,7 @@ export const calculateOptimalPosition = (
       // Enhanced sibling positioning with better spacing
       const existingSiblings = existingNodes.filter(node => 
         node.data?.generation === newGeneration && 
-        ['brother', 'sister', 'husband', 'wife'].includes(node.data?.relationship) &&
+        ['brother', 'sister', 'husband', 'wife'].includes(node.data?.relationship as string) &&
         node.id !== parentNode.id
       );
       
@@ -733,7 +733,7 @@ export const autoLayoutFamilyTree = (nodes: Node[], edges: Edge[]): { nodes: Nod
   // Group nodes by generation
   const nodesByGeneration = new Map<number, Node[]>();
   nodes.forEach(node => {
-    const generation = node.data?.generation || 0;
+    const generation = Number(node.data?.generation) || 0;
     if (!nodesByGeneration.has(generation)) {
       nodesByGeneration.set(generation, []);
     }
@@ -830,7 +830,7 @@ export const validateRelationship = (
   // Check for conflicting spouse relationships
   if (['husband', 'wife'].includes(newRelationship)) {
     const existingSpouses = existingNodes.filter(node => 
-      ['husband', 'wife'].includes(node.data?.relationship) &&
+      ['husband', 'wife'].includes(node.data?.relationship as string) &&
       node.data?.generation === parentData.generation
     );
     
@@ -846,7 +846,7 @@ export const validateRelationship = (
   if (['father', 'mother'].includes(newRelationship)) {
     const existingParent = existingNodes.find(node => 
       node.data?.relationship === newRelationship &&
-      node.data?.generation === (parentData.generation - 1)
+      Number(node.data?.generation) === (Number(parentData.generation) - 1)
     );
     
     if (existingParent) {
@@ -858,8 +858,8 @@ export const validateRelationship = (
     
     // Check if already has 2 parents
     const existingParents = existingNodes.filter(node => 
-      ['father', 'mother'].includes(node.data?.relationship) &&
-      node.data?.generation === (parentData.generation - 1)
+      ['father', 'mother'].includes(node.data?.relationship as string) &&
+      Number(node.data?.generation) === (Number(parentData.generation) - 1)
     );
     
     if (existingParents.length >= 2) {
@@ -871,7 +871,7 @@ export const validateRelationship = (
   }
   
   // Validate generation consistency
-  const expectedGeneration = calculateGeneration(newRelationship, 0, parentData.generation);
+  const expectedGeneration = calculateGeneration(newRelationship, 0, Number(parentData.generation));
   const conflictingNodes = existingNodes.filter(node => 
     node.data?.generation === expectedGeneration &&
     node.data?.relationship === newRelationship

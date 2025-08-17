@@ -1,8 +1,7 @@
-
 import React, { useState, useEffect } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import Layout from '@/components/Layout';
-import FamilyTreeVisualization from '@/components/FamilyTreeVisualization';
+import FamilyTreeVisualization from '@/components/FamilyTreeVisualization1';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
@@ -44,7 +43,7 @@ const FamilyTreePage = () => {
       let connections: any[] = [];
 
       if (viewType === "personal") {
-        members = await getUserPersonalFamilyView(currentUser.userId, currentUser.familyTreeId);
+        members = await getUserPersonalFamilyView(currentUser!.userId, currentUser!.familyTreeId);
         visualizationData = {
           nodes: members.map(member => ({
             id: member.userId,
@@ -53,17 +52,17 @@ const FamilyTreePage = () => {
             profilePicture: member.profilePicture
           })),
           links: members.map(member => ({
-            source: currentUser.userId,
+            source: currentUser!.userId,
             target: member.userId,
             type: member.relationship || 'family'
           }))
         };
       } else if (viewType === "hyper") {
-        connections = await getConnectedFamilyTrees(currentUser.familyTreeId);
+        connections = await getConnectedFamilyTrees(currentUser!.familyTreeId);
         visualizationData = { nodes: [], links: [] }; // No visualization for hyper view
       } else {
-        members = await getFamilyMembers(currentUser.familyTreeId);
-        visualizationData = await getTraversableFamilyTreeData(currentUser.familyTreeId);
+        members = await getFamilyMembers(currentUser!.familyTreeId);
+        visualizationData = await getTraversableFamilyTreeData(currentUser!.familyTreeId);
       }
 
       setFamilyMembers(members);

@@ -389,7 +389,7 @@ export const checkEmailExists = async (email: string, nodes: Node[]): Promise<bo
 
   // Check in current tree nodes first (faster)
   const existsInTree = nodes.some(node => 
-    node.data.email && node.data.email.toLowerCase() === email.toLowerCase()
+    node.data.email && (node.data.email as string).toLowerCase() === email.toLowerCase()
   );
   
   if (existsInTree) {
@@ -419,9 +419,7 @@ export const initializeFamilyTree = async (registrationData: any) => {
     const familyTree = await createFamilyTree({
       familyTreeId: ftId,
       createdBy: 'self',
-      createdAt: getCurrentDateTime(),
-      name: `${registrationData.name}'s Family Tree`,
-      description: 'Family tree created by user'
+      createdAt: getCurrentDateTime()
     });
 
     // Create root user
