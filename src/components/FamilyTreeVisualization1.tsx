@@ -22,7 +22,7 @@ import { Badge } from "@/components/ui/badge";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { getFamilyRelationships } from '@/lib/neo4j/family-tree';
 import { getUserPersonalizedFamilyTree, deriveExtendedRelationships } from '@/lib/neo4j/relationships';
-import { Heart, Crown, User as UserIcon, Users, Plus, Mail, Phone, Calendar } from "lucide-react";
+import { Heart, Crown, User as UserIcon, Users, Plus, Mail, Phone, Calendar, X } from "lucide-react";
 
 interface FamilyMember {
   userId: string;
@@ -66,7 +66,7 @@ interface FamilyTreeVisualizationProps {
   defaultZoom?: number;
 }
 
-// Enhanced compact family member node component
+// Enhanced compact family member node component with selection
 const FamilyMemberNode = ({ data, id, selected }: { data: any; id: string; selected?: boolean }) => {
   const [isHovered, setIsHovered] = useState(false);
 
@@ -96,6 +96,7 @@ const FamilyMemberNode = ({ data, id, selected }: { data: any; id: string; selec
   };
 
   const getBorderStyle = () => {
+    if (data.isSelected) return 'border-4 border-blue-500 shadow-2xl shadow-blue-300/60 ring-2 ring-blue-200';
     if (selected) return 'border-3 border-blue-400 shadow-xl shadow-blue-200/50';
     if (isHovered) return 'border-2 border-purple-300 shadow-lg shadow-purple-100/50';
     return 'border border-slate-200/60 shadow-md';
@@ -104,7 +105,7 @@ const FamilyMemberNode = ({ data, id, selected }: { data: any; id: string; selec
   const getStatusBadge = () => {
     if (data.status === 'invited') {
       return (
-        <div className="absolute -top-1 -right-1 bg-yellow-500 text-white text-xs px-1.5 py-0.5 rounded-full font-semibold shadow-sm">
+        <div className="absolute -top-1 -right-1 bg-yellow-500 text-white text-xs px-1.5 py-0.5 rounded-full font-semibold shadow-sm animate-pulse">
           !
         </div>
       );
@@ -116,7 +117,9 @@ const FamilyMemberNode = ({ data, id, selected }: { data: any; id: string; selec
 
   return (
     <div 
-      className={`group relative bg-white ${getBorderStyle()} rounded-xl p-3 w-[140px] h-[180px] flex flex-col justify-between transition-all duration-300 hover:scale-110 cursor-pointer backdrop-blur-sm`}
+      className={`group relative bg-white ${getBorderStyle()} rounded-xl p-3 w-[140px] h-[180px] flex flex-col justify-between transition-all duration-300 hover:scale-110 cursor-pointer backdrop-blur-sm ${
+        data.isSelected ? 'animate-pulse z-10' : ''
+      }`}
       onMouseEnter={() => setIsHovered(true)}
       onMouseLeave={() => setIsHovered(false)}
       title={`${data.name}${data.relationship ? ` (${data.relationship})` : ''}${data.email ? ` - ${data.email}` : ''}`}
@@ -145,9 +148,18 @@ const FamilyMemberNode = ({ data, id, selected }: { data: any; id: string; selec
 
       {getStatusBadge()}
 
+      {/* Selection indicator */}
+      {data.isSelected && (
+        <div className="absolute -top-2 -right-2 w-6 h-6 bg-blue-500 text-white rounded-full flex items-center justify-center text-xs font-bold animate-bounce">
+          ✓
+        </div>
+      )}
+
       <div className="flex flex-col items-center space-y-2">
         {/* Compact Avatar */}
-        <div className={`w-12 h-12 bg-gradient-to-br ${getNodeColor(data.isRoot, data.gender, isCurrentUser)} rounded-full flex items-center justify-center shadow-lg ring-2 ring-white/80`}>
+        <div className={`w-12 h-12 bg-gradient-to-br ${getNodeColor(data.isRoot, data.gender, isCurrentUser)} rounded-full flex items-center justify-center shadow-lg ring-2 ring-white/80 ${
+          data.isSelected ? 'ring-4 ring-blue-300 animate-pulse' : ''
+        }`}>
           {data.profilePicture ? (
             <Avatar className="w-12 h-12">
               <AvatarImage src={data.profilePicture} />
@@ -195,7 +207,7 @@ const FamilyMemberNode = ({ data, id, selected }: { data: any; id: string; selec
   );
 };
 
-// Enhanced Marriage Edge Component with better visual design
+// Enhanced Marriage Edge Component with better animations
 const MarriageEdge = ({ id, sourceX, sourceY, targetX, targetY, style = {} }: any) => {
   const [isHovered, setIsHovered] = useState(false);
   const centerX = (sourceX + targetX) / 2;
@@ -214,9 +226,15 @@ const MarriageEdge = ({ id, sourceX, sourceY, targetX, targetY, style = {} }: an
     >
       <defs>
         <linearGradient id={`marriage-gradient-${id}`} x1="0%" y1="0%" x2="100%" y2="0%">
-          <stop offset="0%" stopColor="#ec4899" />
-          <stop offset="50%" stopColor="#ef4444" />
-          <stop offset="100%" stopColor="#ec4899" />
+          <stop offset="0%" stopColor="#ec4899">
+            <animate attributeName="stop-color" values="#ec4899;#f97316;#ec4899" dur="3s" repeatCount="indefinite" />
+          </stop>
+          <stop offset="50%" stopColor="#ef4444">
+            <animate attributeName="stop-color" values="#ef4444;#dc2626;#ef4444" dur="2s" repeatCount="indefinite" />
+          </stop>
+          <stop offset="100%" stopColor="#ec4899">
+            <animate attributeName="stop-color" values="#ec4899;#f97316;#ec4899" dur="3s" repeatCount="indefinite" />
+          </stop>
         </linearGradient>
         
         <linearGradient id={`marriage-gradient-hover-${id}`} x1="0%" y1="0%" x2="100%" y2="0%">
@@ -226,13 +244,34 @@ const MarriageEdge = ({ id, sourceX, sourceY, targetX, targetY, style = {} }: an
         </linearGradient>
         
         <filter id={`marriage-glow-${id}`}>
-          <feGaussianBlur stdDeviation="3" result="coloredBlur"/>
+          <feGaussianBlur stdDeviation="4" result="coloredBlur"/>
           <feMerge> 
             <feMergeNode in="coloredBlur"/>
             <feMergeNode in="SourceGraphic"/>
           </feMerge>
         </filter>
+
+        <filter id={`marriage-sparkle-${id}`}>
+          <feGaussianBlur stdDeviation="2" result="coloredBlur"/>
+          <feOffset in="coloredBlur" dx="1" dy="1" result="offsetBlur"/>
+          <feMerge> 
+            <feMergeNode in="offsetBlur"/>
+            <feMergeNode in="SourceGraphic"/>
+          </feMerge>
+        </filter>
       </defs>
+      
+      {/* Animated background glow */}
+      <path
+        style={{
+          strokeWidth: 8,
+          stroke: `url(#marriage-gradient-${id})`,
+          opacity: 0.3,
+          filter: `url(#marriage-sparkle-${id})`,
+        }}
+        className="react-flow__edge-path animate-pulse"
+        d={edgePath}
+      />
       
       <path
         id={id}
@@ -240,33 +279,55 @@ const MarriageEdge = ({ id, sourceX, sourceY, targetX, targetY, style = {} }: an
           ...style,
           strokeWidth: isHovered ? 6 : 4,
           stroke: isHovered ? `url(#marriage-gradient-hover-${id})` : `url(#marriage-gradient-${id})`,
-          strokeDasharray: '12,8',
+          strokeDasharray: isHovered ? '16,12' : '12,8',
           strokeLinecap: 'round',
           filter: isHovered ? `url(#marriage-glow-${id})` : 'none',
         }}
         className={`react-flow__edge-path transition-all duration-300 ${isHovered ? 'animate-pulse' : ''}`}
         d={edgePath}
-      />
-      
-      <text
-        x={centerX}
-        y={controlPointY - 8}
-        textAnchor="middle"
-        style={{ 
-          fontSize: isHovered ? '18px' : '16px', 
-          fill: '#ef4444', 
-          fontWeight: 'bold',
-          transition: 'all 0.3s ease'
-        }}
-        className="pointer-events-none"
       >
-        💍
-      </text>
+        <animate attributeName="stroke-dashoffset" values="0;-40;0" dur="4s" repeatCount="indefinite" />
+      </path>
+      
+      {/* Enhanced diamond ring with animations */}
+      <g transform={`translate(${centerX}, ${controlPointY - 12})`}>
+        <circle
+          r={isHovered ? "12" : "8"}
+          fill="url(#marriage-gradient-${id})"
+          className="transition-all duration-300"
+        >
+          <animate attributeName="r" values="8;12;8" dur="2s" repeatCount="indefinite" />
+        </circle>
+        <text
+          textAnchor="middle"
+          dominantBaseline="central"
+          style={{ 
+            fontSize: isHovered ? '24px' : '20px', 
+            transition: 'all 0.3s ease'
+          }}
+          className="pointer-events-none"
+        >
+          💍
+          <animateTransform 
+            attributeName="transform" 
+            type="rotate" 
+            values="0;360;0" 
+            dur="6s" 
+            repeatCount="indefinite"
+          />
+        </text>
+        {/* Sparkle effects */}
+        <g>
+          <text x="-15" y="-10" style={{ fontSize: '12px' }} className="animate-ping">✨</text>
+          <text x="15" y="-8" style={{ fontSize: '10px' }} className="animate-pulse">💫</text>
+          <text x="-12" y="12" style={{ fontSize: '8px' }} className="animate-bounce">⭐</text>
+        </g>
+      </g>
     </g>
   );
 };
 
-// Enhanced Parent-Child Edge Component with marriage center routing
+// Enhanced Parent-Child Edge Component with animations
 const ParentChildEdge = ({ id, sourceX, sourceY, targetX, targetY, style = {}, source, target, data }: any) => {
   const nodes = useNodes();
   const edges = useEdges();
@@ -308,7 +369,7 @@ const ParentChildEdge = ({ id, sourceX, sourceY, targetX, targetY, style = {}, s
   const marriageCenter = findMarriageCenter(source);
   
   if (marriageCenter) {
-    // Route from marriage center to child
+    // Route from marriage center to child with animations
     const dropDistance = 80;
     const horizontalDistance = 40;
     
@@ -327,44 +388,64 @@ const ParentChildEdge = ({ id, sourceX, sourceY, targetX, targetY, style = {}, s
       <>
         <defs>
           <linearGradient id={`child-gradient-${id}`} x1="0%" y1="0%" x2="0%" y2="100%">
-            <stop offset="0%" stopColor="#3b82f6" />
-            <stop offset="50%" stopColor="#22c55e" />
-            <stop offset="100%" stopColor="#10b981" />
+            <stop offset="0%" stopColor="#3b82f6">
+              <animate attributeName="stop-color" values="#3b82f6;#06b6d4;#3b82f6" dur="3s" repeatCount="indefinite" />
+            </stop>
+            <stop offset="50%" stopColor="#22c55e">
+              <animate attributeName="stop-color" values="#22c55e;#10b981;#22c55e" dur="2s" repeatCount="indefinite" />
+            </stop>
+            <stop offset="100%" stopColor="#10b981">
+              <animate attributeName="stop-color" values="#10b981;#059669;#10b981" dur="3s" repeatCount="indefinite" />
+            </stop>
           </linearGradient>
           
           <marker id={`child-arrow-${id}`} markerWidth="8" markerHeight="8" refX="6" refY="4" orient="auto" markerUnits="strokeWidth">
             <polygon points="0,0 0,8 8,4" fill="#22c55e" />
           </marker>
+
+          <filter id={`child-glow-${id}`}>
+            <feGaussianBlur stdDeviation="2" result="coloredBlur"/>
+            <feMerge> 
+              <feMergeNode in="coloredBlur"/>
+              <feMergeNode in="SourceGraphic"/>
+            </feMerge>
+          </filter>
         </defs>
         
         <path
           id={id}
           style={{
             ...style,
-            strokeWidth: 2,
+            strokeWidth: 3,
             stroke: `url(#child-gradient-${id})`,
             strokeLinecap: 'round',
             strokeLinejoin: 'round',
+            filter: `url(#child-glow-${id})`,
+            strokeDasharray: '8,4',
           }}
           className="react-flow__edge-path"
           d={edgePath}
           markerEnd={`url(#child-arrow-${id})`}
-        />
+        >
+          <animate attributeName="stroke-dashoffset" values="0;-24;0" dur="3s" repeatCount="indefinite" />
+        </path>
         
         <circle
           cx={marriageCenter.x}
           cy={marriageCenter.y}
-          r="3"
+          r="4"
           fill="#22c55e"
           stroke="white"
-          strokeWidth="1"
+          strokeWidth="2"
           className="drop-shadow-sm"
-        />
+        >
+          <animate attributeName="r" values="3;6;3" dur="2s" repeatCount="indefinite" />
+        </circle>
       </>
     );
   }
   
-  // Standard parent-child connection
+  // Standard parent-child connection with animations
   const deltaX = targetX - sourceX;
   const deltaY = targetY - sourceY;
   const controlPoint1X = sourceX + deltaX * 0.2;
@@ -378,8 +459,12 @@ const ParentChildEdge = ({ id, sourceX, sourceY, targetX, targetY, style = {}, s
     <>
       <defs>
         <linearGradient id={`parent-gradient-${id}`} x1="0%" y1="0%" x2="0%" y2="100%">
-          <stop offset="0%" stopColor="#3b82f6" />
-          <stop offset="100%" stopColor="#1d4ed8" />
+          <stop offset="0%" stopColor="#3b82f6">
+            <animate attributeName="stop-color" values="#3b82f6;#06b6d4;#3b82f6" dur="4s" repeatCount="indefinite" />
+          </stop>
+          <stop offset="100%" stopColor="#1d4ed8">
+            <animate attributeName="stop-color" values="#1d4ed8;#1e40af;#1d4ed8" dur="3s" repeatCount="indefinite" />
+          </stop>
         </linearGradient>
         
         <marker id={`parent-arrow-${id}`} markerWidth="6" markerHeight="6" refX="5" refY="3" orient="auto" markerUnits="strokeWidth">
@@ -394,16 +479,19 @@ const ParentChildEdge = ({ id, sourceX, sourceY, targetX, targetY, style = {}, s
           strokeWidth: 2,
           stroke: `url(#parent-gradient-${id})`,
           strokeLinecap: 'round',
+          strokeDasharray: '6,3',
         }}
         className="react-flow__edge-path"
         d={edgePath}
         markerEnd={`url(#parent-arrow-${id})`}
-      />
+      >
+        <animate attributeName="stroke-dashoffset" values="0;-18;0" dur="4s" repeatCount="indefinite" />
+      </path>
     </>
   );
 };
 
-// Enhanced Sibling Edge Component
+// Enhanced Sibling Edge Component with animations
 const SiblingEdge = ({ id, sourceX, sourceY, targetX, targetY, style = {} }: any) => {
   const centerX = (sourceX + targetX) / 2;
   const centerY = (sourceY + targetY) / 2 - 30;
@@ -414,9 +502,15 @@ const SiblingEdge = ({ id, sourceX, sourceY, targetX, targetY, style = {} }: any
     <>
       <defs>
         <linearGradient id={`sibling-gradient-${id}`} x1="0%" y1="0%" x2="100%" y2="0%">
-          <stop offset="0%" stopColor="#8b5cf6" />
-          <stop offset="50%" stopColor="#a855f7" />
-          <stop offset="100%" stopColor="#8b5cf6" />
+          <stop offset="0%" stopColor="#8b5cf6">
+            <animate attributeName="stop-color" values="#8b5cf6;#a855f7;#8b5cf6" dur="3s" repeatCount="indefinite" />
+          </stop>
+          <stop offset="50%" stopColor="#a855f7">
+            <animate attributeName="stop-color" values="#a855f7;#9333ea;#a855f7" dur="2s" repeatCount="indefinite" />
+          </stop>
+          <stop offset="100%" stopColor="#8b5cf6">
+            <animate attributeName="stop-color" values="#8b5cf6;#a855f7;#8b5cf6" dur="3s" repeatCount="indefinite" />
+          </stop>
         </linearGradient>
       </defs>
       
@@ -426,19 +520,21 @@ const SiblingEdge = ({ id, sourceX, sourceY, targetX, targetY, style = {} }: any
           ...style,
           strokeWidth: 2,
           stroke: `url(#sibling-gradient-${id})`,
-          strokeDasharray: '6,3',
+          strokeDasharray: '8,4',
           strokeLinecap: 'round',
         }}
         className="react-flow__edge-path"
         d={edgePath}
-      />
+      >
+        <animate attributeName="stroke-dashoffset" values="0;-24;0" dur="3s" repeatCount="indefinite" />
+      </path>
       
       <text
         x={centerX}
         y={centerY - 5}
         textAnchor="middle"
-        style={{ fontSize: '12px', fill: '#8b5cf6', fontWeight: 'bold' }}
-        className="pointer-events-none"
+        style={{ fontSize: '14px', fill: '#8b5cf6', fontWeight: 'bold' }}
+        className="pointer-events-none animate-bounce"
       >
         👫
       </text>
@@ -624,7 +720,8 @@ const calculateNodePositions = (
         loginUserId: loggedInUserId,
         isRoot: userId === createdByUserId,
         status: member.status,
-        generation: pos.generation
+        generation: pos.generation,
+        isSelected: false
       }
     };
   });
@@ -698,6 +795,133 @@ const calculateNodePositions = (
   return { nodes, edges };
 };
 
+// Relationship calculation function
+const calculateRelationship = (
+  person1Id: string, 
+  person2Id: string, 
+  coreRelationships: CoreRelationship[], 
+  familyMembers: FamilyMember[]
+): string => {
+  const person1 = familyMembers.find(m => m.userId === person1Id);
+  const person2 = familyMembers.find(m => m.userId === person2Id);
+  
+  if (!person1 || !person2) return 'Unknown relationship';
+
+  // Build relationship maps for analysis
+  const parentChildMap = new Map<string, string[]>();
+  const childParentMap = new Map<string, string[]>();
+  const spouseMap = new Map<string, string[]>();
+  const siblingMap = new Map<string, string[]>();
+  
+  coreRelationships.forEach(rel => {
+    switch (rel.type) {
+      case 'PARENTS_OF':
+        if (!parentChildMap.has(rel.source)) parentChildMap.set(rel.source, []);
+        parentChildMap.get(rel.source)!.push(rel.target);
+        
+        if (!childParentMap.has(rel.target)) childParentMap.set(rel.target, []);
+        childParentMap.get(rel.target)!.push(rel.source);
+        break;
+        
+      case 'MARRIED_TO':
+        if (!spouseMap.has(rel.source)) spouseMap.set(rel.source, []);
+        spouseMap.get(rel.source)!.push(rel.target);
+        if (!spouseMap.has(rel.target)) spouseMap.set(rel.target, []);
+        spouseMap.get(rel.target)!.push(rel.source);
+        break;
+        
+      case 'SIBLING':
+        if (!siblingMap.has(rel.source)) siblingMap.set(rel.source, []);
+        siblingMap.get(rel.source)!.push(rel.target);
+        if (!siblingMap.has(rel.target)) siblingMap.set(rel.target, []);
+        siblingMap.get(rel.target)!.push(rel.source);
+        break;
+    }
+  });
+
+  // Check direct relationships first
+  if (spouseMap.get(person1Id)?.includes(person2Id)) {
+    return `${person1.name} and ${person2.name} are married to each other`;
+  }
+  
+  if (parentChildMap.get(person1Id)?.includes(person2Id)) {
+    return `${person1.name} is the parent of ${person2.name}`;
+  }
+  
+  if (childParentMap.get(person1Id)?.includes(person2Id)) {
+    return `${person1.name} is the child of ${person2.name}`;
+  }
+  
+  if (siblingMap.get(person1Id)?.includes(person2Id)) {
+    return `${person1.name} and ${person2.name} are siblings`;
+  }
+
+  // Check for extended relationships using BFS
+  const visited = new Set<string>();
+  const queue: Array<{id: string, path: string[], relationship: string}> = [
+    {id: person1Id, path: [person1Id], relationship: 'self'}
+  ];
+  
+  while (queue.length > 0) {
+    const current = queue.shift()!;
+    
+    if (visited.has(current.id)) continue;
+    visited.add(current.id);
+    
+    if (current.id === person2Id && current.path.length > 1) {
+      // Found the target, analyze the path
+      return analyzeRelationshipPath(current.path, familyMembers, coreRelationships);
+    }
+    
+    if (current.path.length > 6) continue; // Limit search depth
+    
+    // Add connected people to queue
+    const connections = [
+      ...(parentChildMap.get(current.id) || []),
+      ...(childParentMap.get(current.id) || []),
+      ...(spouseMap.get(current.id) || []),
+      ...(siblingMap.get(current.id) || [])
+    ];
+    
+    connections.forEach(connectedId => {
+      if (!visited.has(connectedId)) {
+        queue.push({
+          id: connectedId,
+          path: [...current.path, connectedId],
+          relationship: 'extended'
+        });
+      }
+    });
+  }
+  
+  return `${person1.name} and ${person2.name} appear to be distantly related or not directly connected`;
+};
+
+const analyzeRelationshipPath = (
+  path: string[], 
+  familyMembers: FamilyMember[], 
+  coreRelationships: CoreRelationship[]
+): string => {
+  if (path.length < 2) return 'No relationship';
+  
+  const person1 = familyMembers.find(m => m.userId === path[0]);
+  const person2 = familyMembers.find(m => m.userId === path[path.length - 1]);
+  
+  if (!person1 || !person2) return 'Unknown relationship';
+  
+  // Simplified relationship analysis based on path length and connections
+  if (path.length === 3) {
+    // Could be grandparent-grandchild, aunt/uncle-niece/nephew, etc.
+    return `${person1.name} and ${person2.name} are likely grandparent-grandchild or aunt/uncle-niece/nephew`;
+  } else if (path.length === 4) {
+    return `${person1.name} and ${person2.name} are likely cousins or great-grandparent-great-grandchild`;
+  } else if (path.length > 4) {
+    return `${person1.name} and ${person2.name} are distantly related (${path.length - 1} degrees of separation)`;
+  }
+  
+  return `${person1.name} and ${person2.name} are related through the family tree`;
+};
+
 const FamilyTreeVisualization: React.FC<FamilyTreeVisualizationProps> = ({ 
   user, 
   familyMembers,
@@ -709,6 +933,10 @@ const FamilyTreeVisualization: React.FC<FamilyTreeVisualizationProps> = ({
   const [isLoading, setIsLoading] = useState(true);
   const [selectedEdge, setSelectedEdge] = useState<Edge | null>(null);
   const [relationshipDetailsOpen, setRelationshipDetailsOpen] = useState(false);
+  const [selectedNodes, setSelectedNodes] = useState<string[]>([]);
+  const [nodeDetailsOpen, setNodeDetailsOpen] = useState(false);
+  const [relationshipAnalysisOpen, setRelationshipAnalysisOpen] = useState(false);
+  const [calculatedRelationship, setCalculatedRelationship] = useState<string>('');
   
   // Calculate nodes and edges
   const { nodes: calculatedNodes, edges: calculatedEdges } = React.useMemo(() => {
@@ -776,12 +1004,77 @@ const FamilyTreeVisualization: React.FC<FamilyTreeVisualizationProps> = ({
     return null;
   };
   
+  // Handle node click for selection
+  const onNodeClick = useCallback((event: React.MouseEvent, node: Node) => {
+    event.stopPropagation();
+    
+    if (selectedNodes.includes(node.id)) {
+      // Deselect if already selected
+      const newSelection = selectedNodes.filter(id => id !== node.id);
+      setSelectedNodes(newSelection);
+      
+      // Update node selection state
+      setNodes(nodes => nodes.map(n => ({
+        ...n,
+        data: { ...n.data, isSelected: newSelection.includes(n.id) }
+      })));
+      
+      if (newSelection.length === 0) {
+        setNodeDetailsOpen(false);
+        setRelationshipAnalysisOpen(false);
+      }
+    } else if (selectedNodes.length < 2) {
+      // Select node (max 2)
+      const newSelection = [...selectedNodes, node.id];
+      setSelectedNodes(newSelection);
+      
+      // Update node selection state
+      setNodes(nodes => nodes.map(n => ({
+        ...n,
+        data: { ...n.data, isSelected: newSelection.includes(n.id) }
+      })));
+      
+      if (newSelection.length === 1) {
+        setNodeDetailsOpen(true);
+      } else if (newSelection.length === 2) {
+        // Calculate relationship between two nodes
+        const relationship = calculateRelationship(
+          newSelection[0], 
+          newSelection[1], 
+          coreRelationships, 
+          familyMembers
+        );
+        setCalculatedRelationship(relationship);
+        setRelationshipAnalysisOpen(true);
+        setNodeDetailsOpen(false);
+      }
+    }
+  }, [selectedNodes, nodes, setNodes, coreRelationships, familyMembers]);
+  
   // Handle edge click to show relationship details
   const onEdgeClick = useCallback((event: React.MouseEvent, edge: Edge) => {
     event.stopPropagation();
     setSelectedEdge(edge);
     setRelationshipDetailsOpen(true);
   }, []);
+  
+  // Handle pane click to deselect all
+  const onPaneClick = useCallback(() => {
+    setSelectedNodes([]);
+    setNodes(nodes => nodes.map(n => ({
+      ...n,
+      data: { ...n.data, isSelected: false }
+    })));
+    setNodeDetailsOpen(false);
+    setRelationshipAnalysisOpen(false);
+  }, [setNodes]);
+  
+  // Get selected node details
+  const getSelectedNodeDetails = () => {
+    if (selectedNodes.length !== 1) return null;
+    const node = nodes.find(n => n.id === selectedNodes[0]);
+    return node ? familyMembers.find(m => m.userId === node.id) : null;
+  };
   
   if (isLoading) {
     return (
@@ -801,7 +1094,9 @@ const FamilyTreeVisualization: React.FC<FamilyTreeVisualizationProps> = ({
         edges={edges}
         onNodesChange={onNodesChange}
         onEdgesChange={onEdgesChange}
+        onNodeClick={onNodeClick}
         onEdgeClick={onEdgeClick}
+        onPaneClick={onPaneClick}
         nodeTypes={nodeTypes}
         edgeTypes={edgeTypes}
         fitView
@@ -845,6 +1140,127 @@ const FamilyTreeVisualization: React.FC<FamilyTreeVisualizationProps> = ({
           />
         )}
       </ReactFlow>
+      
+      {/* Node Details Dialog */}
+      <Dialog open={nodeDetailsOpen} onOpenChange={setNodeDetailsOpen}>
+        <DialogContent className="max-w-md bg-white/95 backdrop-blur-sm border border-slate-200/60">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-slate-800">
+              <UserIcon className="w-5 h-5 text-blue-500" />
+              Family Member Details
+            </DialogTitle>
+            <DialogDescription className="text-slate-600">
+              Information about the selected family member
+            </DialogDescription>
+          </DialogHeader>
+          
+          {(() => {
+            const member = getSelectedNodeDetails();
+            if (!member) return null;
+            
+            return (
+              <div className="space-y-4">
+                <div className="text-center p-4 bg-gradient-to-br from-blue-50 to-indigo-50 rounded-lg border border-blue-200/40">
+                  <div className="text-lg font-semibold text-blue-800">{member.name}</div>
+                  <div className="text-sm text-blue-600 mt-1">
+                    {member.relationship || 'Family Member'}
+                  </div>
+                </div>
+                
+                <div className="space-y-3 text-sm">
+                  {member.email && (
+                    <div className="flex items-center gap-2 p-2 bg-slate-50 rounded-lg">
+                      <Mail className="w-4 h-4 text-slate-500" />
+                      <span className="text-slate-700">{member.email}</span>
+                    </div>
+                  )}
+                  
+                  <div className="flex items-center gap-2 p-2 bg-slate-50 rounded-lg">
+                    <Badge variant="outline" className={`${
+                      member.status === 'active' ? 'bg-green-50 text-green-700 border-green-200' :
+                      member.status === 'invited' ? 'bg-yellow-50 text-yellow-700 border-yellow-200' :
+                      'bg-gray-50 text-gray-700 border-gray-200'
+                    }`}>
+                      {member.status === 'active' ? '✓ Active' : 
+                       member.status === 'invited' ? '⏳ Invited' : 
+                       '❓ Unknown'}
+                    </Badge>
+                  </div>
+                  
+                  {member.gender && (
+                    <div className="flex items-center gap-2 p-2 bg-slate-50 rounded-lg">
+                      <span className="text-slate-500">Gender:</span>
+                      <span className="text-slate-700 capitalize">{member.gender}</span>
+                    </div>
+                  )}
+                </div>
+              </div>
+            );
+          })()}
+        </DialogContent>
+      </Dialog>
+      
+      {/* Relationship Analysis Dialog */}
+      <Dialog open={relationshipAnalysisOpen} onOpenChange={setRelationshipAnalysisOpen}>
+        <DialogContent className="max-w-lg bg-white/95 backdrop-blur-sm border border-slate-200/60">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-slate-800">
+              <Users className="w-5 h-5 text-purple-500" />
+              Relationship Analysis
+            </DialogTitle>
+            <DialogDescription className="text-slate-600">
+              Analysis of the relationship between selected family members
+            </DialogDescription>
+          </DialogHeader>
+          
+          {selectedNodes.length === 2 && (
+            <div className="space-y-4">
+              <div className="grid grid-cols-2 gap-4">
+                {selectedNodes.map((nodeId, index) => {
+                  const member = familyMembers.find(m => m.userId === nodeId);
+                  if (!member) return null;
+                  
+                  return (
+                    <div key={nodeId} className="text-center p-3 bg-gradient-to-br from-purple-50 to-pink-50 rounded-lg border border-purple-200/40">
+                      <div className="font-semibold text-purple-800">{member.name}</div>
+                      <div className="text-xs text-purple-600 mt-1">
+                        {member.relationship || 'Family Member'}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+              
+              <div className="p-4 bg-gradient-to-br from-blue-50 to-indigo-50 rounded-lg border border-blue-200/40">
+                <h4 className="font-semibold text-blue-800 mb-2 flex items-center gap-2">
+                  <Heart className="w-4 h-4" />
+                  Relationship Analysis
+                </h4>
+                <p className="text-blue-700 text-sm leading-relaxed">
+                  {calculatedRelationship}
+                </p>
+              </div>
+              
+              <div className="flex justify-center">
+                <button
+                  onClick={() => {
+                    setRelationshipAnalysisOpen(false);
+                    setSelectedNodes([]);
+                    setNodes(nodes => nodes.map(n => ({
+                      ...n,
+                      data: { ...n.data, isSelected: false }
+                    })));
+                  }}
+                  className="px-4 py-2 bg-purple-500 text-white rounded-lg hover:bg-purple-600 transition-colors flex items-center gap-2"
+                >
+                  <X className="w-4 h-4" />
+                  Close Analysis
+                </button>
+              </div>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
       
       {/* Enhanced Relationship Details Dialog */}
       <Dialog open={relationshipDetailsOpen} onOpenChange={setRelationshipDetailsOpen}>

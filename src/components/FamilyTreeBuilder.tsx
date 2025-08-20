@@ -28,11 +28,8 @@ import {
   validateRelationshipAddition, 
   checkEmailExists 
 } from './FamilyTreeStore';
-import { 
-  nodeTypes, 
-  edgeTypes, 
-  FamilyMemberNode 
-} from './FamilyTreeVisualization';
+import { nodeTypes, edgeTypes } from '@/features/family-tree';
+import type { FamilyMemberNode } from '@/features/family-tree';
 import { 
   relationshipCategories,
   addFamilyMemberWithRelationships,

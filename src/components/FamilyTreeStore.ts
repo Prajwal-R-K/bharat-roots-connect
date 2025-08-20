@@ -459,6 +459,7 @@ export const initializeFamilyTree = async (registrationData: any) => {
 };
 
 // Enhanced relationship validation with comprehensive checks
+// Enhanced relationship validation with comprehensive checks
 export const validateRelationshipAddition = async (
   selectedNode: any, 
   category: string, 
@@ -499,10 +500,8 @@ export const validateRelationshipAddition = async (
       const marriedSpouses = spouses.filter(s => s.marriageStatus === 'married');
       if (marriedSpouses.length > 0 && newMember.marriageStatus === 'married') {
         return {
-          valid: true,
-          requiresConfirmation: true,
-          message: `${selectedNode.data.name} is already married to ${marriedSpouses[0].name}. Do you want to:\n\n1. End the current marriage and add new spouse?\n2. Add as divorced/separated spouse?\n3. Cancel this action?`,
-          warnings: ['This will update existing marriage status']
+          valid: false,
+          message: `${selectedNode.data.name} is already married to ${marriedSpouses[0].name}. Please either:\n\n1. Change the existing marriage status to divorced/separated first\n2. Set this new spouse's status to divorced/separated\n3. Cancel this action`
         };
       }
       
