@@ -80,18 +80,18 @@ const FamilyMemberNode = ({ data, id, selected }: { data: any; id: string; selec
   };
 
   const getRelationshipIcon = (relationship?: string, isRoot?: boolean, isCurrentUser?: boolean) => {
-    if (isCurrentUser) return <Crown className="w-4 h-4 text-yellow-200" />;
-    if (isRoot) return <Crown className="w-4 h-4 text-yellow-200" />;
+    if (isCurrentUser) return <Crown className="w-3 h-3 text-yellow-200" />;
+    if (isRoot) return <Crown className="w-3 h-3 text-yellow-200" />;
     
     switch (relationship) {
       case 'father':
       case 'mother':
-        return <Users className="w-4 h-4 text-white" />;
+        return <Users className="w-3 h-3 text-white" />;
       case 'husband':
       case 'wife':
-        return <Heart className="w-4 h-4 text-white" />;
+        return <Heart className="w-3 h-3 text-white" />;
       default:
-        return <UserIcon className="w-4 h-4 text-white" />;
+        return <UserIcon className="w-3 h-3 text-white" />;
     }
   };
 
@@ -105,7 +105,7 @@ const FamilyMemberNode = ({ data, id, selected }: { data: any; id: string; selec
   const getStatusBadge = () => {
     if (data.status === 'invited') {
       return (
-        <div className="absolute -top-1 -right-1 bg-yellow-500 text-white text-xs px-1.5 py-0.5 rounded-full font-semibold shadow-sm animate-pulse">
+        <div className="absolute -top-1 -right-1 bg-yellow-500 text-white text-[10px] px-1 py-0.5 rounded-full font-semibold shadow-sm animate-pulse">
           !
         </div>
       );
@@ -117,7 +117,7 @@ const FamilyMemberNode = ({ data, id, selected }: { data: any; id: string; selec
 
   return (
     <div 
-      className={`group relative bg-white ${getBorderStyle()} rounded-xl p-3 w-[140px] h-[180px] flex flex-col justify-between transition-all duration-300 hover:scale-110 cursor-pointer backdrop-blur-sm ${
+      className={`group relative bg-white ${getBorderStyle()} rounded-xl p-2 w-[100px] h-[140px] flex flex-col justify-between transition-all duration-300 hover:scale-110 cursor-pointer backdrop-blur-sm animate-fadeIn ${
         data.isSelected ? 'animate-pulse z-10' : ''
       }`}
       onMouseEnter={() => setIsHovered(true)}
@@ -128,42 +128,42 @@ const FamilyMemberNode = ({ data, id, selected }: { data: any; id: string; selec
       <Handle 
         type="target" 
         position={Position.Top} 
-        className="w-2 h-2 bg-gradient-to-r from-blue-400 to-purple-400 border border-white shadow-sm opacity-0 group-hover:opacity-100 transition-opacity" 
+        className="w-1.5 h-1.5 bg-gradient-to-r from-blue-400 to-purple-400 border border-white shadow-sm opacity-0 group-hover:opacity-100 transition-opacity" 
       />
       <Handle 
         type="source" 
         position={Position.Bottom} 
-        className="w-2 h-2 bg-gradient-to-r from-green-400 to-blue-400 border border-white shadow-sm opacity-0 group-hover:opacity-100 transition-opacity" 
+        className="w-1.5 h-1.5 bg-gradient-to-r from-green-400 to-blue-400 border border-white shadow-sm opacity-0 group-hover:opacity-100 transition-opacity" 
       />
       <Handle 
         type="target" 
         position={Position.Left} 
-        className="w-2 h-2 bg-gradient-to-r from-red-400 to-pink-400 border border-white shadow-sm opacity-0 group-hover:opacity-100 transition-opacity" 
+        className="w-1.5 h-1.5 bg-gradient-to-r from-red-400 to-pink-400 border border-white shadow-sm opacity-0 group-hover:opacity-100 transition-opacity" 
       />
       <Handle 
         type="source" 
         position={Position.Right} 
-        className="w-2 h-2 bg-gradient-to-r from-red-400 to-pink-400 border border-white shadow-sm opacity-0 group-hover:opacity-100 transition-opacity" 
+        className="w-1.5 h-1.5 bg-gradient-to-r from-red-400 to-pink-400 border border-white shadow-sm opacity-0 group-hover:opacity-100 transition-opacity" 
       />
 
       {getStatusBadge()}
 
       {/* Selection indicator */}
       {data.isSelected && (
-        <div className="absolute -top-2 -right-2 w-6 h-6 bg-blue-500 text-white rounded-full flex items-center justify-center text-xs font-bold animate-bounce">
+        <div className="absolute -top-2 -right-2 w-5 h-5 bg-blue-500 text-white rounded-full flex items-center justify-center text-[10px] font-bold animate-bounce">
           ✓
         </div>
       )}
 
-      <div className="flex flex-col items-center space-y-2">
+      <div className="flex flex-col items-center space-y-1">
         {/* Compact Avatar */}
-        <div className={`w-12 h-12 bg-gradient-to-br ${getNodeColor(data.isRoot, data.gender, isCurrentUser)} rounded-full flex items-center justify-center shadow-lg ring-2 ring-white/80 ${
-          data.isSelected ? 'ring-4 ring-blue-300 animate-pulse' : ''
+        <div className={`w-10 h-10 bg-gradient-to-br ${getNodeColor(data.isRoot, data.gender, isCurrentUser)} rounded-full flex items-center justify-center shadow-lg ring-1 ring-white/80 ${
+          data.isSelected ? 'ring-3 ring-blue-300 animate-pulse' : ''
         }`}>
           {data.profilePicture ? (
-            <Avatar className="w-12 h-12">
+            <Avatar className="w-10 h-10">
               <AvatarImage src={data.profilePicture} />
-              <AvatarFallback className="text-xs font-semibold text-white">
+              <AvatarFallback className="text-[10px] font-semibold text-white">
                 {data.name.split(' ').map((n: string) => n[0]).join('').toUpperCase()}
               </AvatarFallback>
             </Avatar>
@@ -173,26 +173,26 @@ const FamilyMemberNode = ({ data, id, selected }: { data: any; id: string; selec
         </div>
 
         {/* Compact Info */}
-        <div className="text-center space-y-1">
-          <div className="font-semibold text-slate-800 text-xs leading-tight truncate max-w-[120px]">{data.name}</div>
+        <div className="text-center space-y-0.5">
+          <div className="font-semibold text-slate-800 text-[10px] leading-tight truncate max-w-[90px]">{data.name}</div>
           
           {/* Compact Contact Info */}
           {data.email && (
-            <div className="text-xs text-slate-500 truncate max-w-[120px]" title={data.email}>
+            <div className="text-[9px] text-slate-500 truncate max-w-[90px]" title={data.email}>
               {data.email.split('@')[0]}
             </div>
           )}
 
           {/* Compact Relationship Badge */}
           {data.relationship && !data.isRoot && !isCurrentUser && (
-            <Badge variant="secondary" className="text-xs px-1.5 py-0.5 h-auto">
+            <Badge variant="secondary" className="text-[9px] px-1 py-0.5 h-auto">
               {data.relationship.charAt(0).toUpperCase() + data.relationship.slice(1)}
             </Badge>
           )}
           
           {(data.isRoot || isCurrentUser) && (
-            <div className="inline-flex items-center text-xs font-semibold text-white px-2 py-0.5 rounded-full bg-gradient-to-r from-purple-500 to-indigo-500 shadow-sm">
-              <Crown className="w-2 h-2 mr-1" />
+            <div className="inline-flex items-center text-[9px] font-semibold text-white px-1.5 py-0.5 rounded-full bg-gradient-to-r from-purple-500 to-indigo-500 shadow-sm">
+              <Crown className="w-2 h-2 mr-0.5" />
               {isCurrentUser ? 'You' : 'Root'}
             </div>
           )}
@@ -200,258 +200,191 @@ const FamilyMemberNode = ({ data, id, selected }: { data: any; id: string; selec
       </div>
 
       {/* Compact Generation Indicator */}
-      <div className="absolute top-1 left-1 text-xs font-bold text-slate-400 bg-slate-100/80 px-1.5 py-0.5 rounded-full">
+      <div className="absolute top-1 left-1 text-[9px] font-bold text-slate-400 bg-slate-100/80 px-1 py-0.5 rounded-full">
         G{data.generation || 0}
       </div>
     </div>
   );
 };
 
-// Enhanced Marriage Edge Component with better animations
-const MarriageEdge = ({ id, sourceX, sourceY, targetX, targetY, style = {} }: any) => {
+const CoupleNode = ({ data, id, selected }: { data: any; id: string; selected?: boolean }) => {
   const [isHovered, setIsHovered] = useState(false);
-  const centerX = (sourceX + targetX) / 2;
-  const centerY = (sourceY + targetY) / 2;
-  
-  const distance = Math.abs(targetX - sourceX);
-  const archHeight = Math.max(20, Math.min(40, distance / 6));
-  const controlPointY = centerY - archHeight;
-  const edgePath = `M ${sourceX},${centerY} Q ${centerX},${controlPointY} ${targetX},${centerY}`;
+
+  const member1 = data.member1;
+  const member2 = data.member2;
+
+  const getNodeColor = (member: any) => {
+    const isRoot = member.isRoot;
+    const gender = member.gender;
+    const isCurrentUser = member.userId === data.loginUserId;
+    if (isCurrentUser) return 'from-violet-500 via-purple-500 to-indigo-500';
+    if (isRoot) return 'from-amber-400 via-yellow-400 to-orange-400';
+    if (gender === 'male') return 'from-blue-400 via-sky-400 to-cyan-400';
+    if (gender === 'female') return 'from-pink-400 via-rose-400 to-red-400';
+    return 'from-slate-400 via-gray-400 to-zinc-400';
+  };
+
+  const getRelationshipIcon = (member: any) => {
+    const relationship = member.relationship;
+    const isRoot = member.isRoot;
+    const isCurrentUser = member.userId === data.loginUserId;
+    if (isCurrentUser) return <Crown className="w-3 h-3 text-yellow-200" />;
+    if (isRoot) return <Crown className="w-3 h-3 text-yellow-200" />;
+    switch (relationship) {
+      case 'father':
+      case 'mother':
+        return <Users className="w-3 h-3 text-white" />;
+      case 'husband':
+      case 'wife':
+        return <Heart className="w-3 h-3 text-white" />;
+      default:
+        return <UserIcon className="w-3 h-3 text-white" />;
+    }
+  };
+
+  const getBorderStyle = () => {
+    if (data.isSelected) return 'border-4 border-blue-500 shadow-2xl shadow-blue-300/60 ring-2 ring-blue-200';
+    if (selected) return 'border-3 border-blue-400 shadow-xl shadow-blue-200/50';
+    if (isHovered) return 'border-2 border-purple-300 shadow-lg shadow-purple-100/50';
+    return 'border border-slate-200/60 shadow-md';
+  };
+
+  const getStatusBadge = (member: any) => {
+    if (member.status === 'invited') {
+      return (
+        <div className="absolute -top-1 bg-yellow-500 text-white text-[10px] px-1 py-0.5 rounded-full font-semibold shadow-sm animate-pulse">
+          !
+        </div>
+      );
+    }
+    return null;
+  };
+
+  const isRoot = member1.isRoot || member2.isRoot;
+  const isCurrentUser1 = member1.userId === data.loginUserId;
+  const isCurrentUser2 = member2.userId === data.loginUserId;
 
   return (
-    <g
+    <div 
+      className={`group relative bg-white ${getBorderStyle()} rounded-xl p-2 w-[200px] h-[140px] flex flex-row items-center justify-between transition-all duration-300 hover:scale-110 cursor-pointer backdrop-blur-sm animate-fadeIn ${
+        data.isSelected ? 'animate-pulse z-10' : ''
+      }`}
       onMouseEnter={() => setIsHovered(true)}
       onMouseLeave={() => setIsHovered(false)}
-      className="cursor-pointer"
+      title={`${member1.name} & ${member2.name}`}
     >
-      <defs>
-        <linearGradient id={`marriage-gradient-${id}`} x1="0%" y1="0%" x2="100%" y2="0%">
-          <stop offset="0%" stopColor="#ec4899">
-            <animate attributeName="stop-color" values="#ec4899;#f97316;#ec4899" dur="3s" repeatCount="indefinite" />
-          </stop>
-          <stop offset="50%" stopColor="#ef4444">
-            <animate attributeName="stop-color" values="#ef4444;#dc2626;#ef4444" dur="2s" repeatCount="indefinite" />
-          </stop>
-          <stop offset="100%" stopColor="#ec4899">
-            <animate attributeName="stop-color" values="#ec4899;#f97316;#ec4899" dur="3s" repeatCount="indefinite" />
-          </stop>
-        </linearGradient>
-        
-        <linearGradient id={`marriage-gradient-hover-${id}`} x1="0%" y1="0%" x2="100%" y2="0%">
-          <stop offset="0%" stopColor="#f97316" />
-          <stop offset="50%" stopColor="#dc2626" />
-          <stop offset="100%" stopColor="#f97316" />
-        </linearGradient>
-        
-        <filter id={`marriage-glow-${id}`}>
-          <feGaussianBlur stdDeviation="4" result="coloredBlur"/>
-          <feMerge> 
-            <feMergeNode in="coloredBlur"/>
-            <feMergeNode in="SourceGraphic"/>
-          </feMerge>
-        </filter>
-
-        <filter id={`marriage-sparkle-${id}`}>
-          <feGaussianBlur stdDeviation="2" result="coloredBlur"/>
-          <feOffset in="coloredBlur" dx="1" dy="1" result="offsetBlur"/>
-          <feMerge> 
-            <feMergeNode in="offsetBlur"/>
-            <feMergeNode in="SourceGraphic"/>
-          </feMerge>
-        </filter>
-      </defs>
-      
-      {/* Animated background glow */}
-      <path
-        style={{
-          strokeWidth: 8,
-          stroke: `url(#marriage-gradient-${id})`,
-          opacity: 0.3,
-          filter: `url(#marriage-sparkle-${id})`,
-        }}
-        className="react-flow__edge-path animate-pulse"
-        d={edgePath}
+      {/* Connection Handles */}
+      <Handle 
+        type="target" 
+        position={Position.Top} 
+        id="left"
+        className="left-[25%] w-1.5 h-1.5 bg-gradient-to-r from-blue-400 to-purple-400 border border-white shadow-sm opacity-0 group-hover:opacity-100 transition-opacity" 
       />
-      
-      <path
-        id={id}
-        style={{
-          ...style,
-          strokeWidth: isHovered ? 6 : 4,
-          stroke: isHovered ? `url(#marriage-gradient-hover-${id})` : `url(#marriage-gradient-${id})`,
-          strokeDasharray: isHovered ? '16,12' : '12,8',
-          strokeLinecap: 'round',
-          filter: isHovered ? `url(#marriage-glow-${id})` : 'none',
-        }}
-        className={`react-flow__edge-path transition-all duration-300 ${isHovered ? 'animate-pulse' : ''}`}
-        d={edgePath}
-      >
-        <animate attributeName="stroke-dashoffset" values="0;-40;0" dur="4s" repeatCount="indefinite" />
-      </path>
-      
-      {/* Enhanced diamond ring with animations */}
-      <g transform={`translate(${centerX}, ${controlPointY - 12})`}>
-        <circle
-          r={isHovered ? "12" : "8"}
-          fill="url(#marriage-gradient-${id})"
-          className="transition-all duration-300"
-        >
-          <animate attributeName="r" values="8;12;8" dur="2s" repeatCount="indefinite" />
-        </circle>
-        <text
-          textAnchor="middle"
-          dominantBaseline="central"
-          style={{ 
-            fontSize: isHovered ? '24px' : '20px', 
-            transition: 'all 0.3s ease'
-          }}
-          className="pointer-events-none"
-        >
-          💍
-          <animateTransform 
-            attributeName="transform" 
-            type="rotate" 
-            values="0;360;0" 
-            dur="6s" 
-            repeatCount="indefinite"
-          />
-        </text>
-        {/* Sparkle effects */}
-        <g>
-          <text x="-15" y="-10" style={{ fontSize: '12px' }} className="animate-ping">✨</text>
-          <text x="15" y="-8" style={{ fontSize: '10px' }} className="animate-pulse">💫</text>
-          <text x="-12" y="12" style={{ fontSize: '8px' }} className="animate-bounce">⭐</text>
-        </g>
-      </g>
-    </g>
+      <Handle 
+        type="target" 
+        position={Position.Top} 
+        id="right"
+        className="left-[75%] w-1.5 h-1.5 bg-gradient-to-r from-blue-400 to-purple-400 border border-white shadow-sm opacity-0 group-hover:opacity-100 transition-opacity" 
+      />
+      <Handle 
+        type="source" 
+        position={Position.Bottom} 
+        id="children"
+        className="left-[50%] w-1.5 h-1.5 bg-gradient-to-r from-green-400 to-blue-400 border border-white shadow-sm opacity-0 group-hover:opacity-100 transition-opacity" 
+      />
+      <Handle 
+        type="target" 
+        position={Position.Left} 
+        className="w-1.5 h-1.5 bg-gradient-to-r from-red-400 to-pink-400 border border-white shadow-sm opacity-0 group-hover:opacity-100 transition-opacity" 
+      />
+      <Handle 
+        type="source" 
+        position={Position.Right} 
+        className="w-1.5 h-1.5 bg-gradient-to-r from-red-400 to-pink-400 border border-white shadow-sm opacity-0 group-hover:opacity-100 transition-opacity" 
+      />
+
+      {/* Left Member */}
+      <div className="flex flex-col items-center w-[45%] space-y-1 relative">
+        {getStatusBadge(member1)}
+        <div className={`w-10 h-10 bg-gradient-to-br ${getNodeColor(member1)} rounded-full flex items-center justify-center shadow-lg ring-1 ring-white/80 animate-spinSlow`}>
+          {member1.profilePicture ? (
+            <Avatar className="w-10 h-10">
+              <AvatarImage src={member1.profilePicture} />
+              <AvatarFallback className="text-[10px] font-semibold text-white">
+                {member1.name.split(' ').map((n: string) => n[0]).join('').toUpperCase()}
+              </AvatarFallback>
+            </Avatar>
+          ) : (
+            getRelationshipIcon(member1)
+          )}
+        </div>
+        <div className="text-center space-y-0.5">
+          <div className="font-semibold text-slate-800 text-[10px] leading-tight truncate max-w-[80px]">{member1.name}</div>
+          {member1.email && (
+            <div className="text-[9px] text-slate-500 truncate max-w-[80px]" title={member1.email}>
+              {member1.email.split('@')[0]}
+            </div>
+          )}
+          {isCurrentUser1 && (
+            <div className="inline-flex items-center text-[9px] font-semibold text-white px-1 py-0.5 rounded-full bg-gradient-to-r from-purple-500 to-indigo-500 shadow-sm">
+              <Crown className="w-2 h-2 mr-0.5" />
+              You
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* Heart Icon with animation */}
+      <Heart className="absolute top-[40%] left-1/2 transform -translate-x-1/2 -translate-y-1/2 w-4 h-4 text-pink-500 z-10 animate-heartBeat" fill="currentColor" />
+
+      {/* Right Member */}
+      <div className="flex flex-col items-center w-[45%] space-y-1 relative">
+        {getStatusBadge(member2)}
+        <div className={`w-10 h-10 bg-gradient-to-br ${getNodeColor(member2)} rounded-full flex items-center justify-center shadow-lg ring-1 ring-white/80 animate-spinSlow`}>
+          {member2.profilePicture ? (
+            <Avatar className="w-10 h-10">
+              <AvatarImage src={member2.profilePicture} />
+              <AvatarFallback className="text-[10px] font-semibold text-white">
+                {member2.name.split(' ').map((n: string) => n[0]).join('').toUpperCase()}
+              </AvatarFallback>
+            </Avatar>
+          ) : (
+            getRelationshipIcon(member2)
+          )}
+        </div>
+        <div className="text-center space-y-0.5">
+          <div className="font-semibold text-slate-800 text-[10px] leading-tight truncate max-w-[80px]">{member2.name}</div>
+          {member2.email && (
+            <div className="text-[9px] text-slate-500 truncate max-w-[80px]" title={member2.email}>
+              {member2.email.split('@')[0]}
+            </div>
+          )}
+          {isCurrentUser2 && (
+            <div className="inline-flex items-center text-[9px] font-semibold text-white px-1 py-0.5 rounded-full bg-gradient-to-r from-purple-500 to-indigo-500 shadow-sm">
+              <Crown className="w-2 h-2 mr-0.5" />
+              You
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* Compact Generation Indicator */}
+      <div className="absolute top-1 left-1 text-[9px] font-bold text-slate-400 bg-slate-100/80 px-1 py-0.5 rounded-full">
+        G{data.generation || 0}
+      </div>
+    </div>
   );
 };
 
-// Enhanced Parent-Child Edge Component with animations
+// Enhanced Parent-Child Edge Component with increased curvature and more animation
 const ParentChildEdge = ({ id, sourceX, sourceY, targetX, targetY, style = {}, source, target, data }: any) => {
-  const nodes = useNodes();
-  const edges = useEdges();
-  
-  // Find if this child should connect from a marriage center
-  const findMarriageCenter = (parentId: string) => {
-    const marriageEdge = edges.find(e => 
-      (e.source === parentId || e.target === parentId) && e.type === 'marriage'
-    );
-    
-    if (!marriageEdge) return null;
-    
-    const spouseId = marriageEdge.source === parentId ? marriageEdge.target : marriageEdge.source;
-    const parentNode = nodes.find(n => n.id === parentId);
-    const spouseNode = nodes.find(n => n.id === spouseId);
-    
-    if (!parentNode || !spouseNode) return null;
-    
-    const leftNode = parentNode.position.x < spouseNode.position.x ? parentNode : spouseNode;
-    const rightNode = parentNode.position.x < spouseNode.position.x ? spouseNode : parentNode;
-    
-    const leftHandleX = leftNode.position.x + 140; // node width
-    const leftHandleY = leftNode.position.y + 90; // node height / 2
-    const rightHandleX = rightNode.position.x;
-    const rightHandleY = rightNode.position.y + 90;
-    
-    const centerX = (leftHandleX + rightHandleX) / 2;
-    const centerY = (leftHandleY + rightHandleY) / 2;
-    const distance = Math.abs(rightHandleX - leftHandleX);
-    const archHeight = Math.max(20, Math.min(40, distance / 6));
-    const controlPointY = centerY - archHeight;
-    
-    return {
-      x: centerX,
-      y: controlPointY - 8
-    };
-  };
-
-  const marriageCenter = findMarriageCenter(source);
-  
-  if (marriageCenter) {
-    // Route from marriage center to child with animations
-    const dropDistance = 80;
-    const horizontalDistance = 40;
-    
-    const intermediateY = marriageCenter.y + dropDistance;
-    
-    const edgePath = `
-      M ${marriageCenter.x},${marriageCenter.y}
-      L ${marriageCenter.x},${intermediateY - horizontalDistance}
-      Q ${marriageCenter.x},${intermediateY} ${marriageCenter.x + (targetX > marriageCenter.x ? horizontalDistance : -horizontalDistance)},${intermediateY}
-      L ${targetX - (targetX > marriageCenter.x ? horizontalDistance : -horizontalDistance)},${intermediateY}
-      Q ${targetX},${intermediateY} ${targetX},${intermediateY + horizontalDistance}
-      L ${targetX},${targetY}
-    `;
-    
-    return (
-      <>
-        <defs>
-          <linearGradient id={`child-gradient-${id}`} x1="0%" y1="0%" x2="0%" y2="100%">
-            <stop offset="0%" stopColor="#3b82f6">
-              <animate attributeName="stop-color" values="#3b82f6;#06b6d4;#3b82f6" dur="3s" repeatCount="indefinite" />
-            </stop>
-            <stop offset="50%" stopColor="#22c55e">
-              <animate attributeName="stop-color" values="#22c55e;#10b981;#22c55e" dur="2s" repeatCount="indefinite" />
-            </stop>
-            <stop offset="100%" stopColor="#10b981">
-              <animate attributeName="stop-color" values="#10b981;#059669;#10b981" dur="3s" repeatCount="indefinite" />
-            </stop>
-          </linearGradient>
-          
-          <marker id={`child-arrow-${id}`} markerWidth="8" markerHeight="8" refX="6" refY="4" orient="auto" markerUnits="strokeWidth">
-            <polygon points="0,0 0,8 8,4" fill="#22c55e" />
-          </marker>
-
-          <filter id={`child-glow-${id}`}>
-            <feGaussianBlur stdDeviation="2" result="coloredBlur"/>
-            <feMerge> 
-              <feMergeNode in="coloredBlur"/>
-              <feMergeNode in="SourceGraphic"/>
-            </feMerge>
-          </filter>
-        </defs>
-        
-        <path
-          id={id}
-          style={{
-            ...style,
-            strokeWidth: 3,
-            stroke: `url(#child-gradient-${id})`,
-            strokeLinecap: 'round',
-            strokeLinejoin: 'round',
-            filter: `url(#child-glow-${id})`,
-            strokeDasharray: '8,4',
-          }}
-          className="react-flow__edge-path"
-          d={edgePath}
-          markerEnd={`url(#child-arrow-${id})`}
-        >
-          <animate attributeName="stroke-dashoffset" values="0;-24;0" dur="3s" repeatCount="indefinite" />
-        </path>
-        
-        <circle
-          cx={marriageCenter.x}
-          cy={marriageCenter.y}
-          r="4"
-          fill="#22c55e"
-          stroke="white"
-          strokeWidth="2"
-          className="drop-shadow-sm"
-        >
-          <animate attributeName="r" values="3;6;3" dur="2s" repeatCount="indefinite" />
-        </circle>
-      </>
-    );
-  }
-  
-  // Standard parent-child connection with animations
+  // Increased curve offset for more distinct connections
   const deltaX = targetX - sourceX;
   const deltaY = targetY - sourceY;
-  const controlPoint1X = sourceX + deltaX * 0.2;
-  const controlPoint1Y = sourceY + deltaY * 0.8;
-  const controlPoint2X = sourceX + deltaX * 0.8;
-  const controlPoint2Y = sourceY + deltaY * 0.2;
+  const controlPoint1X = sourceX + deltaX * 0.1;
+  const controlPoint1Y = sourceY + deltaY * 0.9;
+  const controlPoint2X = sourceX + deltaX * 0.9;
+  const controlPoint2Y = sourceY + deltaY * 0.1;
   
   const edgePath = `M ${sourceX},${sourceY} C ${controlPoint1X},${controlPoint1Y} ${controlPoint2X},${controlPoint2Y} ${targetX},${targetY}`;
   
@@ -481,7 +414,7 @@ const ParentChildEdge = ({ id, sourceX, sourceY, targetX, targetY, style = {}, s
           strokeLinecap: 'round',
           strokeDasharray: '6,3',
         }}
-        className="react-flow__edge-path"
+        className="react-flow__edge-path animate-dash"
         d={edgePath}
         markerEnd={`url(#parent-arrow-${id})`}
       >
@@ -491,7 +424,7 @@ const ParentChildEdge = ({ id, sourceX, sourceY, targetX, targetY, style = {}, s
   );
 };
 
-// Enhanced Sibling Edge Component with animations
+// Enhanced Sibling Edge Component with more animations
 const SiblingEdge = ({ id, sourceX, sourceY, targetX, targetY, style = {} }: any) => {
   const centerX = (sourceX + targetX) / 2;
   const centerY = (sourceY + targetY) / 2 - 30;
@@ -523,7 +456,7 @@ const SiblingEdge = ({ id, sourceX, sourceY, targetX, targetY, style = {} }: any
           strokeDasharray: '8,4',
           strokeLinecap: 'round',
         }}
-        className="react-flow__edge-path"
+        className="react-flow__edge-path animate-dash"
         d={edgePath}
       >
         <animate attributeName="stroke-dashoffset" values="0;-24;0" dur="3s" repeatCount="indefinite" />
@@ -544,15 +477,15 @@ const SiblingEdge = ({ id, sourceX, sourceY, targetX, targetY, style = {} }: any
 
 const nodeTypes = {
   familyMember: FamilyMemberNode,
+  couple: CoupleNode,
 };
 
 const edgeTypes = {
-  marriage: MarriageEdge,
   parentChild: ParentChildEdge,
   sibling: SiblingEdge,
 };
 
-// Enhanced position calculation with better spacing for compact nodes
+// Enhanced position calculation with better spacing and alignment
 const calculateNodePositions = (
   members: FamilyMember[], 
   coreRelationships: CoreRelationship[], 
@@ -562,23 +495,56 @@ const calculateNodePositions = (
   const nodeMap = new Map<string, FamilyMember>();
   members.forEach(member => nodeMap.set(member.userId, member));
   
+  // Identify couples
+  const spouseMap = new Map<string, string[]>();
+  coreRelationships.forEach(rel => {
+    if (rel.type === 'MARRIED_TO') {
+      if (!spouseMap.has(rel.source)) spouseMap.set(rel.source, []);
+      spouseMap.get(rel.source)!.push(rel.target);
+      if (!spouseMap.has(rel.target)) spouseMap.set(rel.target, []);
+      spouseMap.get(rel.target)!.push(rel.source);
+    }
+  });
+
+  const couples = new Map<string, {member1: string; member2: string}>();
+  const coupleMap = new Map<string, string>();
+  spouseMap.forEach((spouses, id) => {
+    spouses.forEach(spouse => {
+      const sortedIds = [id, spouse].sort();
+      const pair = sortedIds.join('-');
+      if (!couples.has(pair)) {
+        let m1 = nodeMap.get(sortedIds[0])!;
+        let m2 = nodeMap.get(sortedIds[1])!;
+        // Sort by gender: male left if possible
+        if ((m2.gender === 'male' && m1.gender !== 'male') || (m1.gender !== 'male' && m2.gender === 'female')) {
+          [m1, m2] = [m2, m1];
+        }
+        couples.set(pair, {member1: m1.userId, member2: m2.userId});
+      }
+      coupleMap.set(id, pair);
+      coupleMap.set(spouse, pair);
+    });
+  });
+
+  const getGroupId = (id: string) => coupleMap.get(id) || id;
+  const isCouple = (gid: string) => couples.has(gid);
+  const getNodeWidth = (gid: string) => isCouple(gid) ? 200 : 100;
+
   const positions = new Map<string, { x: number; y: number; generation: number }>();
-  const processedNodes = new Set<string>();
+  const processedGroups = new Set<string>();
   
-  // Compact spacing constants
-  const GENERATION_SPACING = 220;
-  const SIBLING_SPACING = 180;
-  const MARRIAGE_SPACING = 260;
-  const MIN_NODE_SPACING = 160;
+  // Improved spacing constants for better readability and alignment
+  const GENERATION_SPACING = 250;
+  const BASE_SPACING = 220;
+  const MIN_NODE_SPACING = 180;
   
-  // Start with the root user at center
-  const rootPosition = { x: 0, y: 0, generation: 0 };
-  positions.set(createdByUserId, rootPosition);
+  // Start with root group
+  const rootGroup = getGroupId(createdByUserId);
+  positions.set(rootGroup, { x: 0, y: 0, generation: 0 });
   
-  // Build relationship maps
+  // Build relationship maps (individual level)
   const parentChildMap = new Map<string, string[]>();
   const childParentMap = new Map<string, string[]>();
-  const spouseMap = new Map<string, string[]>();
   const siblingMap = new Map<string, string[]>();
   
   coreRelationships.forEach(rel => {
@@ -589,13 +555,6 @@ const calculateNodePositions = (
         
         if (!childParentMap.has(rel.target)) childParentMap.set(rel.target, []);
         childParentMap.get(rel.target)!.push(rel.source);
-        break;
-        
-      case 'MARRIED_TO':
-        if (!spouseMap.has(rel.source)) spouseMap.set(rel.source, []);
-        spouseMap.get(rel.source)!.push(rel.target);
-        if (!spouseMap.has(rel.target)) spouseMap.set(rel.target, []);
-        spouseMap.get(rel.target)!.push(rel.source);
         break;
         
       case 'SIBLING':
@@ -611,7 +570,7 @@ const calculateNodePositions = (
     let testX = preferredX;
     let testY = preferredY;
     let attempts = 0;
-    const maxAttempts = 15;
+    const maxAttempts = 20;
 
     while (attempts < maxAttempts) {
       const hasCollision = Array.from(positions.values()).some(pos => {
@@ -625,8 +584,8 @@ const calculateNodePositions = (
         return { x: testX, y: testY };
       }
 
-      const angle = (attempts * 60) * (Math.PI / 180);
-      const radius = 80 * (1 + Math.floor(attempts / 6));
+      const angle = (attempts * 45) * (Math.PI / 180);
+      const radius = 100 * (1 + Math.floor(attempts / 8));
       testX = preferredX + Math.cos(angle) * radius;
       testY = preferredY + Math.sin(angle) * radius;
       attempts++;
@@ -635,161 +594,169 @@ const calculateNodePositions = (
     return { x: testX, y: testY };
   };
   
-  const queue: Array<{ userId: string; fromUserId?: string; generation: number }> = [
-    { userId: createdByUserId, generation: 0 }
+  const queue: Array<{ groupId: string; generation: number }> = [
+    { groupId: rootGroup, generation: 0 }
   ];
   
   while (queue.length > 0) {
-    const { userId, generation } = queue.shift()!;
+    const { groupId, generation } = queue.shift()!;
     
-    if (processedNodes.has(userId)) continue;
-    processedNodes.add(userId);
+    if (processedGroups.has(groupId)) continue;
+    processedGroups.add(groupId);
     
-    const currentPos = positions.get(userId) || { x: 0, y: generation * GENERATION_SPACING, generation };
-    
-    // Position spouses
-    const spouses = spouseMap.get(userId) || [];
-    spouses.forEach((spouseId, index) => {
-      if (!processedNodes.has(spouseId)) {
-        const spouseX = currentPos.x + MARRIAGE_SPACING;
-        const freePos = findFreePosition(spouseX, currentPos.y);
-        positions.set(spouseId, { x: freePos.x, y: freePos.y, generation });
-        queue.push({ userId: spouseId, generation });
-      }
-    });
+    const currentPos = positions.get(groupId)!;
+    const members = isCouple(groupId) ? [couples.get(groupId)!.member1, couples.get(groupId)!.member2] : [groupId];
     
     // Position parents
-    const parents = childParentMap.get(userId) || [];
-    parents.forEach((parentId, index) => {
-      if (!processedNodes.has(parentId)) {
-        const parentX = currentPos.x + (index * SIBLING_SPACING) - ((parents.length - 1) * SIBLING_SPACING / 2);
-        const parentGeneration = generation - 1;
-        const freePos = findFreePosition(parentX, parentGeneration * GENERATION_SPACING);
-        positions.set(parentId, { 
-          x: freePos.x, 
-          y: freePos.y, 
-          generation: parentGeneration 
-        });
-        queue.push({ userId: parentId, generation: parentGeneration });
-      }
+    let allParents: string[] = [];
+    members.forEach(m => {
+      const parents = childParentMap.get(m) || [];
+      allParents = [...new Set([...allParents, ...parents])];
     });
+    if (allParents.length > 0) {
+      let totalSpan = 0;
+      allParents.forEach(pId => totalSpan += getNodeWidth(getGroupId(pId)));
+      totalSpan += (allParents.length - 1) * BASE_SPACING;
+      let startX = currentPos.x - totalSpan / 2;
+      allParents.forEach((parentId) => {
+        const parentGroup = getGroupId(parentId);
+        if (!positions.has(parentGroup)) {
+          const parentGen = generation - 1;
+          const thisWidth = getNodeWidth(parentGroup);
+          const preferredX = startX + thisWidth / 2;
+          const freePos = findFreePosition(preferredX, parentGen * GENERATION_SPACING);
+          positions.set(parentGroup, { x: freePos.x, y: freePos.y, generation: parentGen });
+          queue.push({ groupId: parentGroup, generation: parentGen });
+          startX += thisWidth + BASE_SPACING;
+        }
+      });
+    }
     
     // Position children
-    const children = parentChildMap.get(userId) || [];
-    children.forEach((childId, index) => {
-      if (!processedNodes.has(childId)) {
-        const childX = currentPos.x + (index * SIBLING_SPACING) - ((children.length - 1) * SIBLING_SPACING / 2);
-        const childGeneration = generation + 1;
-        const freePos = findFreePosition(childX, childGeneration * GENERATION_SPACING);
-        positions.set(childId, { 
-          x: freePos.x, 
-          y: freePos.y, 
-          generation: childGeneration 
-        });
-        queue.push({ userId: childId, generation: childGeneration });
-      }
+    let allChildren: string[] = [];
+    members.forEach(m => {
+      const children = parentChildMap.get(m) || [];
+      allChildren = [...new Set([...allChildren, ...children])];
     });
+    if (allChildren.length > 0) {
+      let totalSpan = 0;
+      allChildren.forEach(cId => totalSpan += getNodeWidth(getGroupId(cId)));
+      totalSpan += (allChildren.length - 1) * BASE_SPACING;
+      let startX = currentPos.x - totalSpan / 2;
+      allChildren.forEach((childId) => {
+        const childGroup = getGroupId(childId);
+        if (!positions.has(childGroup)) {
+          const childGen = generation + 1;
+          const thisWidth = getNodeWidth(childGroup);
+          const preferredX = startX + thisWidth / 2;
+          const freePos = findFreePosition(preferredX, childGen * GENERATION_SPACING);
+          positions.set(childGroup, { x: freePos.x, y: freePos.y, generation: childGen });
+          queue.push({ groupId: childGroup, generation: childGen });
+          startX += thisWidth + BASE_SPACING;
+        }
+      });
+    }
     
     // Position siblings
-    const siblings = siblingMap.get(userId) || [];
-    siblings.forEach((siblingId, index) => {
-      if (!processedNodes.has(siblingId)) {
-        const siblingX = currentPos.x + ((index + 1) * SIBLING_SPACING);
-        const freePos = findFreePosition(siblingX, currentPos.y);
-        positions.set(siblingId, { x: freePos.x, y: freePos.y, generation });
-        queue.push({ userId: siblingId, generation });
-      }
+    let allSiblings: string[] = [];
+    members.forEach(m => {
+      const sibs = siblingMap.get(m) || [];
+      allSiblings = [...new Set([...allSiblings, ...sibs.filter(s => !members.includes(s))])];
     });
+    if (allSiblings.length > 0) {
+      let totalSpan = 0;
+      allSiblings.forEach(sId => totalSpan += getNodeWidth(getGroupId(sId)));
+      totalSpan += (allSiblings.length - 1) * BASE_SPACING;
+      let startX = currentPos.x - totalSpan / 2;
+      allSiblings.forEach((sibId, index) => {
+        const sibGroup = getGroupId(sibId);
+        if (!positions.has(sibGroup)) {
+          const thisWidth = getNodeWidth(sibGroup);
+          const preferredX = startX + thisWidth / 2 + (index % 2 === 0 ? BASE_SPACING : -BASE_SPACING);
+          const freePos = findFreePosition(preferredX, currentPos.y);
+          positions.set(sibGroup, { x: freePos.x, y: freePos.y, generation });
+          queue.push({ groupId: sibGroup, generation });
+          startX += thisWidth + BASE_SPACING;
+        }
+      });
+    }
   }
   
-  // Convert to compact nodes
-  const nodes: Node[] = Array.from(positions.entries()).map(([userId, pos]) => {
-    const member = nodeMap.get(userId)!;
-    
-    return {
-      id: userId,
-      type: 'familyMember',
-      position: { x: pos.x + 600, y: pos.y + 300 }, // Adjusted for compact layout
-      data: {
-        name: member.name,
-        email: member.email,
-        relationship: member.relationship,
-        profilePicture: member.profilePicture,
-        gender: member.gender,
-        userId: member.userId,
-        loginUserId: loggedInUserId,
-        isRoot: userId === createdByUserId,
-        status: member.status,
-        generation: pos.generation,
-        isSelected: false
-      }
-    };
+  // Create nodes
+  const nodes: Node[] = [];
+  positions.forEach((pos, groupId) => {
+    if (isCouple(groupId)) {
+      const {member1: m1Id, member2: m2Id} = couples.get(groupId)!;
+      const m1 = nodeMap.get(m1Id)!;
+      const m2 = nodeMap.get(m2Id)!;
+      nodes.push({
+        id: groupId,
+        type: 'couple',
+        position: { x: pos.x + 600, y: pos.y + 300 },
+        data: {
+          member1: { ...m1, userId: m1Id, isRoot: m1Id === createdByUserId, generation: pos.generation, loginUserId: loggedInUserId, isSelected: false },
+          member2: { ...m2, userId: m2Id, isRoot: m2Id === createdByUserId, generation: pos.generation, loginUserId: loggedInUserId, isSelected: false },
+          isSelected: false
+        }
+      });
+    } else {
+      const m = nodeMap.get(groupId)!;
+      nodes.push({
+        id: groupId,
+        type: 'familyMember',
+        position: { x: pos.x + 600, y: pos.y + 300 },
+        data: { ...m, isRoot: groupId === createdByUserId, generation: pos.generation, loginUserId: loggedInUserId, isSelected: false }
+      });
+    }
   });
   
-  // Create edges - children now connect from marriage centers
+  // Create edges
   const edges: Edge[] = [];
   const edgeSet = new Set<string>();
   
   coreRelationships.forEach(rel => {
-    const sourcePos = positions.get(rel.source);
-    const targetPos = positions.get(rel.target);
+    if (rel.type === 'MARRIED_TO') return;
     
-    if (!sourcePos || !targetPos) return;
+    const sourceGroup = getGroupId(rel.source);
+    const targetGroup = getGroupId(rel.target);
+    if (sourceGroup === targetGroup) return;
     
-    let edgeId = '';
-    let edgeType = '';
-    let style = {};
-    let animated = false;
+    let edgeId = `${rel.type}-${rel.source}-${rel.target}`;
+    if (edgeSet.has(edgeId)) return;
     
-    switch (rel.type) {
-      case 'MARRIED_TO':
-        const marriageId1 = `${rel.source}-${rel.target}`;
-        const marriageId2 = `${rel.target}-${rel.source}`;
-        if (!edgeSet.has(marriageId1) && !edgeSet.has(marriageId2)) {
-          edgeId = `marriage-${rel.source}-${rel.target}`;
-          edgeType = 'marriage';
-          style = { strokeWidth: 4 };
-          animated = false;
-          edgeSet.add(marriageId1);
-          edgeSet.add(marriageId2);
-        }
-        break;
-        
-      case 'PARENTS_OF':
-        edgeId = `parent-child-${rel.source}-${rel.target}`;
-        edgeType = 'parentChild';
-        style = { strokeWidth: 2 };
-        break;
-        
-      case 'SIBLING':
-        const siblingId1 = `${rel.source}-${rel.target}`;
-        const siblingId2 = `${rel.target}-${rel.source}`;
-        if (!edgeSet.has(siblingId1) && !edgeSet.has(siblingId2)) {
-          edgeId = `sibling-${rel.source}-${rel.target}`;
-          edgeType = 'sibling';
-          style = { strokeWidth: 2 };
-          edgeSet.add(siblingId1);
-          edgeSet.add(siblingId2);
-        }
-        break;
+    const edge: Edge = {
+      id: edgeId,
+      source: sourceGroup,
+      target: targetGroup,
+      type: rel.type === 'PARENTS_OF' ? 'parentChild' : 'sibling',
+      animated: true,
+      style: { strokeWidth: 2 },
+      data: {
+        relationship: rel.type,
+        sourceName: rel.sourceName,
+        targetName: rel.targetName
+      }
+    };
+    
+    if (isCouple(sourceGroup)) {
+      edge.sourceHandle = 'children';
     }
     
-    if (edgeId && !edgeSet.has(edgeId)) {
-      edges.push({
-        id: edgeId,
-        source: rel.source,
-        target: rel.target,
-        type: edgeType,
-        animated,
-        style,
-        data: {
-          relationship: rel.type,
-          sourceName: rel.sourceName,
-          targetName: rel.targetName
-        }
-      });
+    if (isCouple(targetGroup)) {
+      const {member1, member2} = couples.get(targetGroup)!;
+      edge.targetHandle = rel.target === member1 ? 'left' : 'right';
+    }
+    
+    if (rel.type === 'SIBLING') {
+      const sorted = [sourceGroup, targetGroup].sort().join('-');
+      if (edgeSet.has(sorted)) return;
+      edge.id = `sibling-${sorted}`;
+      edgeSet.add(sorted);
+    } else {
       edgeSet.add(edgeId);
     }
+    
+    edges.push(edge);
   });
   
   return { nodes, edges };
@@ -937,6 +904,8 @@ const FamilyTreeVisualization: React.FC<FamilyTreeVisualizationProps> = ({
   const [nodeDetailsOpen, setNodeDetailsOpen] = useState(false);
   const [relationshipAnalysisOpen, setRelationshipAnalysisOpen] = useState(false);
   const [calculatedRelationship, setCalculatedRelationship] = useState<string>('');
+  const [selectedCouple, setSelectedCouple] = useState<string | null>(null);
+  const [coupleDetailsOpen, setCoupleDetailsOpen] = useState(false);
   
   // Calculate nodes and edges
   const { nodes: calculatedNodes, edges: calculatedEdges } = React.useMemo(() => {
@@ -1008,6 +977,12 @@ const FamilyTreeVisualization: React.FC<FamilyTreeVisualizationProps> = ({
   const onNodeClick = useCallback((event: React.MouseEvent, node: Node) => {
     event.stopPropagation();
     
+    if (node.type === 'couple') {
+      setSelectedCouple(node.id);
+      setCoupleDetailsOpen(true);
+      return;
+    }
+    
     if (selectedNodes.includes(node.id)) {
       // Deselect if already selected
       const newSelection = selectedNodes.filter(id => id !== node.id);
@@ -1076,6 +1051,17 @@ const FamilyTreeVisualization: React.FC<FamilyTreeVisualizationProps> = ({
     return node ? familyMembers.find(m => m.userId === node.id) : null;
   };
   
+  // Get selected couple details
+  const getSelectedCoupleDetails = () => {
+    if (!selectedCouple) return null;
+    const node = nodes.find(n => n.id === selectedCouple);
+    if (!node || node.type !== 'couple') return null;
+    return {
+      member1: familyMembers.find(m => m.userId === node.data.member1.userId),
+      member2: familyMembers.find(m => m.userId === node.data.member2.userId)
+    };
+  };
+  
   if (isLoading) {
     return (
       <div className="flex items-center justify-center" style={{ minHeight }}>
@@ -1101,10 +1087,10 @@ const FamilyTreeVisualization: React.FC<FamilyTreeVisualizationProps> = ({
         edgeTypes={edgeTypes}
         fitView
         fitViewOptions={{ 
-          padding: 0.1,
+          padding: 0.15,
           includeHiddenNodes: false,
-          minZoom: 0.5,
-          maxZoom: 2
+          minZoom: 0.4,
+          maxZoom: 2.5
         }}
         connectionLineType={ConnectionLineType.SmoothStep}
         defaultEdgeOptions={{
@@ -1193,6 +1179,100 @@ const FamilyTreeVisualization: React.FC<FamilyTreeVisualizationProps> = ({
                       <span className="text-slate-700 capitalize">{member.gender}</span>
                     </div>
                   )}
+                </div>
+              </div>
+            );
+          })()}
+        </DialogContent>
+      </Dialog>
+      
+      {/* Couple Details Dialog */}
+      <Dialog open={coupleDetailsOpen} onOpenChange={setCoupleDetailsOpen}>
+        <DialogContent className="max-w-lg bg-white/95 backdrop-blur-sm border border-slate-200/60">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-slate-800">
+              <Heart className="w-5 h-5 text-pink-500" />
+              Couple Details
+            </DialogTitle>
+            <DialogDescription className="text-slate-600">
+              Information about the selected couple
+            </DialogDescription>
+          </DialogHeader>
+          
+          {(() => {
+            const couple = getSelectedCoupleDetails();
+            if (!couple) return null;
+            
+            const { member1, member2 } = couple;
+            
+            return (
+              <div className="space-y-4">
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="text-center p-4 bg-gradient-to-br from-blue-50 to-indigo-50 rounded-lg border border-blue-200/40">
+                    <div className="text-lg font-semibold text-blue-800">{member1.name}</div>
+                    <div className="text-sm text-blue-600 mt-1">
+                      {member1.relationship || 'Family Member'}
+                    </div>
+                  </div>
+                  <div className="text-center p-4 bg-gradient-to-br from-blue-50 to-indigo-50 rounded-lg border border-blue-200/40">
+                    <div className="text-lg font-semibold text-blue-800">{member2.name}</div>
+                    <div className="text-sm text-blue-600 mt-1">
+                      {member2.relationship || 'Family Member'}
+                    </div>
+                  </div>
+                </div>
+                
+                <div className="grid grid-cols-2 gap-4 text-sm">
+                  <div className="space-y-3">
+                    {member1.email && (
+                      <div className="flex items-center gap-2 p-2 bg-slate-50 rounded-lg">
+                        <Mail className="w-4 h-4 text-slate-500" />
+                        <span className="text-slate-700">{member1.email}</span>
+                      </div>
+                    )}
+                    <div className="flex items-center gap-2 p-2 bg-slate-50 rounded-lg">
+                      <Badge variant="outline" className={`${
+                        member1.status === 'active' ? 'bg-green-50 text-green-700 border-green-200' :
+                        member1.status === 'invited' ? 'bg-yellow-50 text-yellow-700 border-yellow-200' :
+                        'bg-gray-50 text-gray-700 border-gray-200'
+                      }`}>
+                        {member1.status === 'active' ? '✓ Active' : 
+                         member1.status === 'invited' ? '⏳ Invited' : 
+                         '❓ Unknown'}
+                      </Badge>
+                    </div>
+                    {member1.gender && (
+                      <div className="flex items-center gap-2 p-2 bg-slate-50 rounded-lg">
+                        <span className="text-slate-500">Gender:</span>
+                        <span className="text-slate-700 capitalize">{member1.gender}</span>
+                      </div>
+                    )}
+                  </div>
+                  <div className="space-y-3">
+                    {member2.email && (
+                      <div className="flex items-center gap-2 p-2 bg-slate-50 rounded-lg">
+                        <Mail className="w-4 h-4 text-slate-500" />
+                        <span className="text-slate-700">{member2.email}</span>
+                      </div>
+                    )}
+                    <div className="flex items-center gap-2 p-2 bg-slate-50 rounded-lg">
+                      <Badge variant="outline" className={`${
+                        member2.status === 'active' ? 'bg-green-50 text-green-700 border-green-200' :
+                        member2.status === 'invited' ? 'bg-yellow-50 text-yellow-700 border-yellow-200' :
+                        'bg-gray-50 text-gray-700 border-gray-200'
+                      }`}>
+                        {member2.status === 'active' ? '✓ Active' : 
+                         member2.status === 'invited' ? '⏳ Invited' : 
+                         '❓ Unknown'}
+                      </Badge>
+                    </div>
+                    {member2.gender && (
+                      <div className="flex items-center gap-2 p-2 bg-slate-50 rounded-lg">
+                        <span className="text-slate-500">Gender:</span>
+                        <span className="text-slate-700 capitalize">{member2.gender}</span>
+                      </div>
+                    )}
+                  </div>
                 </div>
               </div>
             );
