@@ -4,7 +4,6 @@ import {
   ReactFlow,
   Controls,
   Background,
-  BackgroundVariant,
   useNodesState,
   useEdgesState,
   Node,
@@ -67,25 +66,9 @@ interface FamilyTreeVisualizationProps {
   defaultZoom?: number;
 }
 
-// Beautiful hierarchical family member node with improved styling
+// Enhanced compact family member node component with selection
 const FamilyMemberNode = ({ data, id, selected }: { data: any; id: string; selected?: boolean }) => {
   const [isHovered, setIsHovered] = useState(false);
-
-  // Helper function to compute display position with hierarchical layout
-  const computeDisplayPosition = () => {
-    const generation = data.generation || 0;
-    const baseY = generation * 180; // Snap to generation rows
-    
-    // For siblings, center them horizontally with small gaps
-    const siblingIndex = data.siblingIndex || 0;
-    const siblingCount = data.siblingCount || 1;
-    const siblingSpacing = 120;
-    const baseX = (siblingIndex - (siblingCount - 1) / 2) * siblingSpacing;
-    
-    return { x: baseX, y: baseY };
-  };
-
-  const displayPos = computeDisplayPosition();
 
   const getNodeColor = (isRoot?: boolean, gender?: string, isCurrentUser?: boolean) => {
     if (isCurrentUser) return 'from-violet-500 via-purple-500 to-indigo-500';
@@ -96,128 +79,139 @@ const FamilyMemberNode = ({ data, id, selected }: { data: any; id: string; selec
     return 'from-slate-400 via-gray-400 to-zinc-400';
   };
 
-  const getNodeShape = (gender?: string) => {
-    return gender === 'female' ? 'rounded-full' : 'rounded-2xl';
+  const getRelationshipIcon = (relationship?: string, isRoot?: boolean, isCurrentUser?: boolean) => {
+    if (isCurrentUser) return <Crown className="w-3 h-3 text-yellow-200" />;
+    if (isRoot) return <Crown className="w-3 h-3 text-yellow-200" />;
+    
+    switch (relationship) {
+      case 'father':
+      case 'mother':
+        return <Users className="w-3 h-3 text-white" />;
+      case 'husband':
+      case 'wife':
+        return <Heart className="w-3 h-3 text-white" />;
+      default:
+        return <UserIcon className="w-3 h-3 text-white" />;
+    }
+  };
+
+  const getBorderStyle = () => {
+    if (data.isSelected) return 'border-4 border-blue-500 shadow-2xl shadow-blue-300/60 ring-2 ring-blue-200';
+    if (selected) return 'border-3 border-blue-400 shadow-xl shadow-blue-200/50';
+    if (isHovered) return 'border-2 border-purple-300 shadow-lg shadow-purple-100/50';
+    return 'border border-slate-200/60 shadow-md';
   };
 
   const getStatusBadge = () => {
-    const dotColor = data.status === 'invited' ? 'bg-yellow-400' : 'bg-green-400';
-    return (
-      <div className={`absolute -top-1 -right-1 w-3 h-3 ${dotColor} rounded-full border-2 border-white shadow-sm ${
-        data.status === 'invited' ? 'animate-pulse' : ''
-      }`} />
-    );
+    if (data.status === 'invited') {
+      return (
+        <div className="absolute -top-1 -right-1 bg-yellow-500 text-white text-[10px] px-1 py-0.5 rounded-full font-semibold shadow-sm animate-pulse">
+          !
+        </div>
+      );
+    }
+    return null;
   };
 
   const isCurrentUser = data.userId === data.loginUserId;
-  const nodeShape = getNodeShape(data.gender);
-  const hoverClass = isHovered ? 'scale-105 rotate-1 shadow-2xl' : '';
-  const selectedClass = selected || data.isSelected ? 'ring-4 ring-blue-400 animate-pulse' : '';
-  const highlightClass = data.isHighlighted ? 'ring-4 ring-yellow-400 shadow-yellow-300/50 scale-110' : '';
 
   return (
     <div 
-      className={`group relative transition-all duration-300 cursor-pointer ${hoverClass} ${selectedClass} ${highlightClass}`}
-      style={{
-        transform: `translate(${displayPos.x}px, ${displayPos.y}px)`,
-        zIndex: data.isSelected || data.isHighlighted ? 20 : 10
-      }}
+      className={`group relative bg-white ${getBorderStyle()} rounded-xl p-2 w-[100px] h-[140px] flex flex-col justify-between transition-all duration-300 hover:scale-110 cursor-pointer backdrop-blur-sm animate-fadeIn ${
+        data.isSelected ? 'animate-pulse z-10' : ''
+      }`}
       onMouseEnter={() => setIsHovered(true)}
       onMouseLeave={() => setIsHovered(false)}
       title={`${data.name}${data.relationship ? ` (${data.relationship})` : ''}${data.email ? ` - ${data.email}` : ''}`}
     >
-      {/* Connection Handles */}
+      {/* Connection Handles - Smaller and more subtle */}
       <Handle 
         type="target" 
         position={Position.Top} 
-        className="w-2 h-2 bg-gradient-to-r from-blue-400 to-purple-400 border border-white shadow-sm opacity-0 group-hover:opacity-100 transition-opacity" 
+        className="w-1.5 h-1.5 bg-gradient-to-r from-blue-400 to-purple-400 border border-white shadow-sm opacity-0 group-hover:opacity-100 transition-opacity" 
       />
       <Handle 
         type="source" 
         position={Position.Bottom} 
-        className="w-2 h-2 bg-gradient-to-r from-green-400 to-blue-400 border border-white shadow-sm opacity-0 group-hover:opacity-100 transition-opacity" 
+        className="w-1.5 h-1.5 bg-gradient-to-r from-green-400 to-blue-400 border border-white shadow-sm opacity-0 group-hover:opacity-100 transition-opacity" 
       />
       <Handle 
         type="target" 
         position={Position.Left} 
-        className="w-2 h-2 bg-gradient-to-r from-red-400 to-pink-400 border border-white shadow-sm opacity-0 group-hover:opacity-100 transition-opacity" 
+        className="w-1.5 h-1.5 bg-gradient-to-r from-red-400 to-pink-400 border border-white shadow-sm opacity-0 group-hover:opacity-100 transition-opacity" 
       />
       <Handle 
         type="source" 
         position={Position.Right} 
-        className="w-2 h-2 bg-gradient-to-r from-red-400 to-pink-400 border border-white shadow-sm opacity-0 group-hover:opacity-100 transition-opacity" 
+        className="w-1.5 h-1.5 bg-gradient-to-r from-red-400 to-pink-400 border border-white shadow-sm opacity-0 group-hover:opacity-100 transition-opacity" 
       />
 
-      {/* Main Node Card */}
-      <div className={`relative bg-white ${nodeShape} border-2 border-white shadow-lg backdrop-blur-sm p-3 w-[120px] h-[160px] flex flex-col items-center justify-between bg-gradient-to-br ${getNodeColor(data.isRoot, data.gender, isCurrentUser)}`}>
-        
-        {getStatusBadge()}
+      {getStatusBadge()}
 
-        {/* Crown overlay for current user or root */}
-        {(isCurrentUser || data.isRoot) && (
-          <div className="absolute -top-2 -right-2 w-6 h-6 bg-gradient-to-br from-yellow-400 to-amber-500 rounded-full flex items-center justify-center shadow-lg animate-bounce">
-            <Crown className="w-3 h-3 text-white" />
-          </div>
-        )}
+      {/* Selection indicator */}
+      {data.isSelected && (
+        <div className="absolute -top-2 -right-2 w-5 h-5 bg-blue-500 text-white rounded-full flex items-center justify-center text-[10px] font-bold animate-bounce">
+          ✓
+        </div>
+      )}
 
-        {/* Avatar Section */}
-        <div className={`w-14 h-14 ${nodeShape} overflow-hidden border-2 border-white/50 shadow-inner`}>
+      <div className="flex flex-col items-center space-y-1">
+        {/* Compact Avatar */}
+        <div className={`w-10 h-10 bg-gradient-to-br ${getNodeColor(data.isRoot, data.gender, isCurrentUser)} rounded-full flex items-center justify-center shadow-lg ring-1 ring-white/80 ${
+          data.isSelected ? 'ring-3 ring-blue-300 animate-pulse' : ''
+        }`}>
           {data.profilePicture ? (
-            <Avatar className={`w-full h-full ${nodeShape}`}>
-              <AvatarImage src={data.profilePicture} className="object-cover" />
-              <AvatarFallback className="text-xs font-bold text-white bg-transparent">
+            <Avatar className="w-10 h-10">
+              <AvatarImage src={data.profilePicture} />
+              <AvatarFallback className="text-[10px] font-semibold text-white">
                 {data.name.split(' ').map((n: string) => n[0]).join('').toUpperCase()}
               </AvatarFallback>
             </Avatar>
           ) : (
-            <div className="w-full h-full flex items-center justify-center">
-              <UserIcon className="w-6 h-6 text-white/80" />
-            </div>
+            getRelationshipIcon(data.relationship, data.isRoot, isCurrentUser)
           )}
         </div>
 
-        {/* Name and Info */}
-        <div className="text-center space-y-1 text-white">
-          <div className="font-bold text-sm leading-tight truncate max-w-[100px]">{data.name}</div>
+        {/* Compact Info */}
+        <div className="text-center space-y-0.5">
+          <div className="font-semibold text-slate-800 text-[10px] leading-tight truncate max-w-[90px]">{data.name}</div>
           
-          {/* Relationship Badge */}
-          {data.relationship && !data.isRoot && !isCurrentUser && (
-            <div className="text-xs bg-white/20 px-2 py-1 rounded-full backdrop-blur-sm">
-              {data.relationship.charAt(0).toUpperCase() + data.relationship.slice(1)}
+          {/* Compact Contact Info */}
+          {data.email && (
+            <div className="text-[9px] text-slate-500 truncate max-w-[90px]" title={data.email}>
+              {data.email.split('@')[0]}
             </div>
           )}
+
+          {/* Compact Relationship Badge */}
+          {data.relationship && !data.isRoot && !isCurrentUser && (
+            <Badge variant="secondary" className="text-[9px] px-1 py-0.5 h-auto">
+              {data.relationship.charAt(0).toUpperCase() + data.relationship.slice(1)}
+            </Badge>
+          )}
           
-          {/* Generation Badge */}
-          <div className="text-xs bg-black/20 px-2 py-1 rounded-full backdrop-blur-sm">
-            Gen {data.generation || 0}
-          </div>
+          {(data.isRoot || isCurrentUser) && (
+            <div className="inline-flex items-center text-[9px] font-semibold text-white px-1.5 py-0.5 rounded-full bg-gradient-to-r from-purple-500 to-indigo-500 shadow-sm">
+              <Crown className="w-2 h-2 mr-0.5" />
+              {isCurrentUser ? 'You' : 'Root'}
+            </div>
+          )}
         </div>
+      </div>
+
+      {/* Compact Generation Indicator */}
+      <div className="absolute top-1 left-1 text-[9px] font-bold text-slate-400 bg-slate-100/80 px-1 py-0.5 rounded-full">
+        G{data.generation || 0}
       </div>
     </div>
   );
 };
 
-// Beautiful animated couple node with side-by-side avatars and heart
 const CoupleNode = ({ data, id, selected }: { data: any; id: string; selected?: boolean }) => {
   const [isHovered, setIsHovered] = useState(false);
 
   const member1 = data.member1;
   const member2 = data.member2;
-
-  // Helper function to compute display position with hierarchical layout
-  const computeDisplayPosition = () => {
-    const generation = data.generation || 0;
-    const baseY = generation * 180; // Snap to generation rows
-    
-    const siblingIndex = data.siblingIndex || 0;
-    const siblingCount = data.siblingCount || 1;
-    const siblingSpacing = 120;
-    const baseX = (siblingIndex - (siblingCount - 1) / 2) * siblingSpacing;
-    
-    return { x: baseX, y: baseY };
-  };
-
-  const displayPos = computeDisplayPosition();
 
   const getNodeColor = (member: any) => {
     const isRoot = member.isRoot;
@@ -230,28 +224,51 @@ const CoupleNode = ({ data, id, selected }: { data: any; id: string; selected?: 
     return 'from-slate-400 via-gray-400 to-zinc-400';
   };
 
-  const getStatusBadge = (member: any) => {
-    const dotColor = member.status === 'invited' ? 'bg-yellow-400' : 'bg-green-400';
-    return (
-      <div className={`absolute -top-1 w-3 h-3 ${dotColor} rounded-full border-2 border-white shadow-sm ${
-        member.status === 'invited' ? 'animate-pulse' : ''
-      }`} />
-    );
+  const getRelationshipIcon = (member: any) => {
+    const relationship = member.relationship;
+    const isRoot = member.isRoot;
+    const isCurrentUser = member.userId === data.loginUserId;
+    if (isCurrentUser) return <Crown className="w-3 h-3 text-yellow-200" />;
+    if (isRoot) return <Crown className="w-3 h-3 text-yellow-200" />;
+    switch (relationship) {
+      case 'father':
+      case 'mother':
+        return <Users className="w-3 h-3 text-white" />;
+      case 'husband':
+      case 'wife':
+        return <Heart className="w-3 h-3 text-white" />;
+      default:
+        return <UserIcon className="w-3 h-3 text-white" />;
+    }
   };
 
+  const getBorderStyle = () => {
+    if (data.isSelected) return 'border-4 border-blue-500 shadow-2xl shadow-blue-300/60 ring-2 ring-blue-200';
+    if (selected) return 'border-3 border-blue-400 shadow-xl shadow-blue-200/50';
+    if (isHovered) return 'border-2 border-purple-300 shadow-lg shadow-purple-100/50';
+    return 'border border-slate-200/60 shadow-md';
+  };
+
+  const getStatusBadge = (member: any) => {
+    if (member.status === 'invited') {
+      return (
+        <div className="absolute -top-1 bg-yellow-500 text-white text-[10px] px-1 py-0.5 rounded-full font-semibold shadow-sm animate-pulse">
+          !
+        </div>
+      );
+    }
+    return null;
+  };
+
+  const isRoot = member1.isRoot || member2.isRoot;
   const isCurrentUser1 = member1.userId === data.loginUserId;
   const isCurrentUser2 = member2.userId === data.loginUserId;
-  const hoverClass = isHovered ? 'scale-105 rotate-1 shadow-2xl' : '';
-  const selectedClass = selected || data.isSelected ? 'ring-4 ring-blue-400 animate-pulse' : '';
-  const highlightClass = data.isHighlighted ? 'ring-4 ring-yellow-400 shadow-yellow-300/50 scale-110' : '';
 
   return (
     <div 
-      className={`group relative transition-all duration-300 cursor-pointer ${hoverClass} ${selectedClass} ${highlightClass}`}
-      style={{
-        transform: `translate(${displayPos.x}px, ${displayPos.y}px)`,
-        zIndex: data.isSelected || data.isHighlighted ? 20 : 10
-      }}
+      className={`group relative bg-white ${getBorderStyle()} rounded-xl p-2 w-[200px] h-[140px] flex flex-row items-center justify-between transition-all duration-300 hover:scale-110 cursor-pointer backdrop-blur-sm animate-fadeIn ${
+        data.isSelected ? 'animate-pulse z-10' : ''
+      }`}
       onMouseEnter={() => setIsHovered(true)}
       onMouseLeave={() => setIsHovered(false)}
       title={`${member1.name} & ${member2.name}`}
@@ -261,155 +278,156 @@ const CoupleNode = ({ data, id, selected }: { data: any; id: string; selected?: 
         type="target" 
         position={Position.Top} 
         id="left"
-        className="left-[25%] w-2 h-2 bg-gradient-to-r from-blue-400 to-purple-400 border border-white shadow-sm opacity-0 group-hover:opacity-100 transition-opacity" 
+        className="left-[25%] w-1.5 h-1.5 bg-gradient-to-r from-blue-400 to-purple-400 border border-white shadow-sm opacity-0 group-hover:opacity-100 transition-opacity" 
       />
       <Handle 
         type="target" 
         position={Position.Top} 
         id="right"
-        className="left-[75%] w-2 h-2 bg-gradient-to-r from-blue-400 to-purple-400 border border-white shadow-sm opacity-0 group-hover:opacity-100 transition-opacity" 
+        className="left-[75%] w-1.5 h-1.5 bg-gradient-to-r from-blue-400 to-purple-400 border border-white shadow-sm opacity-0 group-hover:opacity-100 transition-opacity" 
       />
       <Handle 
         type="source" 
         position={Position.Bottom} 
         id="children"
-        className="left-[50%] w-2 h-2 bg-gradient-to-r from-green-400 to-blue-400 border border-white shadow-sm opacity-0 group-hover:opacity-100 transition-opacity" 
+        className="left-[50%] w-1.5 h-1.5 bg-gradient-to-r from-green-400 to-blue-400 border border-white shadow-sm opacity-0 group-hover:opacity-100 transition-opacity" 
+      />
+      <Handle 
+        type="target" 
+        position={Position.Left} 
+        className="w-1.5 h-1.5 bg-gradient-to-r from-red-400 to-pink-400 border border-white shadow-sm opacity-0 group-hover:opacity-100 transition-opacity" 
+      />
+      <Handle 
+        type="source" 
+        position={Position.Right} 
+        className="w-1.5 h-1.5 bg-gradient-to-r from-red-400 to-pink-400 border border-white shadow-sm opacity-0 group-hover:opacity-100 transition-opacity" 
       />
 
-      {/* Main Couple Container */}
-      <div className="relative bg-white rounded-2xl border-2 border-white shadow-lg backdrop-blur-sm p-4 w-[240px] h-[160px] flex items-center justify-between bg-gradient-to-br from-rose-100 via-pink-50 to-red-100">
-        
-        {/* Left Member */}
-        <div className="flex flex-col items-center space-y-2 relative">
-          {getStatusBadge(member1)}
-          <div className={`w-12 h-12 ${member1.gender === 'female' ? 'rounded-full' : 'rounded-2xl'} overflow-hidden border-2 border-white/50 shadow-inner bg-gradient-to-br ${getNodeColor(member1)} animate-pulse`}>
-            {member1.profilePicture ? (
-              <Avatar className={`w-full h-full ${member1.gender === 'female' ? 'rounded-full' : 'rounded-2xl'}`}>
-                <AvatarImage src={member1.profilePicture} className="object-cover" />
-                <AvatarFallback className="text-xs font-bold text-white bg-transparent">
-                  {member1.name.split(' ').map((n: string) => n[0]).join('').toUpperCase()}
-                </AvatarFallback>
-              </Avatar>
-            ) : (
-              <div className="w-full h-full flex items-center justify-center">
-                <UserIcon className="w-5 h-5 text-white/80" />
-              </div>
-            )}
-          </div>
-          
-          {/* Crown for current user */}
+      {/* Left Member */}
+      <div className="flex flex-col items-center w-[45%] space-y-1 relative">
+        {getStatusBadge(member1)}
+        <div className={`w-10 h-10 bg-gradient-to-br ${getNodeColor(member1)} rounded-full flex items-center justify-center shadow-lg ring-1 ring-white/80 animate-spinSlow`}>
+          {member1.profilePicture ? (
+            <Avatar className="w-10 h-10">
+              <AvatarImage src={member1.profilePicture} />
+              <AvatarFallback className="text-[10px] font-semibold text-white">
+                {member1.name.split(' ').map((n: string) => n[0]).join('').toUpperCase()}
+              </AvatarFallback>
+            </Avatar>
+          ) : (
+            getRelationshipIcon(member1)
+          )}
+        </div>
+        <div className="text-center space-y-0.5">
+          <div className="font-semibold text-slate-800 text-[10px] leading-tight truncate max-w-[80px]">{member1.name}</div>
+          {member1.email && (
+            <div className="text-[9px] text-slate-500 truncate max-w-[80px]" title={member1.email}>
+              {member1.email.split('@')[0]}
+            </div>
+          )}
           {isCurrentUser1 && (
-            <div className="absolute -top-2 -right-2 w-5 h-5 bg-gradient-to-br from-yellow-400 to-amber-500 rounded-full flex items-center justify-center shadow-lg animate-bounce">
-              <Crown className="w-2 h-2 text-white" />
+            <div className="inline-flex items-center text-[9px] font-semibold text-white px-1 py-0.5 rounded-full bg-gradient-to-r from-purple-500 to-indigo-500 shadow-sm">
+              <Crown className="w-2 h-2 mr-0.5" />
+              You
             </div>
           )}
-          
-          <div className="text-center">
-            <div className="font-bold text-sm text-slate-800 truncate max-w-[80px]">{member1.name}</div>
-          </div>
         </div>
+      </div>
 
-        {/* Animated Heart Center */}
-        <div className="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 w-8 h-8 bg-gradient-to-br from-pink-400 to-red-500 rounded-full flex items-center justify-center shadow-lg animate-pulse">
-          💕
+      {/* Heart Icon with animation */}
+      <Heart className="absolute top-[40%] left-1/2 transform -translate-x-1/2 -translate-y-1/2 w-4 h-4 text-pink-500 z-10 animate-heartBeat" fill="currentColor" />
+
+      {/* Right Member */}
+      <div className="flex flex-col items-center w-[45%] space-y-1 relative">
+        {getStatusBadge(member2)}
+        <div className={`w-10 h-10 bg-gradient-to-br ${getNodeColor(member2)} rounded-full flex items-center justify-center shadow-lg ring-1 ring-white/80 animate-spinSlow`}>
+          {member2.profilePicture ? (
+            <Avatar className="w-10 h-10">
+              <AvatarImage src={member2.profilePicture} />
+              <AvatarFallback className="text-[10px] font-semibold text-white">
+                {member2.name.split(' ').map((n: string) => n[0]).join('').toUpperCase()}
+              </AvatarFallback>
+            </Avatar>
+          ) : (
+            getRelationshipIcon(member2)
+          )}
         </div>
-
-        {/* Right Member */}
-        <div className="flex flex-col items-center space-y-2 relative">
-          {getStatusBadge(member2)}
-          <div className={`w-12 h-12 ${member2.gender === 'female' ? 'rounded-full' : 'rounded-2xl'} overflow-hidden border-2 border-white/50 shadow-inner bg-gradient-to-br ${getNodeColor(member2)} animate-pulse`}>
-            {member2.profilePicture ? (
-              <Avatar className={`w-full h-full ${member2.gender === 'female' ? 'rounded-full' : 'rounded-2xl'}`}>
-                <AvatarImage src={member2.profilePicture} className="object-cover" />
-                <AvatarFallback className="text-xs font-bold text-white bg-transparent">
-                  {member2.name.split(' ').map((n: string) => n[0]).join('').toUpperCase()}
-                </AvatarFallback>
-              </Avatar>
-            ) : (
-              <div className="w-full h-full flex items-center justify-center">
-                <UserIcon className="w-5 h-5 text-white/80" />
-              </div>
-            )}
-          </div>
-          
-          {/* Crown for current user */}
+        <div className="text-center space-y-0.5">
+          <div className="font-semibold text-slate-800 text-[10px] leading-tight truncate max-w-[80px]">{member2.name}</div>
+          {member2.email && (
+            <div className="text-[9px] text-slate-500 truncate max-w-[80px]" title={member2.email}>
+              {member2.email.split('@')[0]}
+            </div>
+          )}
           {isCurrentUser2 && (
-            <div className="absolute -top-2 -right-2 w-5 h-5 bg-gradient-to-br from-yellow-400 to-amber-500 rounded-full flex items-center justify-center shadow-lg animate-bounce">
-              <Crown className="w-2 h-2 text-white" />
+            <div className="inline-flex items-center text-[9px] font-semibold text-white px-1 py-0.5 rounded-full bg-gradient-to-r from-purple-500 to-indigo-500 shadow-sm">
+              <Crown className="w-2 h-2 mr-0.5" />
+              You
             </div>
           )}
-          
-          <div className="text-center">
-            <div className="font-bold text-sm text-slate-800 truncate max-w-[80px]">{member2.name}</div>
-          </div>
         </div>
+      </div>
 
-        {/* Generation Badge */}
-        <div className="absolute top-2 left-2 text-xs font-bold text-slate-500 bg-white/80 px-2 py-1 rounded-full shadow-sm">
-          Gen {data.generation || 0}
-        </div>
+      {/* Compact Generation Indicator */}
+      <div className="absolute top-1 left-1 text-[9px] font-bold text-slate-400 bg-slate-100/80 px-1 py-0.5 rounded-full">
+        G{data.generation || 0}
       </div>
     </div>
   );
 };
 
-// Beautiful animated parent-child edge with flowing gradient and emoji
+// Enhanced Parent-Child Edge Component with increased curvature and more animation
 const ParentChildEdge = ({ id, sourceX, sourceY, targetX, targetY, style = {}, source, target, data }: any) => {
-  // Create smooth cubic-bezier curve for downward flow
-  const midX = (sourceX + targetX) / 2;
-  const midY = (sourceY + targetY) / 2;
-  const edgePath = `M ${sourceX},${sourceY} C ${sourceX},${midY} ${targetX},${midY} ${targetX},${targetY}`;
+  // Increased curve offset for more distinct connections
+  const deltaX = targetX - sourceX;
+  const deltaY = targetY - sourceY;
+  const controlPoint1X = sourceX + deltaX * 0.1;
+  const controlPoint1Y = sourceY + deltaY * 0.9;
+  const controlPoint2X = sourceX + deltaX * 0.9;
+  const controlPoint2Y = sourceY + deltaY * 0.1;
+  
+  const edgePath = `M ${sourceX},${sourceY} C ${controlPoint1X},${controlPoint1Y} ${controlPoint2X},${controlPoint2Y} ${targetX},${targetY}`;
   
   return (
     <>
       <defs>
         <linearGradient id={`parent-gradient-${id}`} x1="0%" y1="0%" x2="0%" y2="100%">
           <stop offset="0%" stopColor="#3b82f6">
-            <animate attributeName="stop-color" values="#3b82f6;#06b6d4;#8b5cf6;#3b82f6" dur="6s" repeatCount="indefinite" />
-          </stop>
-          <stop offset="50%" stopColor="#8b5cf6">
-            <animate attributeName="stop-color" values="#8b5cf6;#06b6d4;#3b82f6;#8b5cf6" dur="5s" repeatCount="indefinite" />
+            <animate attributeName="stop-color" values="#3b82f6;#06b6d4;#3b82f6" dur="4s" repeatCount="indefinite" />
           </stop>
           <stop offset="100%" stopColor="#1d4ed8">
-            <animate attributeName="stop-color" values="#1d4ed8;#7c3aed;#0ea5e9;#1d4ed8" dur="4s" repeatCount="indefinite" />
+            <animate attributeName="stop-color" values="#1d4ed8;#1e40af;#1d4ed8" dur="3s" repeatCount="indefinite" />
           </stop>
         </linearGradient>
         
-        <marker id={`parent-arrow-${id}`} markerWidth="8" markerHeight="8" refX="6" refY="4" orient="auto" markerUnits="strokeWidth">
-          <polygon points="0,0 0,8 8,4" fill="url(#parent-gradient-${id})" />
+        <marker id={`parent-arrow-${id}`} markerWidth="6" markerHeight="6" refX="5" refY="3" orient="auto" markerUnits="strokeWidth">
+          <polygon points="0,0 0,6 6,3" fill="#1d4ed8" />
         </marker>
       </defs>
       
-      {/* Main animated path */}
       <path
         id={id}
         style={{
           ...style,
-          strokeWidth: 3,
+          strokeWidth: 2,
           stroke: `url(#parent-gradient-${id})`,
           strokeLinecap: 'round',
-          strokeDasharray: '8,4',
-          filter: 'drop-shadow(0 2px 4px rgba(59, 130, 246, 0.3))'
+          strokeDasharray: '6,3',
         }}
-        className="react-flow__edge-path"
+        className="react-flow__edge-path animate-dash"
         d={edgePath}
         markerEnd={`url(#parent-arrow-${id})`}
       >
-        <animate attributeName="stroke-dashoffset" values="0;-24;0" dur="3s" repeatCount="indefinite" />
+        <animate attributeName="stroke-dashoffset" values="0;-18;0" dur="4s" repeatCount="indefinite" />
       </path>
-      
-      {/* Emoji label at midpoint */}
-      <foreignObject x={midX - 10} y={midY - 10} width="20" height="20">
-        <div className="text-sm animate-bounce">👨‍👩‍👧</div>
-      </foreignObject>
     </>
   );
 };
 
-// Beautiful curved sibling edge with dashed animation and emoji
+// Enhanced Sibling Edge Component with more animations
 const SiblingEdge = ({ id, sourceX, sourceY, targetX, targetY, style = {} }: any) => {
   const centerX = (sourceX + targetX) / 2;
-  const centerY = Math.min(sourceY, targetY) - 40; // Arc above both nodes
+  const centerY = (sourceY + targetY) / 2 - 30;
   
   const edgePath = `M ${sourceX},${sourceY} Q ${centerX},${centerY} ${targetX},${targetY}`;
   
@@ -418,7 +436,7 @@ const SiblingEdge = ({ id, sourceX, sourceY, targetX, targetY, style = {} }: any
       <defs>
         <linearGradient id={`sibling-gradient-${id}`} x1="0%" y1="0%" x2="100%" y2="0%">
           <stop offset="0%" stopColor="#8b5cf6">
-            <animate attributeName="stop-color" values="#8b5cf6;#a855f7;#ec4899;#8b5cf6" dur="4s" repeatCount="indefinite" />
+            <animate attributeName="stop-color" values="#8b5cf6;#a855f7;#8b5cf6" dur="3s" repeatCount="indefinite" />
           </stop>
           <stop offset="50%" stopColor="#a855f7">
             <animate attributeName="stop-color" values="#a855f7;#9333ea;#a855f7" dur="2s" repeatCount="indefinite" />
@@ -462,56 +480,9 @@ const nodeTypes = {
   couple: CoupleNode,
 };
 
-// Beautiful straight marriage edge with heart and dashed animation
-const MarriageEdge = ({ id, sourceX, sourceY, targetX, targetY, style = {} }: any) => {
-  const midX = (sourceX + targetX) / 2;
-  const midY = (sourceY + targetY) / 2;
-  
-  return (
-    <>
-      <defs>
-        <linearGradient id={`marriage-gradient-${id}`} x1="0%" y1="0%" x2="100%" y2="0%">
-          <stop offset="0%" stopColor="#f472b6">
-            <animate attributeName="stop-color" values="#f472b6;#ec4899;#be185d;#f472b6" dur="3s" repeatCount="indefinite" />
-          </stop>
-          <stop offset="50%" stopColor="#ec4899">
-            <animate attributeName="stop-color" values="#ec4899;#be185d;#f472b6;#ec4899" dur="4s" repeatCount="indefinite" />
-          </stop>
-          <stop offset="100%" stopColor="#be185d">
-            <animate attributeName="stop-color" values="#be185d;#f472b6;#ec4899;#be185d" dur="2s" repeatCount="indefinite" />
-          </stop>
-        </linearGradient>
-      </defs>
-      
-      {/* Straight dashed marriage line */}
-      <path
-        id={id}
-        style={{
-          ...style,
-          strokeWidth: 3,
-          stroke: `url(#marriage-gradient-${id})`,
-          strokeLinecap: 'round',
-          strokeDasharray: '10,5',
-          filter: 'drop-shadow(0 2px 4px rgba(236, 72, 153, 0.4))'
-        }}
-        className="react-flow__edge-path"
-        d={`M ${sourceX},${sourceY} L ${targetX},${targetY}`}
-      >
-        <animate attributeName="stroke-dashoffset" values="0;-30;0" dur="2s" repeatCount="indefinite" />
-      </path>
-      
-      {/* Heart emoji at midpoint */}
-      <foreignObject x={midX - 10} y={midY - 10} width="20" height="20">
-        <div className="text-sm animate-heartBeat">💕</div>
-      </foreignObject>
-    </>
-  );
-};
-
 const edgeTypes = {
   parentChild: ParentChildEdge,
   sibling: SiblingEdge,
-  marriage: MarriageEdge,
 };
 
 // Enhanced position calculation with better spacing and alignment
@@ -1086,8 +1057,8 @@ const FamilyTreeVisualization: React.FC<FamilyTreeVisualizationProps> = ({
     const node = nodes.find(n => n.id === selectedCouple);
     if (!node || node.type !== 'couple') return null;
     return {
-      member1: familyMembers.find(m => m.userId === (node.data.member1 as any)?.userId),
-      member2: familyMembers.find(m => m.userId === (node.data.member2 as any)?.userId)
+      member1: familyMembers.find(m => m.userId === node.data.member1.userId),
+      member2: familyMembers.find(m => m.userId === node.data.member2.userId)
     };
   };
   
@@ -1143,7 +1114,7 @@ const FamilyTreeVisualization: React.FC<FamilyTreeVisualizationProps> = ({
           color="#e2e8f0" 
           gap={24} 
           size={1}
-          variant={BackgroundVariant.Dots}
+          variant="dots"
           className="opacity-40"
         />
         {showControls && (
@@ -1401,11 +1372,11 @@ const FamilyTreeVisualization: React.FC<FamilyTreeVisualizationProps> = ({
               <div className="grid grid-cols-2 gap-4 text-sm">
                 <div className="text-center p-3 bg-slate-50 rounded-lg">
                   <div className="font-medium text-slate-700 mb-1">From</div>
-                  <div className="text-slate-600 font-semibold">{(selectedEdge.data as any)?.sourceName || 'Unknown'}</div>
+                  <div className="text-slate-600 font-semibold">{selectedEdge.data?.sourceName || 'Unknown'}</div>
                 </div>
                 <div className="text-center p-3 bg-slate-50 rounded-lg">
                   <div className="font-medium text-slate-700 mb-1">To</div>
-                  <div className="text-slate-600 font-semibold">{(selectedEdge.data as any)?.targetName || 'Unknown'}</div>
+                  <div className="text-slate-600 font-semibold">{selectedEdge.data?.targetName || 'Unknown'}</div>
                 </div>
               </div>
               
