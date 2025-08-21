@@ -125,11 +125,9 @@ const AddFamilyMemberPage: React.FC = () => {
       
       // Create reciprocal relationship
       await createReciprocalRelationship(
-        user.familyTreeId,
-        user.userId,
-        newMember.userId,
-        userRelationshipToMember,
-        data.relationship
+        { email: user.email, userId: user.userId, gender: user.gender },
+        newMember.email,
+        userRelationshipToMember
       );
 
       toast({

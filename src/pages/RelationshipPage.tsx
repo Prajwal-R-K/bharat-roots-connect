@@ -7,7 +7,7 @@ import { Button } from "@/components/ui/button";
 import { toast } from "@/hooks/use-toast";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { getRelationshipTypes, createReciprocateRelationships } from "@/lib/neo4j/relationships";
+import { getRelationshipTypes, createReciprocalRelationship } from "@/lib/neo4j/relationships";
 import { getFamilyMembers } from "@/lib/neo4j/family-tree";
 import { updateUser } from "@/lib/neo4j/users";
 
@@ -103,7 +103,7 @@ const RelationshipPage = () => {
         const member = familyMembers.find(m => m.userId === memberId);
         if (!member) return null;
         
-        return createReciprocateRelationships(
+        return createReciprocalRelationship(
           { email: user.email, userId: user.userId },
           member.email,
           relationship.toLowerCase()
