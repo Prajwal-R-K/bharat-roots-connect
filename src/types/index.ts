@@ -53,22 +53,3 @@ export interface InviteFormValues {
   email: string;
   relationship: string;
 }
-
-export interface ChatMessage {
-  _id?: string;
-  messageId: string;
-  familyTreeId: string;
-  senderId: string;
-  senderName: string;
-  message: string;
-  timestamp: Date;
-  messageType?: 'text' | 'image' | 'file';
-}
-
-export interface ChatRoom {
-  _id?: string;
-  familyTreeId: string;
-  members: string[];
-  createdAt: Date;
-  lastMessage?: ChatMessage;
-}
