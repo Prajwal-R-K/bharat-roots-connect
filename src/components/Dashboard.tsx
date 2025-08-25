@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import * as React from 'react';
 import { User, Calendar, MessageSquare, Users, Settings, Home, Plus, Download, Mail, LogOut, X, CalendarIcon } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -25,23 +25,23 @@ interface DashboardProps {
 const Dashboard: React.FC<DashboardProps> = ({ user: initialUser, onUserUpdate }) => {
   const { toast } = useToast();
   const navigate = useNavigate();
-  const [user, setUser] = useState<UserType>(initialUser);
-  const [familyMembers, setFamilyMembers] = useState<any[]>([]);
+  const [user, setUser] = React.useState<UserType>(initialUser);
+  const [familyMembers, setFamilyMembers] = React.useState<any[]>([]);
   
   // State for profile modal
-  const [profileOpen, setProfileOpen] = useState(false);
-  const [profileDetails, setProfileDetails] = useState<UserType | null>(null);
-  const [editMode, setEditMode] = useState(false);
-  const [editData, setEditData] = useState<UserType | null>(null);
+  const [profileOpen, setProfileOpen] = React.useState(false);
+  const [profileDetails, setProfileDetails] = React.useState<UserType | null>(null);
+  const [editMode, setEditMode] = React.useState(false);
+  const [editData, setEditData] = React.useState<UserType | null>(null);
 
   // Update user state when initialUser prop changes
-  useEffect(() => {
+  React.useEffect(() => {
     console.log('Dashboard: Initial user prop changed:', initialUser);
     setUser(initialUser);
   }, [initialUser]);
 
   // Fetch user details when modal opens
-  useEffect(() => {
+  React.useEffect(() => {
     if (profileOpen) {
       console.log('Profile modal opened, setting profile details:', user);
       setProfileDetails(user);
@@ -147,7 +147,7 @@ const Dashboard: React.FC<DashboardProps> = ({ user: initialUser, onUserUpdate }
     }
   };
 
-  useEffect(() => {
+  React.useEffect(() => {
     const loadFamilyMembers = async () => {
       try {
         const members = await getFamilyMembers(user.familyTreeId);

@@ -1,5 +1,5 @@
 
-import React, { useEffect, useState } from "react";
+import * as React from "react";
 import { useNavigate, useLocation } from "react-router-dom";
 import Dashboard from "@/components/Dashboard";
 import { User } from "@/types";
@@ -9,8 +9,8 @@ import { toast } from "@/hooks/use-toast";
 const DashboardPage = () => {
   const navigate = useNavigate();
   const location = useLocation();
-  const [user, setUser] = useState<User | null>(null);
-  const [isLoading, setIsLoading] = useState(true);
+  const [user, setUser] = React.useState<User | null>(null);
+  const [isLoading, setIsLoading] = React.useState(true);
 
   const handleUserUpdate = (updatedUser: User) => {
     setUser(updatedUser);
@@ -18,7 +18,7 @@ const DashboardPage = () => {
     console.log("DashboardPage: User state and localStorage have been updated.");
   };
   
-  useEffect(() => {
+  React.useEffect(() => {
     console.log("DashboardPage: useEffect triggered.");
     // Try to get user data from location state first
     const userDataFromState = location.state?.user;
