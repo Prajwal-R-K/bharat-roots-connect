@@ -8,6 +8,7 @@ import FamilyTreeViewPage from "@/pages/FamilyTreeViewPage";
 import AddFamilyMemberPage from "@/pages/AddFamilyMemberPage";
 import InviteMembersPage from "@/pages/InviteMembersPage";
 import EditProfilePage from "@/pages/EditProfilePage";
+import MessagesPage from "@/pages/MessagesPage";
 
 const queryClient = new QueryClient();
 
@@ -23,6 +24,7 @@ function App() {
             <Route path="/add-member" element={<AddFamilyMemberPage />} />
             <Route path="/invite" element={<InviteMembersPage />} />
             <Route path="/profile" element={<EditProfilePage />} />
+            <Route path="/messages" element={<MessagesPage />} />
             <Route path="/" element={<Navigate to="/auth" replace />} />
             <Route path="*" element={<Navigate to="/auth" replace />} />
           </Routes>

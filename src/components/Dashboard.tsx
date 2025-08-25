@@ -14,6 +14,7 @@ import { useToast } from '@/hooks/use-toast';
 import { updateUserProfile, getFamilyMembers, getUserByEmailOrId } from '@/lib/neo4j';
 import { User as UserType } from '@/types';
 import FamilyTreeVisualization from './FamilyTreeVisualization1';
+import FamilyChat from './FamilyChat';
 import { format } from 'date-fns';
 import { cn } from '@/lib/utils';
 
@@ -33,6 +34,9 @@ const Dashboard: React.FC<DashboardProps> = ({ user: initialUser, onUserUpdate }
   const [profileDetails, setProfileDetails] = React.useState<UserType | null>(null);
   const [editMode, setEditMode] = React.useState(false);
   const [editData, setEditData] = React.useState<UserType | null>(null);
+  
+  // State for chat modal
+  const [chatOpen, setChatOpen] = React.useState(false);
 
   // Update user state when initialUser prop changes
   React.useEffect(() => {
@@ -205,7 +209,7 @@ const Dashboard: React.FC<DashboardProps> = ({ user: initialUser, onUserUpdate }
                 <Button 
                   variant="ghost" 
                   className="text-gray-700 hover:bg-indigo-50 hover:text-indigo-600 px-3 py-2 rounded-md text-sm font-medium flex items-center gap-2"
-                  onClick={() => navigate('/chat')}
+                  onClick={() => setChatOpen(true)}
                 >
                   <MessageSquare className="w-4 h-4" />
                   Chat
@@ -467,6 +471,23 @@ const Dashboard: React.FC<DashboardProps> = ({ user: initialUser, onUserUpdate }
             </div>
           </div>
         </div>
+      )}
+
+      {/* Floating Chat Button */}
+      <Button
+        className="fixed bottom-6 right-6 h-14 w-14 rounded-full bg-blue-600 hover:bg-blue-700 shadow-lg z-40"
+        onClick={() => setChatOpen(true)}
+      >
+        <MessageSquare className="h-6 w-6" />
+      </Button>
+
+      {/* Chat Modal */}
+      {chatOpen && (
+        <FamilyChat
+          user={user}
+          isOpen={chatOpen}
+          onClose={() => setChatOpen(false)}
+        />
       )}
     </div>
   );

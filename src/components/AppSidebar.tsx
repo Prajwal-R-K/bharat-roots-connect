@@ -10,7 +10,8 @@ import {
   Lock,
   Activity,
   Settings,
-  LogOut
+  LogOut,
+  MessageSquare
 } from 'lucide-react';
 import {
   Sidebar,
@@ -28,6 +29,7 @@ import {
 const navigationItems = [
   { title: 'Dashboard', url: '/dashboard', icon: Home },
   { title: 'View Family Tree', url: '/family-tree', icon: TreePine },
+  { title: 'Messages', url: '/messages', icon: MessageSquare },
   { title: 'Add Family Member', url: '/add-member', icon: UserPlus },
   { title: 'Invite Members', url: '/invite', icon: Mail },
   { title: 'Edit Profile', url: '/profile', icon: User },
