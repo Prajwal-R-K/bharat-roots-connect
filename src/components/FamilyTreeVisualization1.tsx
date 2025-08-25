@@ -1057,8 +1057,8 @@ const FamilyTreeVisualization: React.FC<FamilyTreeVisualizationProps> = ({
     const node = nodes.find(n => n.id === selectedCouple);
     if (!node || node.type !== 'couple') return null;
     return {
-      member1: familyMembers.find(m => m.userId === node.data.member1.userId),
-      member2: familyMembers.find(m => m.userId === node.data.member2.userId)
+      member1: familyMembers.find(m => (m as any).userId === (node.data.member1 as any).userId),
+      member2: familyMembers.find(m => (m as any).userId === (node.data.member2 as any).userId)
     };
   };
   
@@ -1114,7 +1114,7 @@ const FamilyTreeVisualization: React.FC<FamilyTreeVisualizationProps> = ({
           color="#e2e8f0" 
           gap={24} 
           size={1}
-          variant="dots"
+          variant={"cross" as any}
           className="opacity-40"
         />
         {showControls && (
@@ -1372,11 +1372,11 @@ const FamilyTreeVisualization: React.FC<FamilyTreeVisualizationProps> = ({
               <div className="grid grid-cols-2 gap-4 text-sm">
                 <div className="text-center p-3 bg-slate-50 rounded-lg">
                   <div className="font-medium text-slate-700 mb-1">From</div>
-                  <div className="text-slate-600 font-semibold">{selectedEdge.data?.sourceName || 'Unknown'}</div>
+                  <div className="text-slate-600 font-semibold">{(selectedEdge.data as any)?.sourceName || 'Unknown'}</div>
                 </div>
                 <div className="text-center p-3 bg-slate-50 rounded-lg">
                   <div className="font-medium text-slate-700 mb-1">To</div>
-                  <div className="text-slate-600 font-semibold">{selectedEdge.data?.targetName || 'Unknown'}</div>
+                  <div className="text-slate-600 font-semibold">{(selectedEdge.data as any)?.targetName || 'Unknown'}</div>
                 </div>
               </div>
               

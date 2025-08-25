@@ -239,10 +239,17 @@ export const updateUserProfile = async (userId: string, profileData: any): Promi
     if (profileData.address !== undefined) {
       fieldsToUpdate.push('u.address = $address');
       params.address = profileData.address;
+      console.log('Adding address field:', params.address);
     }
     if (profileData.dateOfBirth !== undefined) {
       fieldsToUpdate.push('u.dateOfBirth = $dateOfBirth');
       params.dateOfBirth = profileData.dateOfBirth;
+      console.log('Adding dateOfBirth field:', params.dateOfBirth);
+    }
+    if (profileData.married !== undefined) {
+      fieldsToUpdate.push('u.married = $married');
+      params.married = profileData.married;
+      console.log('Adding married field:', params.married);
     }
     if (profileData.bio !== undefined) {
       fieldsToUpdate.push('u.bio = $bio');

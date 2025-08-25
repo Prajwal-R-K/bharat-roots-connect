@@ -1,14 +1,21 @@
 import React, { useState, useEffect } from 'react';
-import { User, Calendar, MessageSquare, Users, Settings, Home, Plus, Download, Mail, LogOut, X } from 'lucide-react';
+import { User, Calendar, MessageSquare, Users, Settings, Home, Plus, Download, Mail, LogOut, X, CalendarIcon } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Badge } from '@/components/ui/badge';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
+import { Calendar as CalendarComponent } from '@/components/ui/calendar';
 import { useToast } from '@/hooks/use-toast';
 import { updateUserProfile, getFamilyMembers, getUserByEmailOrId } from '@/lib/neo4j';
 import { User as UserType } from '@/types';
 import FamilyTreeVisualization from './FamilyTreeVisualization1';
+import { format } from 'date-fns';
+import { cn } from '@/lib/utils';
 
 interface DashboardProps {
   user: UserType;
@@ -43,10 +50,23 @@ const Dashboard: React.FC<DashboardProps> = ({ user: initialUser, onUserUpdate }
   }, [profileOpen, user]);
 
   // Handle profile edit
-  const handleEditChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleEditChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
     if (!editData) return;
     const { name, value } = e.target;
     setEditData({ ...editData, [name]: value });
+  };
+
+  // Calculate age from date of birth
+  const calculateAge = (dateOfBirth: string) => {
+    if (!dateOfBirth) return null;
+    const today = new Date();
+    const birthDate = new Date(dateOfBirth);
+    let age = today.getFullYear() - birthDate.getFullYear();
+    const monthDiff = today.getMonth() - birthDate.getMonth();
+    if (monthDiff < 0 || (monthDiff === 0 && today.getDate() < birthDate.getDate())) {
+      age--;
+    }
+    return age;
   };
 
   const handleSaveProfile = async () => {
@@ -62,9 +82,10 @@ const Dashboard: React.FC<DashboardProps> = ({ user: initialUser, onUserUpdate }
       // Prepare update data with all fields
       const updateData: any = {
         name: editData.name || '',
-        email: editData.email || '',
         phone: editData.phone || '', // Ensure phone is always a string, even if empty
-        gender: editData.gender || '',
+        address: editData.address || '',
+        dateOfBirth: editData.dateOfBirth || '',
+        married: editData.married || '',
       };
 
       // Debug logging
@@ -286,70 +307,158 @@ const Dashboard: React.FC<DashboardProps> = ({ user: initialUser, onUserUpdate }
                 <AvatarImage src={profileDetails?.profilePicture} />
                 <AvatarFallback className="bg-indigo-500 text-white text-3xl">{profileDetails?.name?.charAt(0)}</AvatarFallback>
               </Avatar>
-              {!editMode ? (
+               {!editMode ? (
                 <>
                   <div className="font-bold text-xl text-indigo-700">{profileDetails?.name}</div>
                   <div className="text-sm text-gray-500">Email: {profileDetails?.email}</div>
                   <div className="text-sm text-gray-500">Phone: {profileDetails?.phone || 'Not provided'}</div>
                   <div className="text-sm text-gray-500">Gender: {profileDetails?.gender || 'Not specified'}</div>
+                  <div className="text-sm text-gray-500">Date of Birth: {profileDetails?.dateOfBirth ? format(new Date(profileDetails.dateOfBirth), 'PPP') : 'Not provided'}</div>
+                  {profileDetails?.dateOfBirth && (
+                    <div className="text-sm text-gray-500">Age: {calculateAge(profileDetails.dateOfBirth)} years</div>
+                  )}
+                  <div className="text-sm text-gray-500">Married: {profileDetails?.married || 'Not specified'}</div>
+                  <div className="text-sm text-gray-500">Address: {profileDetails?.address || 'Not provided'}</div>
                   <div className="text-sm text-gray-500">Family Tree ID: {profileDetails?.familyTreeId}</div>
                   <div className="text-sm text-gray-500">Password: ••••••••</div>
                   <Button className="mt-4" onClick={() => setEditMode(true)}>Edit Profile</Button>
                 </>
               ) : (
-                <div className="w-full space-y-3">
-                  <input 
-                    type="text" 
-                    name="name" 
-                    value={editData?.name || ''} 
-                    onChange={handleEditChange} 
-                    className="border rounded px-3 py-2 w-full" 
-                    placeholder="Full Name" 
-                  />
-                  <input 
-                    type="email" 
-                    name="email" 
-                    value={editData?.email || ''} 
-                    onChange={handleEditChange} 
-                    className="border rounded px-3 py-2 w-full" 
-                    placeholder="Email Address" 
-                  />
-                  <input 
-                    type="tel" 
-                    name="phone" 
-                    value={editData?.phone || ''} 
-                    onChange={handleEditChange} 
-                    className="border rounded px-3 py-2 w-full" 
-                    placeholder="Phone Number" 
-                  />
-                  <select 
-                    name="gender" 
-                    value={editData?.gender || ''} 
-                    onChange={(e) => setEditData(prev => prev ? {...prev, gender: e.target.value} : null)}
-                    className="border rounded px-3 py-2 w-full"
-                  >
-                    <option value="">Select Gender</option>
-                    <option value="male">Male</option>
-                    <option value="female">Female</option>
-                    <option value="other">Other</option>
-                  </select>
-                  <input 
-                    type="password" 
-                    name="password" 
-                    value={editData?.password || ''} 
-                    onChange={handleEditChange} 
-                    className="border rounded px-3 py-2 w-full" 
-                    placeholder="New Password (leave blank to keep current)" 
-                  />
-                  <input 
-                    type="text" 
-                    name="familyTreeId" 
-                    value={editData?.familyTreeId || ''} 
-                    className="border rounded px-3 py-2 w-full bg-gray-100" 
-                    placeholder="Family Tree ID" 
-                    disabled
-                  />
-                  <div className="flex gap-2 pt-2">
+                <div className="w-full space-y-4 max-h-96 overflow-y-auto">
+                  <div className="space-y-2">
+                    <Label htmlFor="name">Full Name</Label>
+                    <Input 
+                      id="name"
+                      name="name" 
+                      value={editData?.name || ''} 
+                      onChange={handleEditChange} 
+                      placeholder="Full Name" 
+                    />
+                  </div>
+                  
+                  <div className="space-y-2">
+                    <Label htmlFor="email">Email Address (Read-only)</Label>
+                    <Input 
+                      id="email"
+                      name="email" 
+                      value={editData?.email || ''} 
+                      className="bg-gray-100"
+                      disabled
+                    />
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label htmlFor="gender">Gender (Read-only)</Label>
+                    <Select value={editData?.gender || ''} disabled>
+                      <SelectTrigger className="bg-gray-100">
+                        <SelectValue placeholder="Select Gender" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="male">Male</SelectItem>
+                        <SelectItem value="female">Female</SelectItem>
+                        <SelectItem value="other">Other</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  
+                  <div className="space-y-2">
+                    <Label htmlFor="phone">Phone Number</Label>
+                    <Input 
+                      id="phone"
+                      name="phone" 
+                      type="tel"
+                      value={editData?.phone || ''} 
+                      onChange={handleEditChange} 
+                      placeholder="Phone Number" 
+                    />
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label htmlFor="dateOfBirth">Date of Birth</Label>
+                    <Popover>
+                      <PopoverTrigger asChild>
+                        <Button
+                          variant="outline"
+                          className={cn(
+                            "w-full justify-start text-left font-normal",
+                            !editData?.dateOfBirth && "text-muted-foreground"
+                          )}
+                        >
+                          <CalendarIcon className="mr-2 h-4 w-4" />
+                          {editData?.dateOfBirth ? format(new Date(editData.dateOfBirth), "PPP") : <span>Pick a date</span>}
+                        </Button>
+                      </PopoverTrigger>
+                      <PopoverContent className="w-auto p-0" align="start">
+                        <CalendarComponent
+                          mode="single"
+                          selected={editData?.dateOfBirth ? new Date(editData.dateOfBirth) : undefined}
+                          onSelect={(date) => setEditData(prev => prev ? {...prev, dateOfBirth: date?.toISOString().split('T')[0] || ''} : null)}
+                          disabled={(date) =>
+                            date > new Date() || date < new Date("1900-01-01")
+                          }
+                          initialFocus
+                          className="pointer-events-auto"
+                        />
+                      </PopoverContent>
+                    </Popover>
+                    {editData?.dateOfBirth && (
+                      <p className="text-sm text-gray-500">Age: {calculateAge(editData.dateOfBirth)} years</p>
+                    )}
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label htmlFor="married">Marital Status</Label>
+                    <Select 
+                      value={editData?.married || ''} 
+                      onValueChange={(value) => setEditData(prev => prev ? {...prev, married: value} : null)}
+                    >
+                      <SelectTrigger>
+                        <SelectValue placeholder="Select Marital Status" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="single">Single</SelectItem>
+                        <SelectItem value="married">Married</SelectItem>
+                        <SelectItem value="divorced">Divorced</SelectItem>
+                        <SelectItem value="widowed">Widowed</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label htmlFor="address">Address</Label>
+                    <Input 
+                      id="address"
+                      name="address" 
+                      value={editData?.address || ''} 
+                      onChange={handleEditChange} 
+                      placeholder="Your Address" 
+                    />
+                  </div>
+                  
+                  <div className="space-y-2">
+                    <Label htmlFor="password">New Password (optional)</Label>
+                    <Input 
+                      id="password"
+                      name="password" 
+                      type="password"
+                      value={editData?.password || ''} 
+                      onChange={handleEditChange} 
+                      placeholder="Leave blank to keep current password" 
+                    />
+                  </div>
+                  
+                  <div className="space-y-2">
+                    <Label htmlFor="familyTreeId">Family Tree ID (Read-only)</Label>
+                    <Input 
+                      id="familyTreeId"
+                      name="familyTreeId" 
+                      value={editData?.familyTreeId || ''} 
+                      className="bg-gray-100"
+                      disabled
+                    />
+                  </div>
+                  
+                  <div className="flex gap-2 pt-4">
                     <Button className="flex-1" onClick={handleSaveProfile}>Save Changes</Button>
                     <Button variant="ghost" className="flex-1" onClick={() => setEditMode(false)}>Cancel</Button>
                   </div>

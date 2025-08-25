@@ -19,6 +19,7 @@ export interface User {
   occupation?: string;
   myRelationship?: string; // Added missing property for user's relationship in the family
   gender?: string; // Added gender field
+  married?: string; // Added marital status field
 }
 
 export interface FamilyTree {
