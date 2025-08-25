@@ -187,30 +187,106 @@ export const getUserByEmailAndFamilyTree = async (email: string, familyTreeId: s
 };
 
 export const updateUserProfile = async (userId: string, profileData: any): Promise<void> => {
-  const cypher = `
-    MATCH (u:User {userId: $userId})
-    SET u.name = $name,
-        u.email = $email,
-        u.phone = $phone,
-        u.address = $address,
-        u.dateOfBirth = $dateOfBirth,
-        u.bio = $bio,
-        u.occupation = $occupation,
-        u.profilePicture = $profilePicture,
-        u.updatedAt = $updatedAt
-    RETURN u
-  `;
+  console.log('=== updateUserProfile DEBUG ===');
+  console.log('Called with userId:', userId);
+  console.log('Called with profileData:', JSON.stringify(profileData, null, 2));
   
-  const result = await runQuery(cypher, {
-    userId,
-    name: profileData.name,
-    email: profileData.email,
-    phone: profileData.phone,
-    address: profileData.address,
-    dateOfBirth: profileData.dateOfBirth,
-    bio: profileData.bio,
-    occupation: profileData.occupation,
-    profilePicture: profileData.profilePicture,
-    updatedAt: new Date().toISOString(),
-  });
+  try {
+    // Hash password if it's being updated
+    let hashedPassword = null;
+    if (profileData.password && profileData.password.trim() !== '') {
+      console.log('Hashing password...');
+      hashedPassword = await hashPassword(profileData.password);
+    }
+
+    // Build dynamic SET clause based on provided fields
+    const fieldsToUpdate: string[] = [];
+    const params: any = { userId, updatedAt: new Date().toISOString() };
+
+    // Always include name, email, phone, gender even if empty string
+    if (profileData.name !== undefined && profileData.name !== null) {
+      fieldsToUpdate.push('u.name = $name');
+      params.name = profileData.name.toString();
+      console.log('Adding name field:', params.name);
+    }
+    
+    if (profileData.email !== undefined && profileData.email !== null) {
+      fieldsToUpdate.push('u.email = $email');
+      params.email = profileData.email.toString();
+      console.log('Adding email field:', params.email);
+    }
+    
+    // IMPORTANT: Always update phone even if it's empty string
+    if (profileData.phone !== undefined && profileData.phone !== null) {
+      fieldsToUpdate.push('u.phone = $phone');
+      params.phone = profileData.phone.toString();
+      console.log('Adding phone field:', params.phone);
+    }
+    
+    if (profileData.gender !== undefined && profileData.gender !== null) {
+      fieldsToUpdate.push('u.gender = $gender');
+      params.gender = profileData.gender.toString();
+      console.log('Adding gender field:', params.gender);
+    }
+    
+    if (hashedPassword) {
+      fieldsToUpdate.push('u.password = $password');
+      params.password = hashedPassword;
+      console.log('Adding password field (hashed)');
+    }
+    
+    // Other optional fields
+    if (profileData.address !== undefined) {
+      fieldsToUpdate.push('u.address = $address');
+      params.address = profileData.address;
+    }
+    if (profileData.dateOfBirth !== undefined) {
+      fieldsToUpdate.push('u.dateOfBirth = $dateOfBirth');
+      params.dateOfBirth = profileData.dateOfBirth;
+    }
+    if (profileData.bio !== undefined) {
+      fieldsToUpdate.push('u.bio = $bio');
+      params.bio = profileData.bio;
+    }
+    if (profileData.occupation !== undefined) {
+      fieldsToUpdate.push('u.occupation = $occupation');
+      params.occupation = profileData.occupation;
+    }
+    if (profileData.profilePicture !== undefined) {
+      fieldsToUpdate.push('u.profilePicture = $profilePicture');
+      params.profilePicture = profileData.profilePicture;
+    }
+
+    // Always update the updatedAt timestamp
+    fieldsToUpdate.push('u.updatedAt = $updatedAt');
+
+    if (fieldsToUpdate.length === 1) { // Only updatedAt
+      throw new Error('No fields to update');
+    }
+
+    const cypher = `
+      MATCH (u:User {userId: $userId})
+      SET ${fieldsToUpdate.join(', ')}
+      RETURN u
+    `;
+    
+    console.log('Executing cypher query:', cypher);
+    console.log('With parameters:', JSON.stringify(params, null, 2));
+    
+    const result = await runQuery(cypher, params);
+    
+    if (!result || result.length === 0) {
+      console.error('No user found with userId:', userId);
+      throw new Error(`Failed to update user profile: User not found with ID ${userId}`);
+    }
+    
+    const updatedUser = result[0].u.properties;
+    console.log('User profile updated successfully. New data:', JSON.stringify(updatedUser, null, 2));
+    console.log('Updated phone number:', updatedUser.phone);
+    
+  } catch (error) {
+    console.error('=== updateUserProfile ERROR ===');
+    console.error('Error updating user profile:', error);
+    throw error;
+  }
 };

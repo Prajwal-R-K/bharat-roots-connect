@@ -1,8 +1,6 @@
 
 import React, { useEffect, useState } from "react";
 import { useNavigate, useLocation } from "react-router-dom";
-import { SidebarProvider, SidebarTrigger } from "@/components/ui/sidebar";
-import { AppSidebar } from "@/components/AppSidebar";
 import Dashboard from "@/components/Dashboard";
 import { User } from "@/types";
 import { getUserByEmailOrId } from "@/lib/neo4j";
@@ -13,56 +11,53 @@ const DashboardPage = () => {
   const location = useLocation();
   const [user, setUser] = useState<User | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+
+  const handleUserUpdate = (updatedUser: User) => {
+    setUser(updatedUser);
+    localStorage.setItem('userData', JSON.stringify(updatedUser));
+    console.log("DashboardPage: User state and localStorage have been updated.");
+  };
   
   useEffect(() => {
+    console.log("DashboardPage: useEffect triggered.");
     // Try to get user data from location state first
-    const userData = location.state?.user;
+    const userDataFromState = location.state?.user;
     
-    if (userData) {
-      console.log("Dashboard: User data found in location state", userData.userId);
-      setUser(userData);
+    if (userDataFromState) {
+      console.log("DashboardPage: User data found in location state", userDataFromState.userId);
+      setUser(userDataFromState);
+      // Also update localStorage to be consistent
+      localStorage.setItem('userData', JSON.stringify(userDataFromState));
       setIsLoading(false);
     } else {
-      // If no user data in location state, try to get from localStorage
-      console.log("Dashboard: No user data in location state, checking localStorage");
+      // If no user data in location state, this is a refresh or direct navigation.
+      // Always prioritize fetching from the database for freshness.
+      console.log("DashboardPage: No user data in location state, checking localStorage for userId.");
       const storedUserId = localStorage.getItem('userId');
       
       if (storedUserId) {
-        console.log("Dashboard: Found stored user ID in localStorage:", storedUserId);
+        console.log("DashboardPage: Found stored user ID, fetching from database:", storedUserId);
         
-        // Try to get from localStorage first
-        const storedUserData = localStorage.getItem('userData');
-        if (storedUserData) {
-          try {
-            const parsedUserData = JSON.parse(storedUserData);
-            console.log("Dashboard: Successfully loaded user data from localStorage", parsedUserData.userId);
-            setUser(parsedUserData as User);
-            setIsLoading(false);
-            return;
-          } catch (e) {
-            console.error("Dashboard: Failed to parse stored user data", e);
-          }
-        }
-        
-        // If localStorage userData failed, fetch from database
-        console.log("Dashboard: Fetching user data from database");
         getUserByEmailOrId(storedUserId)
           .then(fetchedUser => {
             if (fetchedUser) {
-              console.log("Dashboard: Successfully fetched user data from database", fetchedUser.userId);
-              setUser(fetchedUser);
+              console.log("DashboardPage: Successfully fetched fresh user data from database", fetchedUser.userId);
+              // Set the user state and update localStorage with the definitive fresh data.
+              handleUserUpdate(fetchedUser);
             } else {
-              console.error("Dashboard: User not found in database");
+              console.error("DashboardPage: User not found in database with stored ID. Clearing session.");
+              localStorage.removeItem('userId');
+              localStorage.removeItem('userData');
               toast({
                 title: "Session Expired",
-                description: "Please login again.",
+                description: "Your session is invalid. Please login again.",
                 variant: "destructive",
               });
               navigate('/auth');
             }
           })
           .catch(error => {
-            console.error("Dashboard: Error fetching user data:", error);
+            console.error("DashboardPage: Error fetching user data:", error);
             toast({
               title: "Connection Error",
               description: "Could not connect to the database. Please try again later.",
@@ -73,8 +68,8 @@ const DashboardPage = () => {
             setIsLoading(false);
           });
       } else {
-        // If no stored user ID, redirect to login
-        console.log("Dashboard: No stored user ID found, redirecting to login");
+        // If no stored user ID, redirect to login.
+        console.log("DashboardPage: No stored user ID found, redirecting to login.");
         toast({
           title: "Authentication Required",
           description: "Please login to access the dashboard.",
@@ -84,17 +79,6 @@ const DashboardPage = () => {
       }
     }
   }, [navigate, location.state]);
-  
-  const handleLogout = () => {
-    // Clear stored user data
-    localStorage.removeItem('userId');
-    localStorage.removeItem('userData');
-    toast({
-      title: "Logged Out",
-      description: "You have been successfully logged out.",
-    });
-    navigate("/");
-  };
   
   if (isLoading) {
     return (
@@ -121,20 +105,9 @@ const DashboardPage = () => {
   }
   
   return (
-    <SidebarProvider>
-      <div className="flex min-h-screen w-full bg-slate-50">
-        <AppSidebar onLogout={handleLogout} />
-        <div className="flex-1 flex flex-col">
-          <header className="h-14 flex items-center border-b bg-white px-4 shadow-sm z-10">
-            <SidebarTrigger className="mr-4" />
-            <h1 className="text-xl font-bold text-indigo-800">Family Tree Platform</h1>
-          </header>
-          <main className="flex-1 p-0 md:p-6">
-            <Dashboard user={user} />
-          </main>
-        </div>
-      </div>
-    </SidebarProvider>
+    <div className="min-h-screen w-full bg-slate-50">
+      <Dashboard user={user} onUserUpdate={handleUserUpdate} />
+    </div>
   );
 };
 

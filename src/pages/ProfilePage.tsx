@@ -142,6 +142,23 @@ const ProfilePage: React.FC = () => {
               {loading ? "Saving..." : "Save Changes"}
             </Button>
           </div>
+          {/* Dropdown Menu Bar */}
+          <div className="flex justify-center mt-6">
+            <div className="rounded-full bg-white shadow-lg border flex items-center px-4 py-2 gap-6">
+              <Button variant="ghost" className="rounded-full flex items-center gap-2 px-4 py-2">
+                <Calendar className="h-4 w-4 text-indigo-500" /> Events
+              </Button>
+              <Button variant="ghost" className="rounded-full flex items-center gap-2 px-4 py-2">
+                <Mail className="h-4 w-4 text-blue-500" /> Chat
+              </Button>
+              <Button variant="ghost" className="rounded-full flex items-center gap-2 px-4 py-2">
+                <UserIcon className="h-4 w-4 text-purple-500" /> Posts
+              </Button>
+              <Button variant="ghost" className="rounded-full flex items-center gap-2 px-4 py-2">
+                <UserIcon className="h-4 w-4 text-green-500" /> Family
+              </Button>
+            </div>
+          </div>
         </div>
       </div>
 

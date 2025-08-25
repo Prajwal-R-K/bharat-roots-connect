@@ -6,16 +6,15 @@ import { Button } from '@/components/ui/button';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Badge } from '@/components/ui/badge';
 import { useToast } from '@/hooks/use-toast';
-import { updateUserProfile, getFamilyMembers, getUserByEmailOrId } from '@/lib/neo4j';
+import { updateUserProfile, getFamilyMembers } from '@/lib/neo4j';
 import { User as UserType } from '@/types';
 import FamilyTreeVisualization from './FamilyTreeVisualization1';
 
 interface DashboardProps {
   user: UserType;
-  onUserUpdate: (updatedUser: UserType) => void;
 }
 
-const Dashboard: React.FC<DashboardProps> = ({ user: initialUser, onUserUpdate }) => {
+const Dashboard: React.FC<DashboardProps> = ({ user: initialUser }) => {
   const { toast } = useToast();
   const navigate = useNavigate();
   const [user, setUser] = useState<UserType>(initialUser);
@@ -27,18 +26,11 @@ const Dashboard: React.FC<DashboardProps> = ({ user: initialUser, onUserUpdate }
   const [editMode, setEditMode] = useState(false);
   const [editData, setEditData] = useState<UserType | null>(null);
 
-  // Update user state when initialUser prop changes
-  useEffect(() => {
-    console.log('Dashboard: Initial user prop changed:', initialUser);
-    setUser(initialUser);
-  }, [initialUser]);
-
   // Fetch user details when modal opens
   useEffect(() => {
     if (profileOpen) {
-      console.log('Profile modal opened, setting profile details:', user);
       setProfileDetails(user);
-      setEditData({ ...user }); // Create a copy to avoid reference issues
+      setEditData(user);
     }
   }, [profileOpen, user]);
 
@@ -51,76 +43,38 @@ const Dashboard: React.FC<DashboardProps> = ({ user: initialUser, onUserUpdate }
 
   const handleSaveProfile = async () => {
     if (!editData) return;
-    
-    // Show loading state
-    const loadingToast = toast({
-      title: 'Updating profile...',
-      description: 'Please wait while we save your changes.',
-    });
-
     try {
       // Prepare update data with all fields
       const updateData: any = {
-        name: editData.name || '',
-        email: editData.email || '',
-        phone: editData.phone || '', // Ensure phone is always a string, even if empty
-        gender: editData.gender || '',
+        name: editData.name,
+        email: editData.email,
+        phone: editData.phone,
+        gender: editData.gender,
       };
-
-      // Debug logging
-      console.log('=== PROFILE UPDATE DEBUG ===');
-      console.log('User ID:', editData.userId);
-      console.log('Update data being sent:', updateData);
-      console.log('Phone number being saved:', updateData.phone);
 
       // Only include password if it's been changed (not empty)
       if (editData.password && editData.password.trim() !== '') {
         updateData.password = editData.password;
-        console.log('Password update included');
       }
 
       // Update user profile in Neo4j backend
-      console.log('Calling updateUserProfile...');
       await updateUserProfile(editData.userId, updateData);
-      console.log('updateUserProfile completed successfully');
       
-      // Small delay to ensure database commit
-      await new Promise(resolve => setTimeout(resolve, 500));
-      
-      // Fetch fresh user data from the database to ensure UI consistency
-      console.log('Fetching fresh user data for ID:', editData.userId);
-      const freshUserData = await getUserByEmailOrId(editData.userId);
-      console.log('Fetched fresh data:', freshUserData);
-
-      if (freshUserData) {
-        // Update component state with the absolute latest data
-        setUser(freshUserData);
-        setProfileDetails(freshUserData);
-        
-        // CRITICAL: Pass the fresh data up to the parent component (DashboardPage)
-        onUserUpdate(freshUserData);
-        console.log('onUserUpdate called with fresh data.');
-
-        // Dismiss loading toast and show success
-        loadingToast.dismiss();
-        toast({
-          title: 'Profile Updated!',
-          description: 'Your changes have been saved successfully.',
-        });
-      } else {
-        // This case is unlikely but good to handle
-        throw new Error('Could not retrieve updated user data from the database.');
-      }
-      
+      // Update local state with the new data
+      const updatedUser = { ...editData };
+      setUser(updatedUser);
+      setProfileDetails(updatedUser);
       setEditMode(false);
-
-    } catch (err) {
-      console.error('=== PROFILE UPDATE FAILED ===', err);
-      // Dismiss loading toast and show error
-      loadingToast.dismiss();
+      
       toast({ 
-        title: 'Error Updating Profile', 
-        description: 'Failed to save your changes. Please check the console and try again.',
+        title: 'Profile updated successfully!',
+        description: 'Your profile information has been saved to the database.',
+      });
+    } catch (err) {
+      console.error('Profile update error:', err);
+      toast({ 
+        title: 'Error updating profile', 
+        description: 'Failed to save changes. Please try again.',
         variant: 'destructive' 
       });
     }
@@ -149,91 +103,49 @@ const Dashboard: React.FC<DashboardProps> = ({ user: initialUser, onUserUpdate }
     .filter(member => member.relationship && member.email !== user.email)
     .slice(0, 5); // Show top 5 relations
 
+  const recentActivities = [
+    { id: 1, type: 'member_joined', description: 'John Smith joined the family tree', time: '2 hours ago' },
+    { id: 2, type: 'relationship_added', description: 'Added relationship: Father-Son', time: '1 day ago' },
+    { id: 3, type: 'profile_updated', description: 'Updated profile information', time: '3 days ago' },
+  ];
+
+  const getActivityIcon = (type: string) => {
+    switch (type) {
+      case 'member_joined': return <Users className="w-4 h-4 text-indigo-500" />;
+      case 'relationship_added': return <User className="w-4 h-4 text-green-500" />;
+      case 'profile_updated': return <Settings className="w-4 h-4 text-yellow-500" />;
+      default: return <Home className="w-4 h-4 text-gray-400" />;
+    }
+  };
+
   return (
-    <div className="min-h-screen bg-gray-50">
-      {/* Professional Navbar */}
-      <nav className="bg-white shadow-lg border-b border-gray-200">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="flex justify-between items-center h-16">
-            {/* Logo/Brand */}
-            <div className="flex items-center">
-              <div className="flex-shrink-0">
-                <h1 className="text-2xl font-bold text-indigo-600">Bharat Roots</h1>
-              </div>
-            </div>
-
-            {/* Navigation Links */}
-            <div className="hidden md:block">
-              <div className="ml-10 flex items-baseline space-x-4">
-                <Button 
-                  variant="ghost" 
-                  className="text-gray-700 hover:bg-indigo-50 hover:text-indigo-600 px-3 py-2 rounded-md text-sm font-medium flex items-center gap-2"
-                  onClick={() => navigate('/family-tree')}
-                >
-                  <Users className="w-4 h-4" />
-                  Family
-                </Button>
-                <Button 
-                  variant="ghost" 
-                  className="text-gray-700 hover:bg-indigo-50 hover:text-indigo-600 px-3 py-2 rounded-md text-sm font-medium flex items-center gap-2"
-                  onClick={() => navigate('/events')}
-                >
-                  <Calendar className="w-4 h-4" />
-                  Events
-                </Button>
-                <Button 
-                  variant="ghost" 
-                  className="text-gray-700 hover:bg-indigo-50 hover:text-indigo-600 px-3 py-2 rounded-md text-sm font-medium flex items-center gap-2"
-                  onClick={() => navigate('/chat')}
-                >
-                  <MessageSquare className="w-4 h-4" />
-                  Chat
-                </Button>
-                <Button 
-                  variant="ghost" 
-                  className="text-gray-700 hover:bg-indigo-50 hover:text-indigo-600 px-3 py-2 rounded-md text-sm font-medium flex items-center gap-2"
-                  onClick={() => navigate('/posts')}
-                >
-                  <Mail className="w-4 h-4" />
-                  Posts
-                </Button>
-              </div>
-            </div>
-
-            {/* Profile Section in Navbar */}
-            <div className="flex items-center gap-4">
-              <div className="text-right hidden sm:block">
-                <div className="text-sm font-medium text-gray-900">{user.name}</div>
-                <div className="text-xs text-gray-500">ID: {user.familyTreeId}</div>
-              </div>
-              <div className="relative">
-                <Avatar 
-                  className="h-10 w-10 ring-2 ring-indigo-300 shadow cursor-pointer hover:ring-indigo-400 transition-all"
-                  onClick={() => setProfileOpen(true)}
-                >
-                  <AvatarImage src={user.profilePicture} />
-                  <AvatarFallback className="bg-indigo-500 text-white text-sm">{user.name?.charAt(0)}</AvatarFallback>
-                </Avatar>
-              </div>
-              <Button 
-                variant="ghost" 
-                size="sm" 
-                className="text-red-500 hover:bg-red-50 flex items-center gap-1"
-                onClick={() => {
-                  localStorage.removeItem('userData');
-                  navigate('/');
-                }}
-              >
-                <LogOut className="w-4 h-4" />
-                <span className="hidden sm:inline">Logout</span>
-              </Button>
-            </div>
-          </div>
+    <div className="space-y-10 max-w-7xl mx-auto px-2 sm:px-4 md:px-8 py-6">
+      {/* Profile Section */}
+      <div className="flex flex-col items-center justify-center gap-4 mt-6">
+        <div className="relative">
+          <Avatar className="h-28 w-28 ring-4 ring-indigo-300 shadow-xl cursor-pointer rounded-full border-4 border-white hover:ring-purple-400 transition-all"
+            onClick={() => setProfileOpen(true)}>
+            <AvatarImage src={user.profilePicture} />
+            <AvatarFallback className="bg-indigo-500 text-white text-4xl">{user.name?.charAt(0)}</AvatarFallback>
+          </Avatar>
         </div>
-      </nav>
+        <div className="font-bold text-indigo-700 text-2xl">{user.name}</div>
+        <div className="text-xs text-gray-500 font-mono">ID: {user.familyTreeId}</div>
+        <Button 
+          variant="ghost" 
+          size="sm" 
+          className="mt-2 text-red-500 flex items-center gap-1 hover:bg-red-50"
+          onClick={() => {
+            localStorage.removeItem('userData');
+            navigate('/');
+          }}
+        >
+          <LogOut className="w-4 h-4" /> Logout
+        </Button>
+      </div>
 
       {/* Main Content */}
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+      <div className="space-y-8">
         {/* Family Tree Visualization */}
         <Card className="shadow-2xl border-0 bg-gradient-to-br from-blue-50 via-indigo-50 to-purple-50">
           <CardHeader className="bg-gradient-to-r from-indigo-600 to-purple-600 text-white rounded-t-lg">
@@ -271,7 +183,27 @@ const Dashboard: React.FC<DashboardProps> = ({ user: initialUser, onUserUpdate }
           </CardContent>
         </Card>
 
-        {/* Recent Activity - REMOVED */}
+        {/* Recent Activity */}
+        <Card className="shadow-xl border-0 bg-white">
+          <CardHeader>
+            <CardTitle className="text-indigo-700 text-xl font-semibold">Recent Activity</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="space-y-4">
+              {recentActivities.map((activity) => (
+                <div key={activity.id} className="flex items-center space-x-4">
+                  <div className="p-3 bg-indigo-100 rounded-full shadow">
+                    {getActivityIcon(activity.type)}
+                  </div>
+                  <div className="flex-1">
+                    <p className="text-base font-medium text-gray-800">{activity.description}</p>
+                    <p className="text-xs text-gray-500">{activity.time}</p>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </CardContent>
+        </Card>
       </div>
 
       {/* Profile Modal */}
