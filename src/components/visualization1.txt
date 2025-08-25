@@ -1,0 +1,862 @@
+// FamilyTreeVisualization.tsx
+import React, { useEffect, useRef, useState } from "react";
+import { User } from "@/types";
+import { Badge } from "@/components/ui/badge";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
+import { getFamilyRelationships } from "@/lib/neo4j/family-tree";
+import { getUserPersonalizedFamilyTree } from "@/lib/neo4j/relationships";
+import { Heart, User as UserIcon, Users, Mail, X, ZoomIn, ZoomOut, Maximize, RotateCcw } from "lucide-react";
+
+import cytoscape from "cytoscape";
+import elk from "cytoscape-elk";
+
+// register elk on the same cytoscape instance
+cytoscape.use(elk);
+
+/* ----------------------------- Types ----------------------------- */
+interface FamilyMember {
+  userId: string;
+  name: string;
+  email?: string;
+  status?: string;
+  relationship?: string;
+  createdBy?: string;
+  profilePicture?: string;
+  gender?: string;
+}
+
+interface CoreRelationship {
+  source: string;
+  target: string;
+  type: "PARENTS_OF" | "SIBLING" | "MARRIED_TO";
+  sourceName?: string;
+  targetName?: string;
+}
+
+interface FamilyTreeVisualizationProps {
+  user: User;
+  familyMembers: FamilyMember[];
+  viewMode?: "personal" | "all";
+  minHeight?: string;
+  showControls?: boolean;
+}
+
+/* ------------------------- Cytoscape Styles ----------------------- */
+const getCytoscapeStyles = () => [
+  {
+    selector: 'node[type="individual"]',
+    style: {
+      'width': 120,
+      'height': 140,
+      'shape': 'roundrectangle',
+      'background-color': 'data(bgColor)',
+      'background-gradient-direction': 'to-bottom-right',
+      'background-gradient-stop-colors': 'data(gradientColors)',
+      'border-width': 3,
+      'border-color': 'data(borderColor)',
+      'border-opacity': 0.8,
+      'label': 'data(displayName)',
+      'text-valign': 'bottom',
+      'text-halign': 'center',
+      'font-size': '12px',
+      'font-weight': 'bold',
+      'color': '#374151',
+      'text-wrap': 'wrap',
+      'text-max-width': '100px',
+      'overlay-opacity': 0,
+      'transition-property': 'background-color, border-color, width, height',
+      'transition-duration': '0.3s'
+    }
+  },
+  {
+    selector: 'node[type="couple"]',
+    style: {
+      'width': 280,
+      'height': 160,
+      'shape': 'roundrectangle',
+      'background-color': '#ffffff',
+      'background-opacity': 0.9,
+      'border-width': 3,
+      'border-color': 'data(borderColor)',
+      'border-opacity': 0.6,
+      'label': '',
+      'overlay-opacity': 0
+    }
+  },
+  {
+    selector: 'node[type="coupleMember"]',
+    style: {
+      'width': 100,
+      'height': 120,
+      'shape': 'roundrectangle',
+      'background-color': 'data(bgColor)',
+      'background-gradient-direction': 'to-bottom-right',
+      'background-gradient-stop-colors': 'data(gradientColors)',
+      'border-width': 2,
+      'border-color': 'data(borderColor)',
+      'border-opacity': 0.8,
+      'label': 'data(displayName)',
+      'text-valign': 'bottom',
+      'text-halign': 'center',
+      'font-size': '10px',
+      'font-weight': 'bold',
+      'color': '#374151',
+      'text-wrap': 'wrap',
+      'text-max-width': '80px',
+      'overlay-opacity': 0
+    }
+  },
+  {
+    selector: 'node.selected',
+    style: {
+      'border-width': 5,
+      'border-color': '#3b82f6',
+      'box-shadow': '0 0 20px #3b82f6',
+      'z-index': 999
+    }
+  },
+  {
+    selector: 'node:active',
+    style: {
+      'overlay-color': '#3b82f6',
+      'overlay-opacity': 0.2
+    }
+  },
+  {
+    selector: 'edge[type="marriage"]',
+    style: {
+      'width': 4,
+      'line-color': '#ec4899',
+      'curve-style': 'straight',
+      'line-style': 'solid',
+      'opacity': 0.8
+    }
+  },
+  {
+    selector: 'edge[type="parentChild"]',
+    style: {
+      'width': 3,
+      'line-color': '#3b82f6',
+      'target-arrow-color': '#3b82f6',
+      'target-arrow-shape': 'triangle',
+      'curve-style': 'bezier',
+      'control-point-step-size': 40,
+      'line-style': 'dashed',
+      'line-dash-pattern': [8, 4],
+      'opacity': 0.7,
+      'arrow-scale': 1.1
+    }
+  },
+  {
+    selector: 'edge[type="sibling"]',
+    style: {
+      'width': 2,
+      'line-color': '#8b5cf6',
+      'curve-style': 'unbundled-bezier',
+      'control-point-distances': [-50],
+      'control-point-weights': [0.5],
+      'line-style': 'dotted',
+      'opacity': 0.6
+    }
+  },
+  {
+    selector: 'edge.animated',
+    style: {
+      'line-dash-offset': '24',
+      'transition-property': 'line-dash-offset',
+      'transition-duration': '2s',
+      'transition-timing-function': 'linear'
+    }
+  }
+];
+
+/* ---------------------- helpers: elements ------------------------ */
+const createCytoscapeElements = (
+  members: FamilyMember[],
+  relationships: CoreRelationship[],
+  createdByUserId: string,
+  loggedInUserId: string
+) => {
+  const elements: any[] = [];
+  const nodeMap = new Map<string, FamilyMember>();
+  members.forEach((m) => nodeMap.set(m.userId, m));
+
+  // build spouse map => couple groups
+  const spouseMap = new Map<string, string[]>();
+  relationships.forEach((r) => {
+    if (r.type === "MARRIED_TO") {
+      if (!spouseMap.has(r.source)) spouseMap.set(r.source, []);
+      spouseMap.get(r.source)!.push(r.target);
+      if (!spouseMap.has(r.target)) spouseMap.set(r.target, []);
+      spouseMap.get(r.target)!.push(r.source);
+    }
+  });
+
+  const couples = new Map<string, { member1: string; member2: string }>();
+  spouseMap.forEach((arr, id) => {
+    arr.forEach((s) => {
+      const sorted = [id, s].sort();
+      const key = sorted.join("-");
+      if (!couples.has(key)) couples.set(key, { member1: sorted[0], member2: sorted[1] });
+    });
+  });
+
+  const coupleMap = new Map<string, string>();
+  couples.forEach((c, id) => {
+    coupleMap.set(c.member1, id);
+    coupleMap.set(c.member2, id);
+  });
+
+  const safeColor = (member?: FamilyMember, isRoot = false, isCurrent = false) => {
+    if (isCurrent) return { bgColor: "#8b5cf6", gradientColors: "#8b5cf6 #6366f1", borderColor: "#6366f1" };
+    if (isRoot) return { bgColor: "#f59e0b", gradientColors: "#f59e0b #f97316", borderColor: "#f97316" };
+    if (!member) return { bgColor: "#e5e7eb", gradientColors: "#e5e7eb #d1d5db", borderColor: "#9ca3af" };
+    if (member.gender === "male") return { bgColor: "#3b82f6", gradientColors: "#3b82f6 #06b6d4", borderColor: "#2563eb" };
+    if (member.gender === "female") return { bgColor: "#ec4899", gradientColors: "#ec4899 #ef4444", borderColor: "#dc2626" };
+    return { bgColor: "#64748b", gradientColors: "#64748b #475569", borderColor: "#475569" };
+  };
+
+  const processed = new Set<string>();
+
+  // add couple containers and their members (compound)
+  couples.forEach((couple, coupleId) => {
+    const m1 = nodeMap.get(couple.member1);
+    const m2 = nodeMap.get(couple.member2);
+    if (!m1 || !m2) return;
+
+    // container must include bgColor & borderColor to satisfy 'data(...)' style usage
+    elements.push({
+      data: { id: coupleId, type: "couple", bgColor: "#ffffff", gradientColors: "#ffffff #f3f4f6", borderColor: "#e5e7eb" }
+    });
+
+    [m1, m2].forEach((m) => {
+      const isRoot = m.userId === createdByUserId;
+      const isCurrent = m.userId === loggedInUserId;
+      const colors = safeColor(m, isRoot, isCurrent);
+      const displayName = m.name.length > 12 ? m.name.substring(0, 12) + "..." : m.name;
+
+      elements.push({
+        data: {
+          id: `${coupleId}_${m.userId}`,
+          parent: coupleId,
+          type: "coupleMember",
+          originalId: m.userId,
+          displayName,
+          fullName: m.name,
+          email: m.email || "",
+          status: m.status || "",
+          relationship: m.relationship || "",
+          gender: m.gender || "",
+          isRoot,
+          isCurrent,
+          ...colors
+        }
+      });
+
+      processed.add(m.userId);
+    });
+  });
+
+  // add individuals not in couples
+  members.forEach((m) => {
+    if (processed.has(m.userId)) return;
+    const isRoot = m.userId === createdByUserId;
+    const isCurrent = m.userId === loggedInUserId;
+    const colors = safeColor(m, isRoot, isCurrent);
+    const displayName = m.name.length > 15 ? m.name.substring(0, 15) + "..." : m.name;
+
+    elements.push({
+      data: {
+        id: m.userId,
+        type: "individual",
+        displayName,
+        fullName: m.name,
+        email: m.email || "",
+        status: m.status || "",
+        relationship: m.relationship || "",
+        gender: m.gender || "",
+        isRoot,
+        isCurrent,
+        ...colors
+      }
+    });
+  });
+
+  // add edges - map to couple container ids if needed
+  relationships.forEach((rel) => {
+    const sourceGroup = coupleMap.get(rel.source) || rel.source;
+    const targetGroup = coupleMap.get(rel.target) || rel.target;
+
+    // skip intra-couple marriage edge
+    if (sourceGroup === targetGroup && rel.type === "MARRIED_TO") return;
+
+    let edgeType = "";
+    switch (rel.type) {
+      case "MARRIED_TO":
+        edgeType = "marriage";
+        break;
+      case "PARENTS_OF":
+        edgeType = "parentChild";
+        break;
+      case "SIBLING":
+        edgeType = "sibling";
+        break;
+    }
+
+    elements.push({
+      data: {
+        id: `${rel.type}_${rel.source}_${rel.target}`,
+        source: sourceGroup,
+        target: targetGroup,
+        type: edgeType,
+        relationship: rel.type,
+        sourceName: rel.sourceName || "",
+        targetName: rel.targetName || ""
+      },
+      classes: "animated"
+    });
+  });
+
+  return elements;
+};
+
+/* --------------------------- ELK options ------------------------- */
+const elkOptions: any = {
+  name: "elk",
+  elk: {
+    algorithm: "org.eclipse.elk.layered",
+    "org.eclipse.elk.direction": "DOWN",
+    "org.eclipse.elk.spacing.nodeNode": 80,
+    "org.eclipse.elk.layered.spacing.nodeNodeBetweenLayers": 120,
+    "org.eclipse.elk.spacing.edgeNode": 40,
+    "org.eclipse.elk.spacing.edgeEdge": 20,
+    "org.eclipse.elk.layered.crossingMinimization.strategy": "LAYER_SWEEP",
+    "org.eclipse.elk.layered.nodePlacement.strategy": "NETWORK_SIMPLEX",
+    "org.eclipse.elk.layered.cycleBreaking.strategy": "GREEDY",
+    "org.eclipse.elk.insideSelfLoops.activate": true,
+    "org.eclipse.elk.separateConnectedComponents": true,
+    "org.eclipse.elk.spacing.componentComponent": 100,
+    "org.eclipse.elk.layered.spacing.edgeNodeBetweenLayers": 60,
+    "org.eclipse.elk.layered.spacing.edgeEdgeBetweenLayers": 30
+  },
+  priority: function(edge: any) {
+    return edge.data('type') === 'parentChild' ? 100 : 50;
+  }
+};
+
+/* ------------------------- Main Component ----------------------- */
+const FamilyTreeVisualization: React.FC<FamilyTreeVisualizationProps> = ({
+  user,
+  familyMembers,
+  viewMode = "personal",
+  minHeight = "600px",
+  showControls = true
+}) => {
+  const containerRef = useRef<HTMLDivElement | null>(null);
+  const cyRef = useRef<any>(null);
+
+  const [coreRelationships, setCoreRelationships] = useState<CoreRelationship[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [selectedNodes, setSelectedNodes] = useState<string[]>([]);
+  const [nodeDetailsOpen, setNodeDetailsOpen] = useState(false);
+  const [relationshipAnalysisOpen, setRelationshipAnalysisOpen] = useState(false);
+  const [calculatedRelationship, setCalculatedRelationship] = useState<string>("");
+  const [selectedEdge, setSelectedEdge] = useState<any>(null);
+  const [relationshipDetailsOpen, setRelationshipDetailsOpen] = useState(false);
+
+  // fetch relationships
+  useEffect(() => {
+    const fetch = async () => {
+      setIsLoading(true);
+      try {
+        let rels: CoreRelationship[] = [];
+        if (viewMode === "personal") {
+          const personal = await getUserPersonalizedFamilyTree(user.userId, user.familyTreeId);
+          rels = personal
+            .map((r: any) => {
+              const t = (r.type || "").toLowerCase();
+              let core: any = null;
+              if (["father", "mother", "son", "daughter", "grandfather", "grandmother", "grandson", "granddaughter"].includes(t)) core = "PARENTS_OF";
+              else if (["husband", "wife", "spouse"].includes(t)) core = "MARRIED_TO";
+              else if (["brother", "sister", "sibling"].includes(t)) core = "SIBLING";
+              return { source: r.source, target: r.target, type: core, sourceName: r.sourceName, targetName: r.targetName };
+            })
+            .filter((x: any) => x.type) as CoreRelationship[];
+        } else {
+          rels = await getFamilyRelationships(user.familyTreeId);
+        }
+        setCoreRelationships(rels);
+      } catch (e) {
+        console.error("fetch relationships error", e);
+        setCoreRelationships([]);
+      } finally {
+        setIsLoading(false);
+      }
+    };
+    fetch();
+  }, [user.userId, user.familyTreeId, viewMode]);
+
+  // initialize cytoscape when data changes
+  useEffect(() => {
+    const init = async () => {
+      if (!containerRef.current) return;
+
+      const elements = createCytoscapeElements(
+        familyMembers || [],
+        coreRelationships || [],
+        user.createdBy === "self" ? user.userId : (user.createdBy || user.userId),
+        user.userId
+      );
+
+      if (!elements || elements.length === 0) {
+        if (!cyRef.current) {
+          cyRef.current = cytoscape({ container: containerRef.current, elements: [], style: getCytoscapeStyles() });
+        }
+        return;
+      }
+
+      // destroy previous instance
+      if (cyRef.current) {
+        cyRef.current.destroy();
+        cyRef.current = null;
+      }
+
+      // create new cytoscape
+      cyRef.current = cytoscape({
+        container: containerRef.current,
+        elements,
+        style: getCytoscapeStyles(),
+        zoomingEnabled: true,
+        panningEnabled: true,
+        boxSelectionEnabled: false,
+        autounselectify: false,
+        autoungrabify: false,
+        wheelSensitivity: 0.2,
+        minZoom: 0.3,
+        maxZoom: 3
+      });
+
+      // events
+      cyRef.current.on("tap", "node", (evt: any) => {
+        const node = evt.target;
+        const nodeId = node.data("originalId") || node.id();
+        if (selectedNodes.includes(nodeId)) {
+          const newSel = selectedNodes.filter((s) => s !== nodeId);
+          setSelectedNodes(newSel);
+          node.removeClass("selected");
+        } else if (selectedNodes.length < 2) {
+          const newSel = [...selectedNodes, nodeId];
+          setSelectedNodes(newSel);
+          node.addClass("selected");
+          if (newSel.length === 1) setNodeDetailsOpen(true);
+          if (newSel.length === 2) {
+            const rel = calculateRelationship(newSel[0], newSel[1], coreRelationships, familyMembers);
+            setCalculatedRelationship(rel);
+            setRelationshipAnalysisOpen(true);
+            setNodeDetailsOpen(false);
+          }
+        }
+      });
+
+      cyRef.current.on("tap", "edge", (evt: any) => {
+        setSelectedEdge(evt.target);
+        setRelationshipDetailsOpen(true);
+      });
+
+      cyRef.current.on("tap", (evt: any) => {
+        if (evt.target === cyRef.current) {
+          setSelectedNodes([]);
+          cyRef.current.nodes().removeClass("selected");
+          setNodeDetailsOpen(false);
+          setRelationshipAnalysisOpen(false);
+        }
+      });
+
+      // run elk layout
+      const layout = cyRef.current.layout(elkOptions);
+      layout.run();
+
+      // fit after layout
+      setTimeout(() => {
+        cyRef.current.fit(undefined, 50);
+      }, 1000);
+    };
+
+    if (coreRelationships !== undefined && familyMembers !== undefined) {
+      init();
+    }
+
+    return () => {
+      if (cyRef.current) {
+        cyRef.current.destroy();
+        cyRef.current = null;
+      }
+    };
+  }, [coreRelationships, familyMembers, user]);
+
+  // relationship calculation
+  const calculateRelationship = (
+    person1Id: string,
+    person2Id: string,
+    coreRels: CoreRelationship[],
+    members: FamilyMember[]
+  ): string => {
+    const p1 = members.find((m) => m.userId === person1Id);
+    const p2 = members.find((m) => m.userId === person2Id);
+    if (!p1 || !p2) return "Unknown relationship";
+
+    const parentMap = new Map<string, string[]>();
+    const childMap = new Map<string, string[]>();
+    const spouseMap = new Map<string, string[]>();
+    const siblingMap = new Map<string, string[]>();
+
+    coreRels.forEach((r) => {
+      if (r.type === "PARENTS_OF") {
+        if (!parentMap.has(r.source)) parentMap.set(r.source, []);
+        parentMap.get(r.source)!.push(r.target);
+        if (!childMap.has(r.target)) childMap.set(r.target, []);
+        childMap.get(r.target)!.push(r.source);
+      } else if (r.type === "MARRIED_TO") {
+        if (!spouseMap.has(r.source)) spouseMap.set(r.source, []);
+        spouseMap.get(r.source)!.push(r.target);
+        if (!spouseMap.has(r.target)) spouseMap.set(r.target, []);
+        spouseMap.get(r.target)!.push(r.source);
+      } else if (r.type === "SIBLING") {
+        if (!siblingMap.has(r.source)) siblingMap.set(r.source, []);
+        siblingMap.get(r.source)!.push(r.target);
+        if (!siblingMap.has(r.target)) siblingMap.set(r.target, []);
+        siblingMap.get(r.target)!.push(r.source);
+      }
+    });
+
+    if (spouseMap.get(person1Id)?.includes(person2Id)) return `${p1.name} and ${p2.name} are married to each other`;
+    if (parentMap.get(person1Id)?.includes(person2Id)) return `${p1.name} is the parent of ${p2.name}`;
+    if (childMap.get(person1Id)?.includes(person2Id)) return `${p1.name} is the child of ${p2.name}`;
+    if (siblingMap.get(person1Id)?.includes(person2Id)) return `${p1.name} and ${p2.name} are siblings`;
+
+    // BFS for extended relationship
+    const visited = new Set<string>();
+    const q: Array<{ id: string; path: string[] }> = [{ id: person1Id, path: [person1Id] }];
+    while (q.length) {
+      const cur = q.shift()!;
+      if (visited.has(cur.id)) continue;
+      visited.add(cur.id);
+      if (cur.id === person2Id && cur.path.length > 1) {
+        const dist = cur.path.length - 1;
+        if (dist === 2) return `${p1.name} and ${p2.name} are directly related (parent-child or siblings)`;
+        if (dist === 3) return `${p1.name} and ${p2.name} are grandparent-grandchild or aunt/uncle-niece/nephew`;
+        if (dist === 4) return `${p1.name} and ${p2.name} are cousins or great-grandparent-great-grandchild`;
+        return `${p1.name} and ${p2.name} are distantly related (${dist} degrees of separation)`;
+      }
+      if (cur.path.length > 6) continue;
+      const connections = [
+        ...(parentMap.get(cur.id) || []),
+        ...(childMap.get(cur.id) || []),
+        ...(spouseMap.get(cur.id) || []),
+        ...(siblingMap.get(cur.id) || [])
+      ];
+      connections.forEach((c) => {
+        if (!visited.has(c)) q.push({ id: c, path: [...cur.path, c] });
+      });
+    }
+
+    return `${p1.name} and ${p2.name} appear to be distantly related or not directly connected`;
+  };
+
+  const getSelectedNodeDetails = () => {
+    if (selectedNodes.length !== 1) return null;
+    return familyMembers.find((m) => m.userId === selectedNodes[0]);
+  };
+
+  if (isLoading) {
+    return (
+      <div className="flex items-center justify-center" style={{ minHeight }}>
+        <div className="animate-pulse text-center">
+          <div className="w-16 h-16 bg-gradient-to-br from-blue-200 to-purple-200 rounded-full mx-auto mb-4 animate-bounce"></div>
+          <p className="text-slate-600 font-medium">Loading family tree...</p>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="relative w-full bg-gradient-to-br from-slate-50 via-blue-50 to-indigo-50 rounded-xl border border-slate-200/60 shadow-lg overflow-hidden" style={{ minHeight }}>
+      <div ref={containerRef} className="w-full h-full" />
+
+      {/* Enhanced Control Panel */}
+      {showControls && (
+        <div className="absolute top-4 right-4 flex flex-col gap-2 z-10">
+          <div className="bg-white/90 backdrop-blur-sm border border-slate-200/60 rounded-lg shadow-md p-2">
+            <div className="flex gap-1">
+              <button
+                onClick={() => cyRef.current && cyRef.current.zoom(cyRef.current.zoom() * 1.2)}
+                className="p-2 rounded-md hover:bg-blue-50 hover:text-blue-600 transition-colors"
+                title="Zoom In"
+              >
+                <ZoomIn className="w-4 h-4" />
+              </button>
+              <button
+                onClick={() => cyRef.current && cyRef.current.zoom(cyRef.current.zoom() * 0.8)}
+                className="p-2 rounded-md hover:bg-blue-50 hover:text-blue-600 transition-colors"
+                title="Zoom Out"
+              >
+                <ZoomOut className="w-4 h-4" />
+              </button>
+              <button
+                onClick={() => cyRef.current && cyRef.current.fit(undefined, 50)}
+                className="p-2 rounded-md hover:bg-blue-50 hover:text-blue-600 transition-colors"
+                title="Fit to View"
+              >
+                <Maximize className="w-4 h-4" />
+              </button>
+              <button
+                onClick={() => {
+                  if (cyRef.current) {
+                    cyRef.current.layout(elkOptions).run();
+                    setTimeout(() => cyRef.current.fit(undefined, 50), 1000);
+                  }
+                }}
+                className="p-2 rounded-md hover:bg-blue-50 hover:text-blue-600 transition-colors"
+                title="Reset Layout"
+              >
+                <RotateCcw className="w-4 h-4" />
+              </button>
+            </div>
+          </div>
+          
+          {/* Selection indicator */}
+          {selectedNodes.length > 0 && (
+            <div className="bg-blue-50 border border-blue-200 rounded-lg p-2 text-sm">
+              <div className="text-blue-800 font-medium">
+                {selectedNodes.length === 1 ? 'Selected 1 member' : `Selected ${selectedNodes.length} members`}
+              </div>
+              {selectedNodes.length === 2 && (
+                <div className="text-blue-600 text-xs mt-1">
+                  Analyzing relationship...
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+      )}
+      
+      {/* Node Details Dialog */}
+      <Dialog open={nodeDetailsOpen} onOpenChange={setNodeDetailsOpen}>
+        <DialogContent className="max-w-md bg-white/95 backdrop-blur-sm border border-slate-200/60">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-slate-800">
+              <UserIcon className="w-5 h-5 text-blue-500" />
+              Family Member Details
+            </DialogTitle>
+            <DialogDescription className="text-slate-600">
+              Information about the selected family member
+            </DialogDescription>
+          </DialogHeader>
+          
+          {(() => {
+            const member = getSelectedNodeDetails();
+            if (!member) return null;
+            
+            return (
+              <div className="space-y-4">
+                <div className="text-center p-4 bg-gradient-to-br from-blue-50 to-indigo-50 rounded-lg border border-blue-200/40">
+                  <div className="text-lg font-semibold text-blue-800">{member.name}</div>
+                  <div className="text-sm text-blue-600 mt-1">
+                    {member.relationship || 'Family Member'}
+                  </div>
+                </div>
+                
+                <div className="space-y-3 text-sm">
+                  {member.email && (
+                    <div className="flex items-center gap-2 p-2 bg-slate-50 rounded-lg">
+                      <Mail className="w-4 h-4 text-slate-500" />
+                      <span className="text-slate-700">{member.email}</span>
+                    </div>
+                  )}
+                  
+                  <div className="flex items-center gap-2 p-2 bg-slate-50 rounded-lg">
+                    <Badge variant="outline" className={`${
+                      member.status === 'active' ? 'bg-green-50 text-green-700 border-green-200' :
+                      member.status === 'invited' ? 'bg-yellow-50 text-yellow-700 border-yellow-200' :
+                      'bg-gray-50 text-gray-700 border-gray-200'
+                    }`}>
+                      {member.status === 'active' ? '✓ Active' : 
+                       member.status === 'invited' ? '⏳ Invited' : 
+                       '❓ Unknown'}
+                    </Badge>
+                  </div>
+                  
+                  {member.gender && (
+                    <div className="flex items-center gap-2 p-2 bg-slate-50 rounded-lg">
+                      <span className="text-slate-500">Gender:</span>
+                      <span className="text-slate-700 capitalize">{member.gender}</span>
+                    </div>
+                  )}
+                </div>
+              </div>
+            );
+          })()}
+        </DialogContent>
+      </Dialog>
+      
+      {/* Relationship Analysis Dialog */}
+      <Dialog open={relationshipAnalysisOpen} onOpenChange={setRelationshipAnalysisOpen}>
+        <DialogContent className="max-w-lg bg-white/95 backdrop-blur-sm border border-slate-200/60">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-slate-800">
+              <Users className="w-5 h-5 text-purple-500" />
+              Relationship Analysis
+            </DialogTitle>
+            <DialogDescription className="text-slate-600">
+              Analysis of the relationship between selected family members
+            </DialogDescription>
+          </DialogHeader>
+          
+          {selectedNodes.length === 2 && (
+            <div className="space-y-4">
+              <div className="grid grid-cols-2 gap-4">
+                {selectedNodes.map((nodeId, index) => {
+                  const member = familyMembers.find(m => m.userId === nodeId);
+                  if (!member) return null;
+                  
+                  return (
+                    <div key={nodeId} className="text-center p-3 bg-gradient-to-br from-purple-50 to-pink-50 rounded-lg border border-purple-200/40">
+                      <div className="font-semibold text-purple-800">{member.name}</div>
+                      <div className="text-xs text-purple-600 mt-1">
+                        {member.relationship || 'Family Member'}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+              
+              <div className="p-4 bg-gradient-to-br from-blue-50 to-indigo-50 rounded-lg border border-blue-200/40">
+                <h4 className="font-semibold text-blue-800 mb-2 flex items-center gap-2">
+                  <Heart className="w-4 h-4" />
+                  Relationship
+                </h4>
+                <p className="text-blue-700 text-sm leading-relaxed">
+                  {calculatedRelationship}
+                </p>
+              </div>
+              
+              <div className="flex justify-center">
+                <button
+                  onClick={() => {
+                    setRelationshipAnalysisOpen(false);
+                    setSelectedNodes([]);
+                    if (cyRef.current) {
+                      cyRef.current.nodes().removeClass('selected');
+                    }
+                  }}
+                  className="px-4 py-2 bg-purple-500 text-white rounded-lg hover:bg-purple-600 transition-colors flex items-center gap-2"
+                >
+                  <X className="w-4 h-4" />
+                  Close
+                </button>
+              </div>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
+      
+      {/* Relationship Details Dialog */}
+      <Dialog open={relationshipDetailsOpen} onOpenChange={setRelationshipDetailsOpen}>
+        <DialogContent className="max-w-md bg-white/95 backdrop-blur-sm border border-slate-200/60">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-slate-800">
+              <Heart className="w-5 h-5 text-rose-500" />
+              Relationship Details
+            </DialogTitle>
+            <DialogDescription className="text-slate-600">
+              Family connection information
+            </DialogDescription>
+          </DialogHeader>
+          
+          {selectedEdge && (
+            <div className="space-y-4">
+              <div className="text-center p-4 bg-gradient-to-br from-blue-50 to-indigo-50 rounded-lg border border-blue-200/40">
+                <div className="text-lg font-semibold text-blue-800 capitalize">
+                  {selectedEdge.data('relationship') === 'MARRIED_TO' ? 'Marriage' : 
+                   selectedEdge.data('relationship') === 'PARENTS_OF' ? 'Parent-Child' : 
+                   selectedEdge.data('relationship') === 'SIBLING' ? 'Sibling' : 
+                   selectedEdge.data('type')}
+                </div>
+                <div className="text-sm text-blue-600 mt-1">
+                  Direct family relationship
+                </div>
+              </div>
+              
+              <div className="grid grid-cols-2 gap-4 text-sm">
+                <div className="text-center p-3 bg-slate-50 rounded-lg">
+                  <div className="font-medium text-slate-700 mb-1">From</div>
+                  <div className="text-slate-600 font-semibold">{selectedEdge.data('sourceName') || 'Unknown'}</div>
+                </div>
+                <div className="text-center p-3 bg-slate-50 rounded-lg">
+                  <div className="font-medium text-slate-700 mb-1">To</div>
+                  <div className="text-slate-600 font-semibold">{selectedEdge.data('targetName') || 'Unknown'}</div>
+                </div>
+              </div>
+              
+              <div className="text-xs text-blue-700 bg-blue-50 p-3 rounded-lg border border-blue-200/40">
+                <strong>Connection Type:</strong> {
+                  selectedEdge.data('type') === 'marriage' ? '💍 Marriage Bond' : 
+                  selectedEdge.data('type') === 'parentChild' ? '👨‍👩‍👧‍👦 Parent-Child Link' : 
+                  selectedEdge.data('type') === 'sibling' ? '👫 Sibling Connection' : 'Family Relation'
+                }
+              </div>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
+      
+      {/* Legend */}
+      <div className="absolute bottom-4 left-4 bg-white/90 backdrop-blur-sm border border-slate-200/60 rounded-lg shadow-md p-3 text-xs z-10">
+        <h4 className="font-semibold text-slate-800 mb-2">Legend</h4>
+        <div className="space-y-1">
+          <div className="flex items-center gap-2">
+            <div className="w-3 h-3 rounded bg-gradient-to-r from-blue-400 to-cyan-400"></div>
+            <span className="text-slate-600">Male</span>
+          </div>
+          <div className="flex items-center gap-2">
+            <div className="w-3 h-3 rounded bg-gradient-to-r from-pink-400 to-red-400"></div>
+            <span className="text-slate-600">Female</span>
+          </div>
+          <div className="flex items-center gap-2">
+            <div className="w-3 h-3 rounded bg-gradient-to-r from-purple-500 to-indigo-500"></div>
+            <span className="text-slate-600">You</span>
+          </div>
+          <div className="flex items-center gap-2">
+            <div className="w-3 h-3 rounded bg-gradient-to-r from-amber-400 to-orange-400"></div>
+            <span className="text-slate-600">Root</span>
+          </div>
+          <div className="flex items-center gap-2">
+            <div className="w-3 h-1 bg-pink-500 rounded"></div>
+            <span className="text-slate-600">Marriage</span>
+          </div>
+          <div className="flex items-center gap-2">
+            <div className="w-3 h-1 bg-blue-500 rounded" style={{borderStyle: 'dashed'}}></div>
+            <span className="text-slate-600">Parent-Child</span>
+          </div>
+          <div className="flex items-center gap-2">
+            <div className="w-3 h-1 bg-purple-500 rounded" style={{borderStyle: 'dotted'}}></div>
+            <span className="text-slate-600">Sibling</span>
+          </div>
+        </div>
+      </div>
+      
+      {/* Instructions */}
+      <div className="absolute top-4 left-4 bg-white/90 backdrop-blur-sm border border-slate-200/60 rounded-lg shadow-md p-3 text-xs text-slate-600 max-w-xs z-10">
+        <h4 className="font-semibold text-slate-800 mb-1">Instructions</h4>
+        <ul className="space-y-1">
+          <li>• Click nodes to select (max 2)</li>
+          <li>• Click edges for relationship info</li>
+          <li>• Drag to pan, scroll to zoom</li>
+          <li>• Use controls to navigate</li>
+        </ul>
+      </div>
+    </div>
+  );
+};
+
+export default FamilyTreeVisualization;
