@@ -9,6 +9,7 @@ import AddFamilyMemberPage from "@/pages/AddFamilyMemberPage";
 import InviteMembersPage from "@/pages/InviteMembersPage";
 import EditProfilePage from "@/pages/EditProfilePage";
 import ChatPage from "@/pages/ChatPage";
+import EventsPage from "@/pages/events";
 
 const queryClient = new QueryClient();
 
@@ -25,6 +26,7 @@ function App() {
             <Route path="/invite" element={<InviteMembersPage />} />
             <Route path="/profile" element={<EditProfilePage />} />
             <Route path="/chat" element={<ChatPage />} />
+            <Route path="/events" element={<EventsPage />} />
             <Route path="/" element={<Navigate to="/auth" replace />} />
             <Route path="*" element={<Navigate to="/auth" replace />} />
           </Routes>
