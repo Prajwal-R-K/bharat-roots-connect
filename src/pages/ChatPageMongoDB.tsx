@@ -12,16 +12,17 @@ import { getFamilyMembers } from "@/lib/neo4j/family-tree";
 import { getUserByEmailOrId } from "@/lib/neo4j";
 import { format, isToday, isYesterday } from "date-fns";
 
-// Import HTTP-based chat functions - Browser compatible!
+// Import MongoDB functions
 import {
   sendMessage,
   getFamilyMessages,
   getNewMessages,
   markMessageAsRead,
+  updateOnlineStatus,
+  getOnlineFamilyMembers,
   createOrUpdateFamilyRoom,
-  checkServerHealth,
   type ChatMessage
-} from "@/lib/chat-api";
+} from "@/lib/mongodb";
 
 const ChatPage: React.FC = () => {
   // Theme state: 'light' or 'dark'
@@ -37,14 +38,13 @@ const ChatPage: React.FC = () => {
 
   const navigate = useNavigate();
   const [user, setUser] = useState<User | null>(null);
-  const [familyMembers, setFamilyMembers] = useState<any[]>([]);
+  const [familyMembers, setFamilyMembers] = useState<User[]>([]);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [newMessage, setNewMessage] = useState('');
+  const [onlineMembers, setOnlineMembers] = useState<string[]>([]);
   const [isTyping, setIsTyping] = useState(false);
   const [lastMessageTimestamp, setLastMessageTimestamp] = useState<Date>(new Date());
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-  const [connectionStatus, setConnectionStatus] = useState<'connecting' | 'connected' | 'error'>('connecting');
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   // Auto-scroll to bottom when new messages arrive
@@ -61,17 +61,12 @@ const ChatPage: React.FC = () => {
     const initializeChat = async () => {
       try {
         setLoading(true);
-        setError(null);
-        setConnectionStatus('connecting');
-
-        console.log('🚀 Initializing family chat...');
 
         // Get user data from localStorage
         const storedUserId = localStorage.getItem('userId');
         const storedEmail = localStorage.getItem('userEmail');
         
         if (!storedUserId && !storedEmail) {
-          console.log('❌ No user credentials found');
           toast({
             title: "Authentication required",
             description: "Please log in to access family chat.",
@@ -80,8 +75,6 @@ const ChatPage: React.FC = () => {
           navigate('/');
           return;
         }
-
-        console.log('✅ User credentials found, fetching user data...');
 
         // Get current user
         const currentUser = await getUserByEmailOrId(storedUserId || storedEmail!);
@@ -131,6 +124,13 @@ const ChatPage: React.FC = () => {
           setLastMessageTimestamp(existingMessages[existingMessages.length - 1].timestamp);
         }
 
+        // Update user online status
+        await updateOnlineStatus(currentUser.userId, currentUser.familyTreeId, true);
+
+        // Get initial online members
+        const onlineUsers = await getOnlineFamilyMembers(currentUser.familyTreeId);
+        setOnlineMembers(onlineUsers);
+
         setLoading(false);
 
       } catch (error) {
@@ -146,7 +146,12 @@ const ChatPage: React.FC = () => {
 
     initializeChat();
 
-    // No cleanup needed for online status since we're not tracking it
+    // Cleanup: Update offline status when component unmounts
+    return () => {
+      if (user) {
+        updateOnlineStatus(user.userId, user.familyTreeId, false).catch(console.error);
+      }
+    };
   }, [navigate]);
 
   // Real-time message polling - check for new messages every 2 seconds
@@ -168,6 +173,10 @@ const ChatPage: React.FC = () => {
             }
           }
         }
+
+        // Update online members list
+        const currentOnlineMembers = await getOnlineFamilyMembers(user.familyTreeId);
+        setOnlineMembers(currentOnlineMembers);
 
       } catch (error) {
         console.error('Error polling new messages:', error);
@@ -192,6 +201,7 @@ const ChatPage: React.FC = () => {
         familyId: user.familyTreeId,
         senderId: user.userId,
         senderName: user.name,
+        senderProfilePicture: user.profilePicture,
         content: messageContent,
         status: 'sending' as const,
         messageType: 'text' as const
@@ -255,11 +265,11 @@ const ChatPage: React.FC = () => {
   // Format message time
   const formatMessageTime = (timestamp: Date): string => {
     if (isToday(timestamp)) {
-      return format(timestamp, 'h:mm a'); // 7:30 PM
+      return format(timestamp, 'HH:mm');
     } else if (isYesterday(timestamp)) {
-      return `Yesterday, ${format(timestamp, 'h:mm a')}`;
+      return `Yesterday ${format(timestamp, 'HH:mm')}`;
     } else {
-      return format(timestamp, 'MMMM d, h:mm a'); // June 21, 7:30 PM
+      return format(timestamp, 'MMM dd, HH:mm');
     }
   };
 
@@ -270,33 +280,8 @@ const ChatPage: React.FC = () => {
     } else if (isYesterday(timestamp)) {
       return 'Yesterday';
     } else {
-      return format(timestamp, 'MMMM d, yyyy'); // June 21, 2024
+      return format(timestamp, 'MMMM dd, yyyy');
     }
-  };
-
-  // Generate consistent avatar colors based on user name
-  const getAvatarColor = (name: string): string => {
-    const colors = [
-      'bg-blue-500',
-      'bg-purple-500', 
-      'bg-green-500',
-      'bg-red-500',
-      'bg-yellow-500',
-      'bg-pink-500',
-      'bg-indigo-500',
-      'bg-teal-500',
-      'bg-orange-500',
-      'bg-cyan-500',
-    ];
-    
-    // Generate a hash from the name to consistently assign colors
-    let hash = 0;
-    for (let i = 0; i < name.length; i++) {
-      hash = name.charCodeAt(i) + ((hash << 5) - hash);
-    }
-    hash = Math.abs(hash);
-    
-    return colors[hash % colors.length];
   };
 
   // Check if should show date separator
@@ -434,14 +419,25 @@ const ChatPage: React.FC = () => {
             <div className="flex items-center justify-between mb-4">
               <h2 className="text-lg font-semibold text-gray-900 dark:text-white">Family Members</h2>
               <Badge variant="secondary" className="bg-blue-100 dark:bg-blue-900 text-blue-800 dark:text-blue-200">
-                {familyMembers.length} member{familyMembers.length !== 1 ? 's' : ''}
+                {onlineMembers.length} online
               </Badge>
             </div>
             <div className="space-y-3">
               {familyMembers.map((member) => (
                 <div key={member.userId} className="group flex items-center gap-3 p-3 rounded-xl hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-all duration-200 cursor-pointer">
-                  <div className={`w-12 h-12 rounded-full flex items-center justify-center text-white font-bold text-sm shadow-md ${getAvatarColor(member.name)}`}>
-                    {member.name.split(' ').map(n => n.charAt(0)).join('').slice(0, 2).toUpperCase()}
+                  <div className="relative">
+                    <Avatar className="h-10 w-10 ring-2 ring-gray-200 dark:ring-gray-700">
+                      <AvatarImage src={member.profilePicture} />
+                      <AvatarFallback className="bg-gradient-to-br from-blue-500 to-purple-600 text-white font-semibold">
+                        {member.name.charAt(0).toUpperCase()}
+                      </AvatarFallback>
+                    </Avatar>
+                    {/* Online indicator */}
+                    <div className={`absolute -bottom-0.5 -right-0.5 w-3 h-3 rounded-full border-2 border-white dark:border-gray-800 ${
+                      onlineMembers.includes(member.userId) || member.userId === user?.userId 
+                        ? 'bg-green-500' 
+                        : 'bg-gray-400'
+                    }`} />
                   </div>
                   <div className="flex-1 min-w-0">
                     <p className="text-sm font-semibold text-gray-900 dark:text-white truncate flex items-center gap-2">
@@ -452,6 +448,12 @@ const ChatPage: React.FC = () => {
                     </p>
                     <p className="text-xs text-gray-500 dark:text-gray-400 truncate">{member.myRelationship || 'Family Member'}</p>
                   </div>
+                  <Badge 
+                    variant={onlineMembers.includes(member.userId) ? 'default' : 'secondary'} 
+                    className={`text-xs ${onlineMembers.includes(member.userId) ? 'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200' : ''}`}
+                  >
+                    {onlineMembers.includes(member.userId) ? 'online' : 'offline'}
+                  </Badge>
                 </div>
               ))}
             </div>
@@ -489,30 +491,29 @@ const ChatPage: React.FC = () => {
                       )}
                       
                       {/* Message */}
-                      <div className={`flex items-start gap-2 mb-3 ${isCurrentUser ? 'justify-end' : 'justify-start'}`}>
+                      <div className={`flex items-end gap-2 mb-4 ${isCurrentUser ? 'justify-end' : 'justify-start'}`}>
                         {!isCurrentUser && message.senderId !== 'system' && (
-                          <div className={`w-8 h-8 rounded-full flex items-center justify-center text-white text-xs font-bold shadow-sm ${getAvatarColor(message.senderName)}`}>
-                            {message.senderName.split(' ').map(n => n.charAt(0)).join('').slice(0, 2).toUpperCase()}
-                          </div>
+                          <Avatar className="h-8 w-8 ring-2 ring-gray-200 dark:ring-gray-700">
+                            <AvatarImage src={message.senderProfilePicture} />
+                            <AvatarFallback className="bg-gradient-to-br from-gray-500 to-gray-600 text-white text-xs">
+                              {message.senderName.charAt(0).toUpperCase()}
+                            </AvatarFallback>
+                          </Avatar>
                         )}
                         
                         <div className={`max-w-xs lg:max-w-md ${isCurrentUser ? 'order-last' : ''}`}>
-                          {/* Sender name for other users */}
-                          {!isCurrentUser && message.senderId !== 'system' && (
-                            <p className="text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">
-                              {message.senderName}
-                            </p>
-                          )}
-                          
                           <div
                             className={`relative px-4 py-3 rounded-2xl shadow-sm transition-all duration-200 hover:shadow-md ${
                               isCurrentUser
                                 ? 'bg-gradient-to-br from-blue-600 to-blue-700 text-white rounded-br-md'
                                 : message.senderId === 'system'
                                 ? 'bg-gradient-to-br from-green-100 to-green-200 dark:from-green-900 dark:to-green-800 text-green-800 dark:text-green-200 rounded-bl-md'
-                                : 'bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 rounded-bl-md border border-gray-200 dark:border-gray-700'
+                                : 'bg-gray-100 dark:bg-gray-800 text-gray-900 dark:text-gray-100 rounded-bl-md'
                             }`}
                           >
+                            {!isCurrentUser && message.senderId !== 'system' && (
+                              <p className="text-xs font-semibold mb-1 opacity-70">{message.senderName}</p>
+                            )}
                             <p className="text-sm leading-relaxed whitespace-pre-line">{message.content}</p>
                             
                             {/* Message status and time */}

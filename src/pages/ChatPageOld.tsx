@@ -3,7 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { User } from "@/types";
-import { ArrowLeft, Send, MessageCircle, Users, Clock, Moon, Sun, Phone, Video, MoreVertical, Smile, Check, CheckCheck } from "lucide-react";
+import { ArrowLeft, Send, MessageCircle, Users, Clock, Moon, Sun, Phone, Video, MoreVertical, Smile } from "lucide-react";
 import { toast } from "@/hooks/use-toast";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
@@ -12,40 +12,38 @@ import { getFamilyMembers } from "@/lib/neo4j/family-tree";
 import { getUserByEmailOrId } from "@/lib/neo4j";
 import { format, isToday, isYesterday } from "date-fns";
 
-// Import HTTP-based chat functions - Browser compatible!
+// Import MongoDB functions
 import {
   sendMessage,
   getFamilyMessages,
   getNewMessages,
   markMessageAsRead,
+  updateOnlineStatus,
+  getOnlineFamilyMembers,
   createOrUpdateFamilyRoom,
-  checkServerHealth,
   type ChatMessage
-} from "@/lib/chat-api";
+} from "@/lib/mongodb";
 
 const ChatPage: React.FC = () => {
   // Theme state: 'light' or 'dark'
   const [theme, setTheme] = useState<'light' | 'dark'>(
     () => (localStorage.getItem('theme') as 'light' | 'dark') || 'light'
   );
-
-  // Update theme in localStorage and apply to document
+  // Apply theme to html root
   useEffect(() => {
+    document.documentElement.classList.toggle('dark', theme === 'dark');
     localStorage.setItem('theme', theme);
-    document.documentElement.className = theme;
   }, [theme]);
-
   const navigate = useNavigate();
+  const messagesEndRef = useRef<HTMLDivElement>(null);
+  
   const [user, setUser] = useState<User | null>(null);
   const [familyMembers, setFamilyMembers] = useState<any[]>([]);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
-  const [newMessage, setNewMessage] = useState('');
-  const [isTyping, setIsTyping] = useState(false);
-  const [lastMessageTimestamp, setLastMessageTimestamp] = useState<Date>(new Date());
+  const [newMessage, setNewMessage] = useState("");
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-  const [connectionStatus, setConnectionStatus] = useState<'connecting' | 'connected' | 'error'>('connecting');
-  const messagesEndRef = useRef<HTMLDivElement>(null);
+  const [isTyping, setIsTyping] = useState(false);
+  const [onlineMembers, setOnlineMembers] = useState<string[]>([]);
 
   // Auto-scroll to bottom when new messages arrive
   const scrollToBottom = () => {
@@ -56,190 +54,143 @@ const ChatPage: React.FC = () => {
     scrollToBottom();
   }, [messages]);
 
-  // Load family data and initialize chat room
+  // Real-time message checking every 3 seconds
   useEffect(() => {
-    const initializeChat = async () => {
-      try {
-        setLoading(true);
-        setError(null);
-        setConnectionStatus('connecting');
-
-        console.log('🚀 Initializing family chat...');
-
-        // Get user data from localStorage
-        const storedUserId = localStorage.getItem('userId');
-        const storedEmail = localStorage.getItem('userEmail');
+    if (!user) return;
+    
+    const interval = setInterval(() => {
+      const savedMessages = localStorage.getItem(`chat_${user.familyTreeId}`);
+      if (savedMessages) {
+        const parsedMessages = JSON.parse(savedMessages).map((msg: any) => ({
+          ...msg,
+          timestamp: new Date(msg.timestamp)
+        }));
         
-        if (!storedUserId && !storedEmail) {
-          console.log('❌ No user credentials found');
-          toast({
-            title: "Authentication required",
-            description: "Please log in to access family chat.",
-            variant: "destructive"
-          });
-          navigate('/');
-          return;
+        // Only update if there are new messages
+        if (parsedMessages.length > messages.length) {
+          setMessages(parsedMessages);
+          // Update last seen time
+          localStorage.setItem(`lastSeen_${user.userId}`, new Date().toISOString());
         }
-
-        console.log('✅ User credentials found, fetching user data...');
-
-        // Get current user
-        const currentUser = await getUserByEmailOrId(storedUserId || storedEmail!);
-        if (!currentUser || !currentUser.familyTreeId) {
-          toast({
-            title: "Family not found",
-            description: "You need to be part of a family to use chat.",
-            variant: "destructive"
-          });
-          navigate('/dashboard');
-          return;
-        }
-
-        setUser(currentUser);
-
-        // Get family members
-        const members = await getFamilyMembers(currentUser.familyTreeId);
-        setFamilyMembers(members);
-
-        // Create or update family chat room in MongoDB
-        await createOrUpdateFamilyRoom(
-          currentUser.familyTreeId,
-          `${currentUser.familyTreeId} Family`,
-          members.map(member => ({
-            userId: member.userId,
-            userName: member.name
-          }))
-        );
-
-        // Load existing messages from MongoDB
-        const existingMessages = await getFamilyMessages(currentUser.familyTreeId, 50);
-        
-        if (existingMessages.length === 0) {
-          // Create welcome message if no messages exist
-          const welcomeMessage = await sendMessage({
-            familyId: currentUser.familyTreeId,
-            senderId: 'system',
-            senderName: 'Family Chat System',
-            content: `🏠 Welcome to your family chat!\n\nThis is a private space for the ${currentUser.familyTreeId} family to stay connected. All family members can see and participate in this conversation.\n\nYour messages are securely stored and synchronized across all devices.`,
-            status: 'sent',
-            messageType: 'system'
-          });
-          setMessages([welcomeMessage]);
-          setLastMessageTimestamp(welcomeMessage.timestamp);
-        } else {
-          setMessages(existingMessages);
-          setLastMessageTimestamp(existingMessages[existingMessages.length - 1].timestamp);
-        }
-
-        setLoading(false);
-
-      } catch (error) {
-        console.error('Error initializing chat:', error);
-        setLoading(false);
-        toast({
-          title: "Connection error",
-          description: "Failed to connect to chat. Please try again.",
-          variant: "destructive"
-        });
       }
-    };
-
-    initializeChat();
-
-    // No cleanup needed for online status since we're not tracking it
-  }, [navigate]);
-
-  // Real-time message polling - check for new messages every 2 seconds
-  useEffect(() => {
-    if (!user || loading) return;
-
-    const pollNewMessages = async () => {
-      try {
-        const newMessages = await getNewMessages(user.familyTreeId, lastMessageTimestamp);
-        
-        if (newMessages.length > 0) {
-          setMessages(prev => [...prev, ...newMessages]);
-          setLastMessageTimestamp(newMessages[newMessages.length - 1].timestamp);
-          
-          // Mark messages as read if they're not from current user
-          for (const message of newMessages) {
-            if (message.senderId !== user.userId) {
-              await markMessageAsRead(message.id, user.userId);
-            }
-          }
-        }
-
-      } catch (error) {
-        console.error('Error polling new messages:', error);
-      }
-    };
-
-    // Poll every 2 seconds for real-time updates
-    const interval = setInterval(pollNewMessages, 2000);
+    }, 3000); // Check every 3 seconds
 
     return () => clearInterval(interval);
-  }, [user, lastMessageTimestamp, loading]);
+  }, [user, messages.length]);
 
-  // Send message function with MongoDB integration
-  const handleSendMessage = async () => {
+  // Mark user as online
+  useEffect(() => {
+    if (!user) return;
+    
+    const markOnline = () => {
+      const onlineUsers = JSON.parse(localStorage.getItem('onlineUsers') || '[]');
+      if (!onlineUsers.includes(user.userId)) {
+        onlineUsers.push(user.userId);
+        localStorage.setItem('onlineUsers', JSON.stringify(onlineUsers));
+        setOnlineMembers(onlineUsers);
+      }
+    };
+
+    markOnline();
+    const interval = setInterval(markOnline, 30000); // Update every 30 seconds
+
+    return () => {
+      clearInterval(interval);
+      // Remove from online users when component unmounts
+      const onlineUsers = JSON.parse(localStorage.getItem('onlineUsers') || '[]');
+      const updatedUsers = onlineUsers.filter((id: string) => id !== user.userId);
+      localStorage.setItem('onlineUsers', JSON.stringify(updatedUsers));
+    };
+  }, [user]);
+
+  useEffect(() => {
+    const loadUserAndChat = async () => {
+      try {
+        setLoading(true);
+        
+        // Get user data from localStorage
+        const storedUserId = localStorage.getItem('userId');
+        if (!storedUserId) {
+          navigate('/auth');
+          return;
+        }
+
+        const currentUser = await getUserByEmailOrId(storedUserId);
+        if (!currentUser) {
+          navigate('/auth');
+          return;
+        }
+        
+        setUser(currentUser);
+        
+        // Get family members
+        const members = await getFamilyMembers(currentUser.familyTreeId);
+        const activeMembers = members.filter(member => member.status === 'active');
+        setFamilyMembers(activeMembers);
+
+        // Load existing messages from localStorage or create initial messages
+        const savedMessages = localStorage.getItem(`chat_${currentUser.familyTreeId}`);
+        if (savedMessages) {
+          setMessages(JSON.parse(savedMessages).map((msg: any) => ({
+            ...msg,
+            timestamp: new Date(msg.timestamp)
+          })));
+        } else {
+          // Create welcome message
+          const welcomeMessage: ChatMessage = {
+            id: "1",
+            senderId: "system",
+            senderName: "Family Chat",
+            content: `Welcome to your family chat, ${currentUser.name}! 👋 This is where all family members can communicate. Start by saying hello!`,
+            timestamp: new Date(),
+            status: 'read',
+            messageType: 'text'
+          };
+          setMessages([welcomeMessage]);
+        }
+
+      } catch (error) {
+        console.error("Error loading chat:", error);
+        toast({
+          title: "Loading Error",
+          description: "Could not load family chat. Please try again.",
+          variant: "destructive",
+        });
+      } finally {
+        setLoading(false);
+      }
+    };
+    
+    loadUserAndChat();
+  }, [navigate]);
+
+  const handleSendMessage = () => {
     if (!newMessage.trim() || !user) return;
+    
+    const newMsg: ChatMessage = {
+      id: Date.now().toString(),
+      senderId: user.userId,
+      senderName: user.name,
+      content: newMessage.trim(),
+      timestamp: new Date(),
+      senderProfilePicture: user.profilePicture,
+      status: 'sent',
+      messageType: 'text'
+    };
 
-    const messageContent = newMessage.trim();
-    setNewMessage('');
+    const updatedMessages = [...messages, newMsg];
+    setMessages(updatedMessages);
+    setNewMessage("");
 
-    try {
-      const messageData = {
-        familyId: user.familyTreeId,
-        senderId: user.userId,
-        senderName: user.name,
-        content: messageContent,
-        status: 'sending' as const,
-        messageType: 'text' as const
-      };
-
-      // Optimistically add message to UI
-      const tempMessage: ChatMessage = {
-        ...messageData,
-        id: `temp_${Date.now()}`,
-        timestamp: new Date(),
-        readBy: [],
-        isDeleted: false
-      };
-      
-      setMessages(prev => [...prev, tempMessage]);
-
-      // Send to MongoDB
-      const savedMessage = await sendMessage(messageData);
-      
-      // Replace temp message with saved message
-      setMessages(prev => 
-        prev.map(msg => 
-          msg.id === tempMessage.id ? savedMessage : msg
-        )
-      );
-
-      setLastMessageTimestamp(savedMessage.timestamp);
-
-      toast({
-        title: "Message sent",
-        description: "Your message has been delivered to the family.",
-      });
-
-    } catch (error) {
-      console.error('Error sending message:', error);
-      
-      // Remove failed message from UI
-      setMessages(prev => prev.filter(msg => !msg.id.startsWith('temp_')));
-      
-      toast({
-        title: "Failed to send message",
-        description: "Please check your connection and try again.",
-        variant: "destructive"
-      });
-    }
+    // Save to localStorage
+    localStorage.setItem(`chat_${user.familyTreeId}`, JSON.stringify(updatedMessages));
+    
+    toast({
+      title: "Message Sent",
+      description: "Your message has been sent to the family chat.",
+    });
   };
 
-  // Handle Enter key press
   const handleKeyPress = (e: React.KeyboardEvent) => {
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
@@ -247,93 +198,58 @@ const ChatPage: React.FC = () => {
     }
   };
 
-  // Check if message is from current user
-  const isMessageFromCurrentUser = (message: ChatMessage): boolean => {
-    return message.senderId === user?.userId;
-  };
-
-  // Format message time
-  const formatMessageTime = (timestamp: Date): string => {
+  const formatMessageTime = (timestamp: Date) => {
     if (isToday(timestamp)) {
-      return format(timestamp, 'h:mm a'); // 7:30 PM
+      return format(timestamp, 'HH:mm');
     } else if (isYesterday(timestamp)) {
-      return `Yesterday, ${format(timestamp, 'h:mm a')}`;
+      return `Yesterday ${format(timestamp, 'HH:mm')}`;
     } else {
-      return format(timestamp, 'MMMM d, h:mm a'); // June 21, 7:30 PM
+      return format(timestamp, 'MMM dd, HH:mm');
     }
   };
 
-  // Format date separator
-  const formatDateSeparator = (timestamp: Date): string => {
+  const formatDateSeparator = (timestamp: Date) => {
     if (isToday(timestamp)) {
       return 'Today';
     } else if (isYesterday(timestamp)) {
       return 'Yesterday';
     } else {
-      return format(timestamp, 'MMMM d, yyyy'); // June 21, 2024
+      return format(timestamp, 'MMMM dd, yyyy');
     }
   };
 
-  // Generate consistent avatar colors based on user name
-  const getAvatarColor = (name: string): string => {
-    const colors = [
-      'bg-blue-500',
-      'bg-purple-500', 
-      'bg-green-500',
-      'bg-red-500',
-      'bg-yellow-500',
-      'bg-pink-500',
-      'bg-indigo-500',
-      'bg-teal-500',
-      'bg-orange-500',
-      'bg-cyan-500',
-    ];
-    
-    // Generate a hash from the name to consistently assign colors
-    let hash = 0;
-    for (let i = 0; i < name.length; i++) {
-      hash = name.charCodeAt(i) + ((hash << 5) - hash);
-    }
-    hash = Math.abs(hash);
-    
-    return colors[hash % colors.length];
+  const shouldShowDateSeparator = (currentMsg: ChatMessage, prevMsg?: ChatMessage) => {
+    if (!prevMsg) return true;
+    const currentDate = new Date(currentMsg.timestamp).toDateString();
+    const prevDate = new Date(prevMsg.timestamp).toDateString();
+    return currentDate !== prevDate;
   };
 
-  // Check if should show date separator
-  const shouldShowDateSeparator = (currentMessage: ChatMessage, previousMessage?: ChatMessage): boolean => {
-    if (!previousMessage) return true;
-    
-    const currentDate = new Date(currentMessage.timestamp).toDateString();
-    const previousDate = new Date(previousMessage.timestamp).toDateString();
-    
-    return currentDate !== previousDate;
+  const isMessageFromCurrentUser = (message: ChatMessage) => {
+    return message.senderId === user?.userId;
   };
 
-  // Get message status icon
-  const getMessageStatusIcon = (status: ChatMessage['status']) => {
+  const getMessageStatusIcon = (status: string) => {
     switch (status) {
       case 'sending':
-        return <Clock className="h-3 w-3 animate-spin" />;
+        return <div className="w-2 h-2 bg-gray-400 rounded-full animate-pulse" />;
       case 'sent':
-        return <Check className="h-3 w-3" />;
+        return <div className="w-2 h-2 bg-gray-400 rounded-full" />;
       case 'delivered':
-        return <CheckCheck className="h-3 w-3" />;
+        return <div className="w-2 h-2 bg-blue-400 rounded-full" />;
       case 'read':
-        return <CheckCheck className="h-3 w-3 text-blue-400" />;
+        return <div className="w-2 h-2 bg-green-400 rounded-full" />;
       default:
-        return <Clock className="h-3 w-3" />;
+        return null;
     }
   };
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-gray-50 dark:bg-gray-900 flex items-center justify-center">
+      <div className="min-h-screen flex items-center justify-center bg-gray-50 dark:bg-gray-900">
         <div className="text-center">
-          <div className="w-12 h-12 bg-gradient-to-br from-blue-500 to-purple-600 rounded-full flex items-center justify-center mx-auto mb-4 animate-pulse">
-            <MessageCircle className="h-6 w-6 text-white" />
-          </div>
-          <h3 className="text-lg font-semibold text-gray-700 dark:text-gray-300 mb-2">Loading Chat</h3>
-          <p className="text-sm text-gray-500 dark:text-gray-400">Connecting to your family...</p>
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto mb-4"></div>
+          <p className="text-gray-600 dark:text-gray-300">Loading family chat...</p>
         </div>
       </div>
     );
@@ -341,12 +257,8 @@ const ChatPage: React.FC = () => {
 
   if (!user) {
     return (
-      <div className="min-h-screen bg-gray-50 dark:bg-gray-900 flex items-center justify-center">
-        <div className="text-center">
-          <h3 className="text-lg font-semibold text-gray-700 dark:text-gray-300 mb-2">Authentication Required</h3>
-          <p className="text-sm text-gray-500 dark:text-gray-400 mb-4">Please log in to access family chat.</p>
-          <Button onClick={() => navigate('/')}>Go to Login</Button>
-        </div>
+      <div className="min-h-screen flex items-center justify-center bg-gray-50 dark:bg-gray-900">
+        <p className="text-gray-700 dark:text-gray-200">Please log in to access family chat.</p>
       </div>
     );
   }
@@ -434,14 +346,25 @@ const ChatPage: React.FC = () => {
             <div className="flex items-center justify-between mb-4">
               <h2 className="text-lg font-semibold text-gray-900 dark:text-white">Family Members</h2>
               <Badge variant="secondary" className="bg-blue-100 dark:bg-blue-900 text-blue-800 dark:text-blue-200">
-                {familyMembers.length} member{familyMembers.length !== 1 ? 's' : ''}
+                {familyMembers.filter(m => m.status === 'active').length} online
               </Badge>
             </div>
             <div className="space-y-3">
               {familyMembers.map((member) => (
                 <div key={member.userId} className="group flex items-center gap-3 p-3 rounded-xl hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-all duration-200 cursor-pointer">
-                  <div className={`w-12 h-12 rounded-full flex items-center justify-center text-white font-bold text-sm shadow-md ${getAvatarColor(member.name)}`}>
-                    {member.name.split(' ').map(n => n.charAt(0)).join('').slice(0, 2).toUpperCase()}
+                  <div className="relative">
+                    <Avatar className="h-10 w-10 ring-2 ring-gray-200 dark:ring-gray-700">
+                      <AvatarImage src={member.profilePicture} />
+                      <AvatarFallback className="bg-gradient-to-br from-blue-500 to-purple-600 text-white font-semibold">
+                        {member.name.charAt(0).toUpperCase()}
+                      </AvatarFallback>
+                    </Avatar>
+                    {/* Online indicator */}
+                    <div className={`absolute -bottom-0.5 -right-0.5 w-3 h-3 rounded-full border-2 border-white dark:border-gray-800 ${
+                      onlineMembers.includes(member.userId) || member.userId === user?.userId 
+                        ? 'bg-green-500' 
+                        : 'bg-gray-400'
+                    }`} />
                   </div>
                   <div className="flex-1 min-w-0">
                     <p className="text-sm font-semibold text-gray-900 dark:text-white truncate flex items-center gap-2">
@@ -452,6 +375,12 @@ const ChatPage: React.FC = () => {
                     </p>
                     <p className="text-xs text-gray-500 dark:text-gray-400 truncate">{member.myRelationship || 'Family Member'}</p>
                   </div>
+                  <Badge 
+                    variant={member.status === 'active' ? 'default' : 'secondary'} 
+                    className={`text-xs ${member.status === 'active' ? 'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200' : ''}`}
+                  >
+                    {member.status}
+                  </Badge>
                 </div>
               ))}
             </div>
@@ -489,30 +418,29 @@ const ChatPage: React.FC = () => {
                       )}
                       
                       {/* Message */}
-                      <div className={`flex items-start gap-2 mb-3 ${isCurrentUser ? 'justify-end' : 'justify-start'}`}>
+                      <div className={`flex items-end gap-2 mb-4 ${isCurrentUser ? 'justify-end' : 'justify-start'}`}>
                         {!isCurrentUser && message.senderId !== 'system' && (
-                          <div className={`w-8 h-8 rounded-full flex items-center justify-center text-white text-xs font-bold shadow-sm ${getAvatarColor(message.senderName)}`}>
-                            {message.senderName.split(' ').map(n => n.charAt(0)).join('').slice(0, 2).toUpperCase()}
-                          </div>
+                          <Avatar className="h-8 w-8 ring-2 ring-gray-200 dark:ring-gray-700">
+                            <AvatarImage src={message.senderProfilePicture} />
+                            <AvatarFallback className="bg-gradient-to-br from-gray-500 to-gray-600 text-white text-xs">
+                              {message.senderName.charAt(0).toUpperCase()}
+                            </AvatarFallback>
+                          </Avatar>
                         )}
                         
                         <div className={`max-w-xs lg:max-w-md ${isCurrentUser ? 'order-last' : ''}`}>
-                          {/* Sender name for other users */}
-                          {!isCurrentUser && message.senderId !== 'system' && (
-                            <p className="text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">
-                              {message.senderName}
-                            </p>
-                          )}
-                          
                           <div
                             className={`relative px-4 py-3 rounded-2xl shadow-sm transition-all duration-200 hover:shadow-md ${
                               isCurrentUser
                                 ? 'bg-gradient-to-br from-blue-600 to-blue-700 text-white rounded-br-md'
                                 : message.senderId === 'system'
                                 ? 'bg-gradient-to-br from-green-100 to-green-200 dark:from-green-900 dark:to-green-800 text-green-800 dark:text-green-200 rounded-bl-md'
-                                : 'bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 rounded-bl-md border border-gray-200 dark:border-gray-700'
+                                : 'bg-gray-100 dark:bg-gray-800 text-gray-900 dark:text-gray-100 rounded-bl-md'
                             }`}
                           >
+                            {!isCurrentUser && message.senderId !== 'system' && (
+                              <p className="text-xs font-semibold mb-1 opacity-70">{message.senderName}</p>
+                            )}
                             <p className="text-sm leading-relaxed whitespace-pre-line">{message.content}</p>
                             
                             {/* Message status and time */}
@@ -572,7 +500,7 @@ const ChatPage: React.FC = () => {
               </Button>
             </div>
             <p className="text-xs text-gray-500 dark:text-gray-400 mt-3 text-center">
-              Press Enter to send • Messages sync across all devices via MongoDB
+              Press Enter to send • Messages update automatically
             </p>
           </div>
         </div>
