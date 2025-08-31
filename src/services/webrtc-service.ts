@@ -58,7 +58,9 @@ class WebRTCService {
         const callState = {
           ...this.currentCall,
           startTime: this.currentCall.startTime?.toISOString(),
-          endTime: this.currentCall.endTime?.toISOString()
+          endTime: this.currentCall.endTime?.toISOString(),
+          isUserCaller: this.currentCall.callerId === this.currentUser?.userId,
+          savedAt: new Date().toISOString()
         };
         localStorage.setItem(this.CALL_STATE_KEY, JSON.stringify(callState));
         
@@ -68,7 +70,7 @@ class WebRTCService {
         }]);
         localStorage.setItem(this.CALL_PARTICIPANTS_KEY, JSON.stringify(participantsArray));
         
-        console.log('💾 Call state saved to localStorage');
+        console.log('💾 Call state saved to localStorage with UI context');
       }
     } catch (error) {
       console.error('❌ Failed to save call state:', error);
@@ -178,20 +180,33 @@ class WebRTCService {
         
         // Determine if user is caller or receiver and trigger appropriate callback
         const isUserCaller = this.currentCall.callerId === userId;
+        
+        // Always restore participants first
+        this.participants.forEach(participant => {
+          this.onParticipantJoined?.(participant);
+        });
+        
+        // Trigger UI callbacks based on call status and user role
         if (isUserCaller) {
-          // For caller, show the calling/active call interface
-          this.onCallStarted?.(this.currentCall);
-          console.log('📞 Restored caller interface for call:', this.currentCall.callId);
+          // For caller, check call status to determine UI state
+          if (this.currentCall.status === 'ringing') {
+            // Still ringing - show calling interface
+            this.onCallStarted?.(this.currentCall);
+            console.log('📞 Restored caller calling interface for call:', this.currentCall.callId);
+          } else if (this.currentCall.status === 'connected') {
+            // Call is connected - show active call interface
+            this.onCallStarted?.(this.currentCall);
+            // Also trigger call accepted to transition to active state
+            setTimeout(() => {
+              this.onCallAccepted?.(this.currentCall!);
+            }, 100);
+            console.log('📞 Restored caller active interface for call:', this.currentCall.callId);
+          }
         } else {
           // For receiver, show the active call interface
           this.onCallConnected?.(this.currentCall);
           console.log('📞 Restored receiver interface for call:', this.currentCall.callId);
         }
-        
-        // Restore participants to UI
-        this.participants.forEach(participant => {
-          this.onParticipantJoined?.(participant);
-        });
         
         // Request current call state from server to sync - but don't rejoin family room yet
         if (this.socket && this.socket.connected) {

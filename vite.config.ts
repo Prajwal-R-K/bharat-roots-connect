@@ -17,7 +17,12 @@ export default defineConfig(({ mode }) => ({
   resolve: {
     alias: {
       "@": path.resolve(__dirname, "./src"),
+      // Ensure single React instance
+      "react": path.resolve(__dirname, "./node_modules/react"),
+      "react-dom": path.resolve(__dirname, "./node_modules/react-dom"),
     },
+    // Dedupe React to avoid multiple copies with libraries like emoji-mart
+    dedupe: ["react", "react-dom"],
   },
   define: {
     global: 'globalThis',

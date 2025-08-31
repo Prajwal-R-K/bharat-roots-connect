@@ -35,6 +35,7 @@ export const CallUI: React.FC<CallUIProps> = ({ user, familyMembers }) => {
   const [callDuration, setCallDuration] = useState(0);
   const [isAnswering, setIsAnswering] = useState(false);
   const [isRejecting, setIsRejecting] = useState(false);
+  const [isInitialized, setIsInitialized] = useState(false);
   
   const localVideoRef = useRef<HTMLVideoElement>(null);
   const remoteVideoRef = useRef<HTMLVideoElement>(null);
@@ -64,7 +65,38 @@ export const CallUI: React.FC<CallUIProps> = ({ user, familyMembers }) => {
     setCallDuration(0);
   };
 
+  // Initialize call state from WebRTC service on component mount
   useEffect(() => {
+    const initializeCallState = () => {
+      // Check if there's already an active call in the WebRTC service
+      const existingCall = webrtcService.getCurrentCall();
+      if (existingCall && user) {
+        console.log('🔄 Initializing CallUI with existing call:', existingCall.callId);
+        setCurrentCall(existingCall);
+        setIsCaller(existingCall.callerId === user.userId);
+        
+        // Restore participants
+        const existingParticipants = webrtcService.getParticipants();
+        setParticipants(existingParticipants);
+        
+        // Start timer if call is connected
+        if (existingCall.status === 'connected') {
+          startCallTimer();
+        }
+        
+        console.log('✅ CallUI state restored from WebRTC service');
+      }
+      setIsInitialized(true);
+    };
+
+    // Small delay to ensure WebRTC service is fully initialized
+    const timer = setTimeout(initializeCallState, 100);
+    return () => clearTimeout(timer);
+  }, [user]);
+
+  useEffect(() => {
+    if (!isInitialized) return;
+    
     // Set up WebRTC event listeners
     webrtcService.onIncomingCall = (call: CallData) => {
       console.log('📞 Incoming call UI received:', call);
@@ -242,7 +274,7 @@ export const CallUI: React.FC<CallUIProps> = ({ user, familyMembers }) => {
       webrtcService.onStreamReceived = null;
       stopCallTimer();
     };
-  }, []);
+  }, [isInitialized]);
 
   const handleAnswerCall = async () => {
     if (!incomingCall || isAnswering) return;

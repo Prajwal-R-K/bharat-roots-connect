@@ -38,6 +38,10 @@ import {
 import { Switch } from "@/components/ui/switch";
 import { MediaPermissionHelper } from "@/components/MediaPermissionHelper";
 
+// Emoji picker imports
+import data from "@emoji-mart/data";
+import Picker from "@emoji-mart/react";
+
 // Import HTTP-based chat functions
 import {
   sendMessage,
@@ -72,8 +76,10 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
     () => (localStorage.getItem('theme') as 'light' | 'dark') || 'light'
   );
   const [showPermissionHelper, setShowPermissionHelper] = useState(false);
+  const [showEmojiPicker, setShowEmojiPicker] = useState(false);
   
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const emojiPickerRef = useRef<HTMLDivElement>(null);
 
   // Auto-scroll to bottom when new messages arrive
   const scrollToBottom = () => {
@@ -89,6 +95,17 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
     localStorage.setItem('theme', theme);
     document.documentElement.className = theme;
   }, [theme]);
+
+  // Close emoji picker on outside click
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (showEmojiPicker && emojiPickerRef.current && !emojiPickerRef.current.contains(event.target as Node)) {
+        setShowEmojiPicker(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, [showEmojiPicker]);
 
   // Load messages and initialize chat
   useEffect(() => {
@@ -167,7 +184,15 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
         const newMessages = await getNewMessages(user.familyTreeId, lastMessageTimestamp);
         
         if (newMessages.length > 0) {
-          setMessages(prev => [...prev, ...newMessages]);
+          // Merge updates from server: replace existing by ID, append new ones
+          setMessages(prev => {
+            const byId = new Map(prev.map(m => [m.id, m] as const));
+            for (const incoming of newMessages) {
+              // Always prefer server message as source of truth
+              byId.set(incoming.id, incoming);
+            }
+            return Array.from(byId.values());
+          });
           setLastMessageTimestamp(newMessages[newMessages.length - 1].timestamp);
           
           // Show notification for new messages
@@ -225,14 +250,20 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
       setMessages(prev => [...prev, tempMessage]);
 
       // Send to server
-      const sentMessage = await sendMessage(messageData);
-      
-      // Replace temp message with server response
-      setMessages(prev => 
-        prev.map(msg => 
-          msg.id === tempMessage.id ? sentMessage : msg
-        )
-      );
+      const sentMessageRaw = await sendMessage(messageData);
+      const sentMessage = {
+        ...sentMessageRaw,
+        status: sentMessageRaw.status && sentMessageRaw.status !== 'sending' ? sentMessageRaw.status : 'sent'
+      };
+
+      // Replace temp message with server response and remove any duplicate
+      setMessages(prev => {
+        // Remove any existing entry with the server ID and the temp ID, then add the server one
+        const filtered = prev.filter(m => m.id !== tempMessage.id && m.id !== sentMessage.id);
+        return [...filtered, sentMessage];
+      });
+      // Advance last seen timestamp to avoid re-fetching the message we just sent
+      setLastMessageTimestamp(sentMessage.timestamp);
 
     } catch (error) {
       console.error('Error sending message:', error);
@@ -249,6 +280,11 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
       e.preventDefault();
       handleSendMessage();
     }
+  };
+
+  const handleEmojiSelect = (emoji: any) => {
+    const toAdd = emoji?.native || '';
+    setNewMessage(prev => prev + toAdd);
   };
 
   const formatMessageTime = (timestamp: Date): string => {
@@ -566,7 +602,7 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
             <Paperclip className="h-5 w-5 text-gray-600 dark:text-gray-300" />
           </Button>
           
-          <div className="flex-1 relative">
+          <div className="flex-1 relative" ref={emojiPickerRef}>
             <Input
               value={newMessage}
               onChange={(e) => setNewMessage(e.target.value)}
@@ -575,12 +611,20 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
               className="pr-14 py-4 text-base rounded-3xl border-2 border-gray-300 dark:border-gray-600 bg-gray-50 dark:bg-gray-700 focus:bg-white dark:focus:bg-gray-600 focus:border-blue-500 dark:focus:border-blue-400 transition-all duration-200 shadow-inner"
             />
             <Button
+              type="button"
+              onClick={() => setShowEmojiPicker(v => !v)}
               variant="ghost"
               size="lg"
               className="absolute right-3 top-1/2 transform -translate-y-1/2 rounded-full p-2 hover:bg-gray-200 dark:hover:bg-gray-600 transition-all duration-200"
+              aria-label="Toggle emoji picker"
             >
               <Smile className="h-5 w-5 text-gray-600 dark:text-gray-300" />
             </Button>
+            {showEmojiPicker && (
+              <div className="absolute bottom-14 right-0 z-50">
+                <Picker data={data} onEmojiSelect={handleEmojiSelect} theme={theme === 'dark' ? 'dark' : 'light'} previewPosition="none" />
+              </div>
+            )}
           </div>
           
           <Button

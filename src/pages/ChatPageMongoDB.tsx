@@ -12,6 +12,10 @@ import { getFamilyMembers } from "@/lib/neo4j/family-tree";
 import { getUserByEmailOrId } from "@/lib/neo4j";
 import { format, isToday, isYesterday } from "date-fns";
 
+// Emoji picker imports
+import data from "@emoji-mart/data";
+import Picker from "@emoji-mart/react";
+
 // Import MongoDB functions
 import {
   sendMessage,
@@ -30,11 +34,26 @@ const ChatPage: React.FC = () => {
     () => (localStorage.getItem('theme') as 'light' | 'dark') || 'light'
   );
 
+  // Emoji picker state/refs (declared early to avoid use-before-declare)
+  const [showEmojiPicker, setShowEmojiPicker] = useState(false);
+  const emojiPickerRef = useRef<HTMLDivElement>(null);
+
   // Update theme in localStorage and apply to document
   useEffect(() => {
     localStorage.setItem('theme', theme);
     document.documentElement.className = theme;
   }, [theme]);
+
+  // Close emoji picker on outside click
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (showEmojiPicker && emojiPickerRef.current && !emojiPickerRef.current.contains(event.target as Node)) {
+        setShowEmojiPicker(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, [showEmojiPicker]);
 
   const navigate = useNavigate();
   const [user, setUser] = useState<User | null>(null);
@@ -163,7 +182,14 @@ const ChatPage: React.FC = () => {
         const newMessages = await getNewMessages(user.familyTreeId, lastMessageTimestamp);
         
         if (newMessages.length > 0) {
-          setMessages(prev => [...prev, ...newMessages]);
+          // Merge updates from server: replace existing by ID; append new
+          setMessages(prev => {
+            const byId = new Map(prev.map(m => [m.id, m] as const));
+            for (const incoming of newMessages) {
+              byId.set(incoming.id, incoming);
+            }
+            return Array.from(byId.values());
+          });
           setLastMessageTimestamp(newMessages[newMessages.length - 1].timestamp);
           
           // Mark messages as read if they're not from current user
@@ -219,14 +245,18 @@ const ChatPage: React.FC = () => {
       setMessages(prev => [...prev, tempMessage]);
 
       // Send to MongoDB
-      const savedMessage = await sendMessage(messageData);
-      
-      // Replace temp message with saved message
-      setMessages(prev => 
-        prev.map(msg => 
-          msg.id === tempMessage.id ? savedMessage : msg
-        )
-      );
+      const savedMessageRaw = await sendMessage(messageData);
+      // If backend echoes 'sending' (or missing), mark as 'sent' on client success
+      const savedMessage = {
+        ...savedMessageRaw,
+        status: savedMessageRaw.status && savedMessageRaw.status !== 'sending' ? savedMessageRaw.status : 'sent'
+      } as ChatMessage;
+
+      // Replace temp with server message and remove any duplicate by server id
+      setMessages(prev => {
+        const filtered = prev.filter(m => m.id !== tempMessage.id && m.id !== savedMessage.id);
+        return [...filtered, savedMessage];
+      });
 
       setLastMessageTimestamp(savedMessage.timestamp);
 
@@ -255,6 +285,11 @@ const ChatPage: React.FC = () => {
       e.preventDefault();
       handleSendMessage();
     }
+  };
+
+  const handleEmojiSelect = (emoji: any) => {
+    const toAdd = emoji?.native || '';
+    setNewMessage(prev => prev + toAdd);
   };
 
   // Check if message is from current user
@@ -552,9 +587,23 @@ const ChatPage: React.FC = () => {
           {/* Enhanced Message Input */}
           <div className="border-t border-gray-200/50 dark:border-gray-700/50 p-6 bg-white/70 dark:bg-gray-900/70 backdrop-blur-xl">
             <div className="flex items-end gap-3">
-              <Button variant="ghost" size="sm" className="hover:bg-gray-100 dark:hover:bg-gray-700 rounded-full p-2">
-                <Smile className="h-5 w-5 text-gray-500" />
-              </Button>
+              <div className="relative" ref={emojiPickerRef}>
+                <Button
+                  type="button"
+                  onClick={() => setShowEmojiPicker(v => !v)}
+                  variant="ghost"
+                  size="sm"
+                  className="hover:bg-gray-100 dark:hover:bg-gray-700 rounded-full p-2"
+                  aria-label="Toggle emoji picker"
+                >
+                  <Smile className="h-5 w-5 text-gray-500" />
+                </Button>
+                {showEmojiPicker && (
+                  <div className="absolute bottom-12 left-0 z-50">
+                    <Picker data={data} onEmojiSelect={handleEmojiSelect} theme={theme === 'dark' ? 'dark' : 'light'} previewPosition="none" />
+                  </div>
+                )}
+              </div>
               <div className="flex-1 relative">
                 <Input
                   value={newMessage}
