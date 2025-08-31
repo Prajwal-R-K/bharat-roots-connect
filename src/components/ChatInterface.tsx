@@ -27,6 +27,7 @@ import { getFamilyMembers } from "@/lib/neo4j/family-tree";
 import { getUserByEmailOrId } from "@/lib/neo4j";
 import { format, isToday, isYesterday } from "date-fns";
 import { webrtcService } from "@/services/webrtc-service";
+import { useGlobalCall } from "@/components/GlobalCallProvider";
 import { 
   DropdownMenu,
   DropdownMenuContent,
@@ -59,6 +60,7 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
   onBack 
 }) => {
   const navigate = useNavigate();
+  const { initializeWebRTC } = useGlobalCall();
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [newMessage, setNewMessage] = useState('');
   const [isTyping, setIsTyping] = useState(false);
@@ -138,6 +140,23 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
 
     initializeChat();
   }, [user.familyTreeId, familyMembers]);
+
+  // Initialize WebRTC service immediately when user is available
+  useEffect(() => {
+    const initializeWebRTC = async () => {
+      if (user && user.familyTreeId) {
+        try {
+          console.log('🔄 Initializing WebRTC service for user:', user.userId);
+          await webrtcService.initialize(user.userId, user.familyTreeId, user.name);
+          console.log('✅ WebRTC service initialized successfully');
+        } catch (error) {
+          console.error('❌ WebRTC initialization failed:', error);
+        }
+      }
+    };
+
+    initializeWebRTC();
+  }, [user]);
 
   // Real-time message polling
   useEffect(() => {
@@ -267,7 +286,7 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
       const familyMemberIds = familyMembers.map(member => member.userId || member.id);
       const result = await webrtcService.startCall(familyMemberIds, callType, user.name, user.familyTreeId);
       
-      if (result?.blocked) {
+      if (typeof result === 'object' && (result as any)?.blocked) {
         toast({
           title: "Call Blocked",
           description: "Another family call is already in progress. Please wait for it to end.",

@@ -30,6 +30,10 @@ class WebRTCService {
   private isConnected = false;
   private currentUser: any = null;
 
+  // Call state persistence keys
+  private readonly CALL_STATE_KEY = 'webrtc_call_state';
+  private readonly CALL_PARTICIPANTS_KEY = 'webrtc_call_participants';
+
   // ICE servers for NAT traversal
   private iceServers = [
     { urls: 'stun:stun.l.google.com:19302' },
@@ -46,6 +50,85 @@ class WebRTCService {
   public onParticipantLeft: ((userId: string) => void) | null = null;
   public onStreamReceived: ((userId: string, stream: MediaStream) => void) | null = null;
   public onConnectionStatusChanged: ((connected: boolean) => void) | null = null;
+
+  // Save call state to localStorage
+  private saveCallState(): void {
+    try {
+      if (this.currentCall) {
+        const callState = {
+          ...this.currentCall,
+          startTime: this.currentCall.startTime?.toISOString(),
+          endTime: this.currentCall.endTime?.toISOString()
+        };
+        localStorage.setItem(this.CALL_STATE_KEY, JSON.stringify(callState));
+        
+        const participantsArray = Array.from(this.participants.entries()).map(([id, participant]) => [id, {
+          ...participant,
+          stream: null // Can't serialize MediaStream
+        }]);
+        localStorage.setItem(this.CALL_PARTICIPANTS_KEY, JSON.stringify(participantsArray));
+        
+        console.log('💾 Call state saved to localStorage');
+      }
+    } catch (error) {
+      console.error('❌ Failed to save call state:', error);
+    }
+  }
+
+  // Restore call state from localStorage
+  private restoreCallState(): boolean {
+    try {
+      const savedCallState = localStorage.getItem(this.CALL_STATE_KEY);
+      const savedParticipants = localStorage.getItem(this.CALL_PARTICIPANTS_KEY);
+      
+      if (savedCallState) {
+        const callData = JSON.parse(savedCallState);
+        
+        // Convert ISO strings back to Date objects
+        if (callData.startTime) callData.startTime = new Date(callData.startTime);
+        if (callData.endTime) callData.endTime = new Date(callData.endTime);
+        
+        // Only restore if call is still active (not ended and not too old)
+        const now = new Date();
+        const callAge = callData.startTime ? now.getTime() - callData.startTime.getTime() : 0;
+        const maxCallAge = 2 * 60 * 60 * 1000; // 2 hours
+        
+        if (callData.status !== 'ended' && callAge < maxCallAge) {
+          this.currentCall = callData;
+          
+          // Restore participants
+          if (savedParticipants) {
+            const participantsArray = JSON.parse(savedParticipants);
+            this.participants.clear();
+            participantsArray.forEach(([id, participant]) => {
+              this.participants.set(id, participant);
+            });
+          }
+          
+          console.log('🔄 Call state restored from localStorage:', callData.callId);
+          return true;
+        } else {
+          console.log('🧹 Clearing old call state');
+          this.clearCallState();
+        }
+      }
+    } catch (error) {
+      console.error('❌ Failed to restore call state:', error);
+      this.clearCallState();
+    }
+    return false;
+  }
+
+  // Clear call state from localStorage
+  private clearCallState(): void {
+    try {
+      localStorage.removeItem(this.CALL_STATE_KEY);
+      localStorage.removeItem(this.CALL_PARTICIPANTS_KEY);
+      console.log('🧹 Call state cleared from localStorage');
+    } catch (error) {
+      console.error('❌ Failed to clear call state:', error);
+    }
+  }
 
   async initialize(userId: string, familyId: string, userName?: string): Promise<void> {
     // Prevent multiple initializations
@@ -87,6 +170,62 @@ class WebRTCService {
       
       this.isInitialized = true;
       console.log('✅ WebRTC Service initialized successfully');
+      
+      // Try to restore any existing call state
+      const hasRestoredCall = this.restoreCallState();
+      if (hasRestoredCall && this.currentCall) {
+        console.log('🔄 Restored active call, notifying UI:', this.currentCall.callId);
+        
+        // Determine if user is caller or receiver and trigger appropriate callback
+        const isUserCaller = this.currentCall.callerId === userId;
+        if (isUserCaller) {
+          // For caller, show the calling/active call interface
+          this.onCallStarted?.(this.currentCall);
+          console.log('📞 Restored caller interface for call:', this.currentCall.callId);
+        } else {
+          // For receiver, show the active call interface
+          this.onCallConnected?.(this.currentCall);
+          console.log('📞 Restored receiver interface for call:', this.currentCall.callId);
+        }
+        
+        // Restore participants to UI
+        this.participants.forEach(participant => {
+          this.onParticipantJoined?.(participant);
+        });
+        
+        // Request current call state from server to sync - but don't rejoin family room yet
+        if (this.socket && this.socket.connected) {
+          // First sync the call state
+          this.socket.emit('sync-call-state', { 
+            callId: this.currentCall.callId,
+            userId: userId 
+          });
+          
+          // Then rejoin the family room after a short delay to ensure sync completes
+          setTimeout(() => {
+            if (this.socket && this.currentUser) {
+              this.socket.emit('join-family-room', this.currentUser.familyId);
+              this.socket.emit('join-family', {
+                userId: this.currentUser.userId,
+                familyId: this.currentUser.familyId,
+                userName: this.currentUser.userName || 'Unknown'
+              });
+              console.log('🏠 Re-joined family rooms after call restoration');
+            }
+          }, 500);
+        }
+      } else {
+        // No call to restore, join family room normally
+        if (this.socket && this.socket.connected && this.currentUser) {
+          this.socket.emit('join-family-room', this.currentUser.familyId);
+          this.socket.emit('join-family', {
+            userId: this.currentUser.userId,
+            familyId: this.currentUser.familyId,
+            userName: this.currentUser.userName || 'Unknown'
+          });
+          console.log('🏠 Joined family rooms during normal initialization');
+        }
+      }
     } catch (error) {
       console.error('❌ Failed to initialize WebRTC service:', error);
       this.isInitialized = false;
@@ -166,19 +305,23 @@ class WebRTCService {
     this.socket.removeAllListeners('webrtc-answer');
     this.socket.removeAllListeners('ice-candidate');
 
-    // Join family room after connection is established
+    // Join family room after connection is established (always join to receive notifications)
     if (this.currentUser && this.isConnected) {
+      // Join both family room formats for compatibility
+      this.socket.emit('join-family-room', this.currentUser.familyId);
       this.socket.emit('join-family', {
         userId: this.currentUser.userId,
         familyId: this.currentUser.familyId,
         userName: this.currentUser.userName || 'Unknown'
       });
-      console.log('🏠 Joined family room:', this.currentUser.familyId);
+      console.log('🏠 [DEBUG] Joined family rooms during initialization:', this.currentUser.familyId);
     }
 
     // Call events
     this.socket.on('incoming-call', (callData: CallData) => {
       console.log('📞 Incoming call received:', callData);
+      console.log('🔍 Current user ID:', this.currentUser?.userId);
+      console.log('🔍 Call from:', callData.callerId);
       
       // Prevent duplicate incoming calls
       if (this.currentCall && this.currentCall.callId === callData.callId) {
@@ -200,24 +343,45 @@ class WebRTCService {
       this.onIncomingCall?.(callData);
     });
 
-    this.socket.on('call-accepted', (data: { callId: string, acceptedBy: string, acceptedByName?: string }) => {
+    this.socket.on('call-accepted', (data: { callId: string, acceptedBy: string, acceptedByName?: string, participants?: any[] }) => {
       console.log('✅ Call accepted by:', data.acceptedBy);
       if (this.currentCall) {
         this.currentCall.status = 'connected';
         this.currentCall.startTime = new Date();
         
-        // Immediately add the participant who accepted to the UI
-        if (data.acceptedBy !== this.currentUser?.userId) {
-          const participant: CallParticipant = {
-            userId: data.acceptedBy,
-            userName: data.acceptedByName || 'Family Member',
-            isMuted: false,
-            isVideoOff: false
-          };
-          this.participants.set(data.acceptedBy, participant);
-          console.log('🔄 Immediately adding participant:', participant.userName);
-          this.onParticipantJoined?.(participant);
+        // Update participants list from server data if provided
+        if (data.participants) {
+          console.log('🔄 Updating participants from server:', data.participants);
+          this.participants.clear();
+          data.participants.forEach(p => {
+            if (p.id !== this.currentUser?.userId) {
+              const participant: CallParticipant = {
+                userId: p.id,
+                userName: p.name,
+                isMuted: p.isMuted || false,
+                isVideoOff: p.isVideoOff || false
+              };
+              this.participants.set(p.id, participant);
+              this.onParticipantJoined?.(participant);
+            }
+          });
+        } else {
+          // Fallback: add the participant who accepted
+          if (data.acceptedBy !== this.currentUser?.userId) {
+            const participant: CallParticipant = {
+              userId: data.acceptedBy,
+              userName: data.acceptedByName || 'Family Member',
+              isMuted: false,
+              isVideoOff: false
+            };
+            this.participants.set(data.acceptedBy, participant);
+            console.log('🔄 Adding participant who accepted:', participant.userName);
+            this.onParticipantJoined?.(participant);
+          }
         }
+        
+        // Save updated state
+        this.saveCallState();
         
         // Trigger the call accepted callback (for caller to transition from calling to active)
         this.onCallAccepted?.(this.currentCall);
@@ -266,6 +430,9 @@ class WebRTCService {
         console.log('🔄 Real-time participant added:', data.userName);
         this.onParticipantJoined?.(participant);
         
+        // Save updated state
+        this.saveCallState();
+        
         // Request participant sync to ensure everyone has the latest list
         this.socket.emit('sync-call-participants', { callId: data.callId });
       }
@@ -279,6 +446,9 @@ class WebRTCService {
         this.participants.delete(data.userId);
         console.log('🔄 Real-time participant removed:', data.userName);
         this.onParticipantLeft?.(data.userId);
+        
+        // Save updated state
+        this.saveCallState();
         
         // If participants list is provided, sync with it
         if (data.participants) {
@@ -318,6 +488,34 @@ class WebRTCService {
         });
         // Trigger a full UI refresh
         console.log('🔄 Participants synced, current count:', this.participants.size);
+      }
+    });
+
+    // Handle call state synchronization response
+    this.socket.on('call-state-synced', (data: { callId: string, callData: any, participants: any[] }) => {
+      console.log('🔄 Received call state sync:', data);
+      if (this.currentCall && this.currentCall.callId === data.callId) {
+        // Update participants from server
+        this.participants.clear();
+        data.participants.forEach(p => {
+          if (p.id !== this.currentUser?.userId) { // Don't add yourself
+            const participant: CallParticipant = {
+              userId: p.id,
+              userName: p.name,
+              isMuted: p.isMuted || false,
+              isVideoOff: p.isVideoOff || false
+            };
+            this.participants.set(p.id, participant);
+          }
+        });
+        
+        // Update call data
+        this.currentCall.status = data.callData.status || 'connected';
+        
+        // Save updated state
+        this.saveCallState();
+        
+        console.log('✅ Call state synchronized with server, participants:', this.participants.size);
       }
     });
 
@@ -398,13 +596,19 @@ class WebRTCService {
     };
 
     this.currentCall = callData;
+    
+    // Save call state to persist across page refreshes
+    this.saveCallState();
 
     // Show calling UI to the caller immediately
     if (this.onCallStarted) {
       this.onCallStarted(callData);
     }
 
-    // Emit call to family members
+    // Emit call to family members with debug logging
+    console.log('📤 Emitting start-call to server:', callData);
+    console.log('🔗 Socket connected:', this.socket.connected);
+    console.log('👥 Family members to call:', familyMembers);
     this.socket.emit('start-call', callData);
 
     // Create peer connections for all family members except self
@@ -459,14 +663,15 @@ class WebRTCService {
     this.socket.emit('accept-call', { 
       callId,
       acceptedBy: this.currentUser?.userId,
-      acceptedByName: this.currentUser?.name || 'Family Member'
+      acceptedByName: this.currentUser?.name
     });
     
     // Notify others that this user joined the call (redundant but ensures delivery)
     this.socket.emit('user-joined-call', { 
       callId, 
+      familyId: this.currentCall.familyId,
       userId: this.currentUser?.userId,
-      userName: this.currentUser?.name || 'Family Member'
+      userName: this.currentUser?.name
     });
     
     // Create peer connections for other participants
@@ -487,8 +692,25 @@ class WebRTCService {
     if (!this.socket) return;
 
     console.log('❌ Rejecting call:', callId);
-    this.socket.emit('reject-call', { callId });
-    this.endCall();
+    
+    // Emit reject-call with proper field names
+    this.socket.emit('reject-call', { 
+      callId,
+      rejectedBy: this.currentUser?.userId || this.socket.id,
+      rejectedByName: this.currentUser?.name || 'Unknown User'
+    });
+    
+    // Clean up local state without ending the call for others
+    this.cleanup();
+    if (this.currentCall) {
+      this.currentCall.status = 'ended';
+      this.currentCall.endTime = new Date();
+      this.onCallEnded?.(this.currentCall);
+      this.currentCall = null;
+      
+      // Clear call state since this user rejected/left
+      this.clearCallState();
+    }
   }
 
   endCall(): void {
@@ -517,6 +739,9 @@ class WebRTCService {
       this.currentCall.endTime = new Date();
       this.onCallEnded?.(this.currentCall);
       this.currentCall = null;
+      
+      // Clear call state from storage since call ended
+      this.clearCallState();
     }
   }
 

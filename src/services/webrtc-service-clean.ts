@@ -44,21 +44,26 @@ class WebRTCService {
 
     try {
       console.log('🔄 Initializing WebRTC Service...', { userId, familyId, userName });
-      
       this.currentUser = { userId, familyId, userName };
-      
       // Connect to Socket.IO server
       this.socket = io('http://localhost:3001', {
         query: { userId, familyId, userName }
       });
-
+      // Emit both join-family and join-family-room for compatibility
+      if (this.socket) {
+        this.socket.emit('join-family', {
+          userId,
+          familyId,
+          userName: userName || 'Unknown'
+        });
+        this.socket.emit('join-family-room', familyId);
+      }
       this.setupSocketListeners();
       this.isInitialized = true;
-      
       console.log('✅ WebRTC Service initialized successfully');
     } catch (error) {
       console.error('❌ Failed to initialize WebRTC service:', error);
-      throw error;
+      return;
     }
   }
 

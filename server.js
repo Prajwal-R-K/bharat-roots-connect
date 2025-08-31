@@ -13,512 +13,647 @@ const io = new Server(server, {
   }
 });
 
-const PORT = 300  // WebRTC signaling for peer-to-peer connection
-  socket.on('webrtc-signal', (data) => {
-    const { signal, to } = data;
-    
-    // Forward signal to specific user
-    socket.to(to).emit('webrtc-signal', {
-      signal,
-      from: socket.id
-    });
-    
-    console.log(`🌐 WebRTC signal forwarded from ${socket.id} to ${to}`);
-  });
-
-  // WebRTC Offer/Answer signaling
-  socket.on('webrtc-offer', (data) => {
-    const { offer, targetUserId } = data;
-    
-    // Find target socket and forward offer
-    const targetSocket = Array.from(io.sockets.sockets.values())
-      .find(s => s.userId === targetUserId);
-    
-    if (targetSocket) {
-      targetSocket.emit('webrtc-offer', {
-        offer,
-        fromUserId: socket.userId
-      });
-      console.log(`📨 WebRTC offer sent from ${socket.userId} to ${targetUserId}`);
-    }
-  });
-
-  socket.on('webrtc-answer', (data) => {
-    const { answer, targetUserId } = data;
-    
-    // Find target socket and forward answer
-    const targetSocket = Array.from(io.sockets.sockets.values())
-      .find(s => s.userId === targetUserId);
-    
-    if (targetSocket) {
-      targetSocket.emit('webrtc-answer', {
-        answer,
-        fromUserId: socket.userId
-      });
-      console.log(`📨 WebRTC answer sent from ${socket.userId} to ${targetUserId}`);
-    }
-  });
-
-  socket.on('ice-candidate', (data) => {
-    const { candidate, targetUserId } = data;
-    
-    // Find target socket and forward ICE candidate
-    const targetSocket = Array.from(io.sockets.sockets.values())
-      .find(s => s.userId === targetUserId);
-    
-    if (targetSocket) {
-      targetSocket.emit('ice-candidate', {
-        candidate,
-        fromUserId: socket.userId
-      });
-      console.log(`🧊 ICE candidate sent from ${socket.userId} to ${targetUserId}`);
-    }
-  });dleware
-app.use(cors());
-app.use(express.json());
+const PORT = 3001;
 
 // MongoDB connection
 const MONGODB_URI = 'mongodb://localhost:27017';
-const DATABASE_NAME = 'bhandan';
-
+const client = new MongoClient(MONGODB_URI);
 let db;
 
-// Connect to MongoDB
-MongoClient.connect(MONGODB_URI, {
-  serverSelectionTimeoutMS: 5000,
-  connectTimeoutMS: 5000,
-})
-.then(client => {
-  console.log('✅ Connected to MongoDB');
-  db = client.db(DATABASE_NAME);
-})
-.catch(error => {
-  console.error('❌ MongoDB connection failed:', error);
-  process.exit(1);
-});
+// Middleware
+app.use(cors());
+app.use(express.json());
 
-// Helper function to get database
-const getDatabase = () => {
-  if (!db) {
-    throw new Error('Database not initialized');
-  }
-  return db;
-};
+// Track active calls and participants
+let activeCall = null;
+let callParticipants = new Map(); // participantId -> { id, name, isConnected }
 
-// Collections
-const COLLECTIONS = {
-  MESSAGES: 'family_chat_messages',
-  ROOMS: 'family_chat_rooms',
-  ONLINE_STATUS: 'online_status'
-};
+// Socket connection handling
+io.on('connection', (socket) => {
+  console.log('👤 User connected:', socket.id);
 
-// API Routes
+  // Join family room
+  socket.on('join-family-room', (familyId) => {
+    socket.join(`family-${familyId}`);
+    console.log(`👨‍👩‍👧‍👦 User ${socket.id} joined family room: family-${familyId}`);
+    // Notify about active call if exists
+    if (activeCall && activeCall.familyId === familyId) {
+      socket.emit('incoming-call', {
+        callId: activeCall.callId,
+        callerId: activeCall.callerId,
+        callerName: activeCall.callerName,
+        callType: activeCall.callType,
+        familyId: activeCall.familyId
+      });
+      console.log('[DEBUG] Notified newly joined user about active call:', activeCall.callId);
+    }
+  });
 
-// Send a new message
-app.post('/api/chat/send', async (req, res) => {
-  try {
-    const { familyId, senderId, senderName, content, messageType = 'text' } = req.body;
+  // Handle join family (different from join-family-room)
+  socket.on('join-family', (data) => {
+    const { familyId, userId, userName } = data;
+    socket.join(`family-${familyId}`);
+    socket.familyId = familyId;
+    socket.userId = userId;
+    socket.userName = userName;
+    console.log(`👨‍👩‍👧‍👦 User ${userName} (${userId}) joined family: family-${familyId}`);
+  });
+
+  // Handle start-call (alias for initiate-call)
+  socket.on('start-call', (data) => {
+    console.log('[DEBUG] 📞 start-call received:', data);
+    // Process the call directly instead of just emitting back to caller
+    handleInitiateCall(socket, data);
+  });
+
+  // Handle user joined call notification
+  socket.on('user-joined-call', (data) => {
+    console.log('👤 User joined call:', data);
+    const { callId, familyId, userId, userName } = data;
+    socket.to(`family-${familyId}`).emit('user-joined-call', {
+      callId,
+      userId,
+      userName,
+      timestamp: new Date()
+    });
+  });
+
+  // Handle sync call participants
+  socket.on('sync-call-participants', (data) => {
+    console.log('🔄 Sync call participants:', data);
+    const { callId } = data;
+    if (activeCall && activeCall.callId === callId) {
+      socket.emit('call-participants-synced', {
+        callId,
+        participants: activeCall.participants || []
+      });
+    }
+  });
+
+  // Handle call initiation
+  function handleInitiateCall(socket, data) {
+    console.log('[DEBUG] 📞 initiate-call received:', data);
     
-    if (!familyId || !senderId || !senderName || !content) {
-      return res.status(400).json({ error: 'Missing required fields' });
+    // Check if there's already an active call
+    if (activeCall) {
+      socket.emit('call-blocked', {
+        message: 'Another call is already in progress',
+        activeCallId: activeCall.callId,
+        activeCallType: activeCall.callType
+      });
+      console.log('[DEBUG] 🚫 Call blocked - another call active:', activeCall.callId);
+      return;
     }
 
-    const database = getDatabase();
-    const messagesCollection = database.collection(COLLECTIONS.MESSAGES);
+    // Start new call
+    activeCall = {
+      callId: data.callId,
+      callerId: data.callerId,
+      callerName: data.callerName,
+      callType: data.callType,
+      familyId: data.familyId,
+      startTime: new Date()
+    };
+    console.log('[DEBUG] New activeCall created:', activeCall);
+
+    // Initialize participants with caller
+    callParticipants.clear();
+    callParticipants.set(data.callerId, {
+      id: data.callerId,
+      name: data.callerName,
+      isConnected: true,
+      role: 'caller'
+    });
+    console.log('[DEBUG] Caller added to callParticipants:', data.callerId);
+
+    // Broadcast to all family members
+    const roomName = `family-${data.familyId}`;
+    const roomSockets = io.sockets.adapter.rooms.get(roomName);
+    console.log('[DEBUG] Broadcasting incoming-call to room:', roomName);
+    if (roomSockets) {
+      console.log(`[DEBUG] Sockets in room ${roomName}:`, Array.from(roomSockets));
+    } else {
+      console.log(`[DEBUG] No sockets found in room ${roomName}`);
+    }
+    
+    // Broadcast to ALL family members (including caller for confirmation)
+    console.log('[DEBUG] Emitting incoming-call to room:', roomName, 'with data:', {
+      callId: data.callId,
+      callerId: data.callerId,
+      callerName: data.callerName,
+      callType: data.callType,
+      familyId: data.familyId
+    });
+    io.to(roomName).emit('incoming-call', {
+      callId: data.callId,
+      callerId: data.callerId,
+      callerName: data.callerName,
+      callType: data.callType,
+      familyId: data.familyId
+    });
+    console.log('[DEBUG] incoming-call emitted successfully');
+
+    // Send current participants to caller immediately
+    socket.emit('call-participants-updated', {
+      participants: Array.from(callParticipants.values())
+    });
+
+    console.log('📱 Call initiated and broadcast to family. Active call:', activeCall.callId);
+  }
+
+  // Handle call initiation
+  socket.on('initiate-call', (data) => {
+    handleInitiateCall(socket, data);
+  });
+
+  // Handle call acceptance
+  socket.on('accept-call', (data) => {
+    console.log('✅ Call accepted by:', data);
+    
+    if (!activeCall || activeCall.callId !== data.callId) {
+      socket.emit('call-error', { message: 'Invalid or expired call' });
+      return;
+    }
+
+    // Add participant to call
+    callParticipants.set(data.acceptedBy, {
+      id: data.acceptedBy,
+      name: data.acceptedByName,
+      isConnected: true,
+      role: 'participant'
+    });
+
+    // Notify ALL participants (including caller) about the acceptance
+    io.to(`family-${activeCall.familyId}`).emit('call-accepted', {
+      callId: data.callId,
+      acceptedBy: data.acceptedBy,
+      acceptedByName: data.acceptedByName,
+      participants: Array.from(callParticipants.values())
+    });
+
+    // Also emit user-joined-call for real-time updates
+    io.to(`family-${activeCall.familyId}`).emit('user-joined-call', {
+      userId: data.acceptedBy,
+      userName: data.acceptedByName,
+      callId: data.callId,
+      participants: Array.from(callParticipants.values())
+    });
+
+    console.log(`🎉 ${data.acceptedByName} joined the call. Total participants:`, callParticipants.size);
+    console.log('📊 Current participants:', Array.from(callParticipants.values()));
+  });
+
+  // Handle call rejection
+  socket.on('reject-call', (data) => {
+    console.log('❌ Call rejected by user:', data);
+    
+    if (activeCall && activeCall.callId === data.callId) {
+      // Notify all participants about the rejection
+      io.to(`family-${activeCall.familyId}`).emit('call-rejected', {
+        callId: data.callId,
+        rejectedBy: data.rejectedBy,
+        rejectedByName: data.rejectedByName
+      });
+      
+      console.log(`❌ ${data.rejectedByName} rejected the call`);
+    }
+  });
+
+  // Handle call end
+  socket.on('end-call', (data) => {
+    console.log('📴 Call ended by:', data);
+    
+    if (activeCall) {
+      // Notify all participants that call ended
+      io.to(`family-${activeCall.familyId}`).emit('call-ended', {
+        callId: activeCall.callId,
+        endedBy: data.userId
+      });
+
+      // Clear call state
+      activeCall = null;
+      callParticipants.clear();
+      
+      console.log('📴 Call completely ended and state cleared');
+    }
+  });
+
+  // Handle participant leaving
+  socket.on('leave-call', (data) => {
+    console.log('👋 Participant leaving call:', data);
+    
+    if (activeCall && callParticipants.has(data.userId)) {
+      callParticipants.delete(data.userId);
+      
+      // Notify remaining participants immediately
+      const remainingParticipants = Array.from(callParticipants.values());
+      io.to(`family-${activeCall.familyId}`).emit('user-left-call', {
+        userId: data.userId,
+        userName: data.userName,
+        callId: data.callId || activeCall.callId,
+        participants: remainingParticipants
+      });
+
+      console.log(`👋 ${data.userName} left the call. Remaining participants:`, remainingParticipants.length);
+      console.log('📊 Updated participant list:', remainingParticipants.map(p => p.name));
+
+      // If no participants left, end the call
+      if (callParticipants.size === 0) {
+        console.log('📴 Call ended - no participants remaining');
+        io.to(`family-${activeCall.familyId}`).emit('call-ended', {
+          callId: activeCall.callId,
+          endedBy: 'system-no-participants'
+        });
+        activeCall = null;
+      }
+    }
+  });
+
+  // Handle participant synchronization requests
+  socket.on('sync-call-participants', (data) => {
+    console.log('🔄 Syncing call participants for:', data.callId);
+    
+    if (activeCall && activeCall.callId === data.callId) {
+      const participants = Array.from(callParticipants.values());
+      
+      // Send updated participant list to all family members
+      io.to(`family-${activeCall.familyId}`).emit('call-participants-synced', {
+        callId: data.callId,
+        participants: participants
+      });
+      
+      console.log('📊 Participants synced:', participants.length, 'participants');
+    }
+  });
+
+  // Handle call state synchronization after page refresh
+  socket.on('sync-call-state', (data) => {
+    console.log('🔄 Call state sync requested:', data);
+    
+    if (activeCall && activeCall.callId === data.callId) {
+      // Check if user is already in the call participants
+      const isInCall = callParticipants.has(data.userId);
+      
+      // Send current call state and participants to the requesting user
+      socket.emit('call-state-synced', {
+        callId: activeCall.callId,
+        callData: activeCall,
+        participants: Array.from(callParticipants.values())
+      });
+      
+      if (isInCall) {
+        // User is already in call, send active call state
+        socket.emit('call-participants-updated', {
+          participants: Array.from(callParticipants.values())
+        });
+        console.log('📡 Restored call state for existing participant:', data.userId);
+      } else {
+        // User was not in call, treat as incoming call
+        socket.emit('incoming-call', {
+          callId: activeCall.callId,
+          callerId: activeCall.callerId,
+          callerName: activeCall.callerName,
+          callType: activeCall.callType
+        });
+        console.log('📡 Sent incoming call to user who missed it:', data.userId);
+      }
+      
+      console.log('📡 Call state synchronized for user:', data.userId);
+    } else {
+      console.log('❌ No matching active call to sync for:', data.userId, 'Active call:', activeCall?.callId);
+      // Clear any stale state on client side
+      socket.emit('call-ended', {
+        callId: data.callId,
+        endedBy: 'system-not-found'
+      });
+    }
+  });
+
+  // WebRTC signaling
+  socket.on('webrtc-offer', (data) => {
+    socket.to(data.targetId).emit('webrtc-offer', {
+      offer: data.offer,
+      callerId: socket.id
+    });
+  });
+
+  socket.on('webrtc-answer', (data) => {
+    socket.to(data.targetId).emit('webrtc-answer', {
+      answer: data.answer,
+      answerId: socket.id
+    });
+  });
+
+  // Handle ICE candidate exchange (used by webrtc-service)
+  socket.on('ice-candidate', (data) => {
+    console.log('🧊 ICE candidate received:', data);
+    socket.to(data.targetSocketId).emit('ice-candidate', data);
+  });
+
+  socket.on('webrtc-ice-candidate', (data) => {
+    socket.to(data.targetId).emit('webrtc-ice-candidate', {
+      candidate: data.candidate,
+      fromId: socket.id
+    });
+  });
+
+  // Handle disconnect
+  socket.on('disconnect', () => {
+    console.log('👤 User disconnected:', socket.id);
+    
+    // Remove from active call if present
+    for (let [participantId, participant] of callParticipants) {
+      if (participantId === socket.id) {
+        callParticipants.delete(participantId);
+        
+        if (activeCall) {
+          io.to(`family-${activeCall.familyId}`).emit('user-left-call', {
+            userId: participantId,
+            userName: participant.name,
+            participants: Array.from(callParticipants.values())
+          });
+        }
+        break;
+      }
+    }
+
+    // End call if no participants left
+    if (callParticipants.size === 0 && activeCall) {
+      activeCall = null;
+      console.log('📴 Call ended due to all participants disconnecting');
+    }
+  });
+});
+
+// Connect to MongoDB
+async function connectDB() {
+  try {
+    await client.connect();
+  db = client.db('bhandan');
+    console.log('✅ Connected to MongoDB');
+  } catch (error) {
+    console.error('❌ MongoDB connection error:', error);
+  }
+}
+
+// Family chat routes
+app.post('/api/family/room', async (req, res) => {
+  try {
+    const { familyId, familyName } = req.body;
+    
+    const room = {
+      familyId,
+      familyName,
+      createdAt: new Date(),
+      lastActivity: new Date()
+    };
+    
+    const result = await db.collection('family_rooms').insertOne(room);
+    res.json({ success: true, roomId: result.insertedId });
+  } catch (error) {
+    console.error('Error creating family room:', error);
+    res.status(500).json({ error: 'Failed to create family room' });
+  }
+});
+
+app.post('/api/family/message', async (req, res) => {
+  try {
+    const { familyId, senderId, senderName, message, messageType = 'text' } = req.body;
     
     const newMessage = {
       familyId,
       senderId,
       senderName,
-      content,
+      message,
       messageType,
-      id: new ObjectId().toString(),
       timestamp: new Date(),
-      status: 'sent',
-      readBy: [{
-        userId: senderId,
-        readAt: new Date()
-      }],
-      isDeleted: false
+      isRead: false
     };
-
-    const result = await messagesCollection.insertOne(newMessage);
     
-    // Update family room's last message
-    const roomsCollection = database.collection(COLLECTIONS.ROOMS);
-    await roomsCollection.updateOne(
-      { familyId },
-      {
-        $set: {
-          lastMessage: {
-            content,
-            timestamp: newMessage.timestamp,
-            senderName
-          },
-          updatedAt: new Date()
-        }
-      },
-      { upsert: true }
-    );
-
-    console.log('✅ Message sent:', newMessage.id);
-    res.json({ ...newMessage, _id: result.insertedId.toString() });
+    const result = await db.collection('family_messages').insertOne(newMessage);
+    
+    // Emit real-time message to family room
+    io.to(`family-${familyId}`).emit('new-message', {
+      ...newMessage,
+      _id: result.insertedId
+    });
+    
+    res.json({ success: true, messageId: result.insertedId });
   } catch (error) {
-    console.error('❌ Error sending message:', error);
+    console.error('Error sending message:', error);
     res.status(500).json({ error: 'Failed to send message' });
   }
 });
 
-// Get family messages
-app.get('/api/chat/messages/:familyId', async (req, res) => {
+app.get('/api/family/messages/:familyId', async (req, res) => {
   try {
     const { familyId } = req.params;
-    const limit = parseInt(req.query.limit) || 50;
-    const skip = parseInt(req.query.skip) || 0;
-
-    const database = getDatabase();
-    const messagesCollection = database.collection(COLLECTIONS.MESSAGES);
+    const { page = 1, limit = 50 } = req.query;
     
-    const messages = await messagesCollection
-      .find({ 
-        familyId, 
-        isDeleted: false 
-      })
+    const messages = await db.collection('family_messages')
+      .find({ familyId })
       .sort({ timestamp: -1 })
-      .skip(skip)
-      .limit(limit)
+      .limit(parseInt(limit))
+      .skip((parseInt(page) - 1) * parseInt(limit))
       .toArray();
-
-    console.log(`✅ Retrieved ${messages.length} messages for family ${familyId}`);
-    res.json(messages.reverse()); // Return in ascending order (oldest first)
+    
+    res.json({ messages: messages.reverse() });
   } catch (error) {
-    console.error('❌ Error fetching messages:', error);
+    console.error('Error fetching messages:', error);
     res.status(500).json({ error: 'Failed to fetch messages' });
   }
 });
 
-// Get new messages since timestamp
+// Chat API routes (compatible with ChatInterface)
+app.post('/api/chat/send', async (req, res) => {
+  try {
+    const { familyId, senderId, senderName, content, messageType = 'text' } = req.body;
+    
+    const newMessage = {
+      id: new ObjectId().toString(),
+      familyId,
+      senderId,
+      senderName,
+      content,
+      message: content, // For compatibility with family_messages collection
+      messageType,
+      timestamp: new Date(),
+      status: 'sent',
+      readBy: [],
+      isDeleted: false,
+      isRead: false
+    };
+    
+  const result = await db.collection('family_chat_messages').insertOne(newMessage);
+    
+    // Emit real-time message to family room
+    io.to(`family-${familyId}`).emit('new-message', {
+      ...newMessage,
+      _id: result.insertedId
+    });
+    
+    res.json({ 
+      success: true, 
+      message: {
+        ...newMessage,
+        _id: result.insertedId
+      }
+    });
+  } catch (error) {
+    console.error('Error sending chat message:', error);
+    res.status(500).json({ error: 'Failed to send message' });
+  }
+});
+
+app.get('/api/chat/messages/:familyId', async (req, res) => {
+  try {
+    const { familyId } = req.params;
+    const { limit = 50, skip = 0 } = req.query;
+    
+  const messages = await db.collection('family_chat_messages')
+      .find({ familyId })
+      .sort({ timestamp: -1 })
+      .limit(parseInt(limit))
+      .skip(parseInt(skip))
+      .toArray();
+    
+    // Transform messages to match ChatMessage interface
+    const transformedMessages = messages.reverse().map(msg => ({
+      _id: msg._id,
+      id: msg.id || msg._id.toString(),
+      familyId: msg.familyId,
+      senderId: msg.senderId,
+      senderName: msg.senderName,
+      content: msg.content || msg.message,
+      timestamp: msg.timestamp,
+      status: msg.status || 'sent',
+      messageType: msg.messageType || 'text',
+      readBy: msg.readBy || [],
+      isDeleted: msg.isDeleted || false
+    }));
+    
+    res.json(transformedMessages);
+  } catch (error) {
+    console.error('Error fetching chat messages:', error);
+    res.status(500).json({ error: 'Failed to fetch messages' });
+  }
+});
+
 app.get('/api/chat/new-messages/:familyId', async (req, res) => {
   try {
     const { familyId } = req.params;
     const { since } = req.query;
     
     if (!since) {
-      return res.status(400).json({ error: 'Missing since timestamp' });
+      return res.status(400).json({ error: 'since parameter is required' });
     }
-
-    const database = getDatabase();
-    const messagesCollection = database.collection(COLLECTIONS.MESSAGES);
     
     const sinceDate = new Date(since);
-    const newMessages = await messagesCollection
-      .find({
+  const messages = await db.collection('family_chat_messages')
+      .find({ 
         familyId,
-        timestamp: { $gt: sinceDate },
-        isDeleted: false
+        timestamp: { $gt: sinceDate }
       })
       .sort({ timestamp: 1 })
       .toArray();
-
-    res.json(newMessages);
+    
+    // Transform messages to match ChatMessage interface
+    const transformedMessages = messages.map(msg => ({
+      _id: msg._id,
+      id: msg.id || msg._id.toString(),
+      familyId: msg.familyId,
+      senderId: msg.senderId,
+      senderName: msg.senderName,
+      content: msg.content || msg.message,
+      timestamp: msg.timestamp,
+      status: msg.status || 'sent',
+      messageType: msg.messageType || 'text',
+      readBy: msg.readBy || [],
+      isDeleted: msg.isDeleted || false
+    }));
+    
+    res.json(transformedMessages);
   } catch (error) {
-    console.error('❌ Error fetching new messages:', error);
+    console.error('Error fetching new messages:', error);
     res.status(500).json({ error: 'Failed to fetch new messages' });
   }
 });
 
-// Update online status
+app.post('/api/chat/room', async (req, res) => {
+  try {
+    const { familyId, roomName, roomType = 'family', members } = req.body;
+    
+    const room = {
+      familyId,
+      roomName,
+      roomType,
+      members: members || [],
+      createdAt: new Date(),
+      updatedAt: new Date()
+    };
+    
+    const result = await db.collection('family_rooms').insertOne(room);
+    res.json({ success: true, room: { ...room, _id: result.insertedId } });
+  } catch (error) {
+    console.error('Error creating chat room:', error);
+    res.status(500).json({ error: 'Failed to create room' });
+  }
+});
+
 app.post('/api/chat/online-status', async (req, res) => {
   try {
     const { userId, familyId, isOnline } = req.body;
     
-    if (!userId || !familyId || typeof isOnline !== 'boolean') {
-      return res.status(400).json({ error: 'Missing required fields' });
-    }
-
-    const database = getDatabase();
-    const onlineCollection = database.collection(COLLECTIONS.ONLINE_STATUS);
+    const status = {
+      userId,
+      familyId,
+      isOnline,
+      lastSeen: new Date(),
+      updatedAt: new Date()
+    };
     
-    await onlineCollection.updateOne(
+    await db.collection('online_status').replaceOne(
       { userId, familyId },
-      {
-        $set: {
-          isOnline,
-          lastSeen: new Date(),
-          updatedAt: new Date()
-        }
-      },
+      status,
       { upsert: true }
     );
-
+    
     res.json({ success: true });
   } catch (error) {
-    console.error('❌ Error updating online status:', error);
-    res.status(500).json({ error: 'Failed to update online status' });
+    console.error('Error updating online status:', error);
+    res.status(500).json({ error: 'Failed to update status' });
   }
 });
 
-// Get online family members
 app.get('/api/chat/online-members/:familyId', async (req, res) => {
   try {
     const { familyId } = req.params;
-
-    const database = getDatabase();
-    const onlineCollection = database.collection(COLLECTIONS.ONLINE_STATUS);
     
-    // Consider users online if they were active in the last 5 minutes
-    const fiveMinutesAgo = new Date(Date.now() - 5 * 60 * 1000);
-    
-    const onlineMembers = await onlineCollection
-      .find({
-        familyId,
-        isOnline: true,
-        lastSeen: { $gte: fiveMinutesAgo }
-      })
+    const onlineMembers = await db.collection('online_status')
+      .find({ familyId, isOnline: true })
       .toArray();
-
-    const onlineUserIds = onlineMembers.map(member => member.userId);
-    res.json(onlineUserIds);
+    
+    res.json({ onlineMembers });
   } catch (error) {
-    console.error('❌ Error fetching online members:', error);
+    console.error('Error fetching online members:', error);
     res.status(500).json({ error: 'Failed to fetch online members' });
   }
 });
 
-// Create or update family chat room
-app.post('/api/chat/room', async (req, res) => {
-  try {
-    const { familyId, roomName, members } = req.body;
-    
-    if (!familyId || !roomName || !Array.isArray(members)) {
-      return res.status(400).json({ error: 'Missing required fields' });
-    }
-
-    const database = getDatabase();
-    const roomsCollection = database.collection(COLLECTIONS.ROOMS);
-    
-    const roomData = {
-      familyId,
-      roomName,
-      members,
-      roomType: 'family',
-      createdAt: new Date(),
-      updatedAt: new Date()
-    };
-
-    await roomsCollection.updateOne(
-      { familyId },
-      { $set: roomData },
-      { upsert: true }
-    );
-
-    res.json({ success: true });
-  } catch (error) {
-    console.error('❌ Error creating/updating room:', error);
-    res.status(500).json({ error: 'Failed to create/update room' });
-  }
-});
-
-// Health check endpoint
-app.get('/api/health', (req, res) => {
-  res.json({ 
-    status: 'ok', 
-    database: db ? 'connected' : 'disconnected',
+// Status endpoint
+app.get('/status', (req, res) => {
+  res.json({
+    status: 'running',
+    activeCall: activeCall,
+    participants: Array.from(callParticipants.values()),
     timestamp: new Date().toISOString()
   });
 });
 
-// Socket.IO for real-time communication and WebRTC signaling
-const familyRooms = new Map(); // Track users in family rooms
-const activeCalls = new Map(); // Track active calls
-
-io.on('connection', (socket) => {
-  console.log('👤 User connected:', socket.id);
-
-  // Join family room
-  socket.on('join-family', (data) => {
-    const { userId, familyId, userName } = data;
-    
-    socket.join(familyId);
-    socket.userId = userId;
-    socket.familyId = familyId;
-    socket.userName = userName;
-    
-    // Track user in family room
-    if (!familyRooms.has(familyId)) {
-      familyRooms.set(familyId, new Set());
-    }
-    familyRooms.get(familyId).add(socket.id);
-    
-    // Notify family members that user is online
-    socket.to(familyId).emit('user-online', {
-      userId,
-      userName,
-      timestamp: new Date()
-    });
-    
-    console.log(`✅ ${userName} joined family ${familyId}`);
-  });
-
-  // Handle call initiation
-  socket.on('start-call', (callData) => {
-    console.log('📞 Starting call:', callData);
-    
-    const { callId, familyId, callType, callerName } = callData;
-    
-    // Store active call
-    activeCalls.set(callId, {
-      ...callData,
-      participants: new Set([socket.id]),
-      startTime: new Date()
-    });
-    
-    // Notify all family members about incoming call
-    socket.to(familyId).emit('incoming-call', callData);
-    
-    console.log(`📢 ${callType} call initiated by ${callerName} in family ${familyId}`);
-  });
-
-  // Handle call acceptance
-  socket.on('accept-call', (data) => {
-    const { callId } = data;
-    const call = activeCalls.get(callId);
-    
-    if (call) {
-      call.participants.add(socket.id);
-      
-      // Notify caller that call was accepted
-      socket.to(call.familyId).emit('call-accepted', {
-        callId,
-        acceptedBy: socket.userName || socket.userId
-      });
-      
-      // Join call room
-      socket.join(`call_${callId}`);
-      
-      // Notify existing participants about new participant
-      socket.to(`call_${callId}`).emit('participant-joined', {
-        userId: socket.userId,
-        userName: socket.userName || 'Unknown'
-      });
-      
-      console.log(`✅ ${socket.userName} accepted call ${callId}`);
-    }
-  });
-
-  // Handle call rejection
-  socket.on('reject-call', (data) => {
-    const { callId } = data;
-    const call = activeCalls.get(callId);
-    
-    if (call) {
-      socket.to(call.familyId).emit('call-rejected', {
-        callId,
-        rejectedBy: socket.userName || socket.userId
-      });
-      
-      console.log(`❌ ${socket.userName} rejected call ${callId}`);
-    }
-  });
-
-  // Handle call end
-  socket.on('end-call', (data) => {
-    const { callId } = data;
-    const call = activeCalls.get(callId);
-    
-    if (call) {
-      // Notify all participants that call ended
-      io.to(`call_${callId}`).emit('call-ended', {
-        callId,
-        endedBy: socket.userName || socket.userId
-      });
-      
-      // Remove call from active calls
-      activeCalls.delete(callId);
-      
-      console.log(`📴 Call ${callId} ended by ${socket.userName}`);
-    }
-  });
-
-  // WebRTC signaling for peer-to-peer connection
-  socket.on('webrtc-signal', (data) => {
-    const { signal, to } = data;
-    
-    // Forward signal to specific user
-    socket.to(to).emit('webrtc-signal', {
-      signal,
-      from: socket.id
-    });
-    
-    console.log(`� WebRTC signal forwarded from ${socket.id} to ${to}`);
-  });
-
-  // Handle typing indicators for chat
-  socket.on('typing-start', () => {
-    if (socket.familyId) {
-      socket.to(socket.familyId).emit('user-typing', {
-        userId: socket.userId,
-        userName: socket.userName
-      });
-    }
-  });
-
-  socket.on('typing-stop', () => {
-    if (socket.familyId) {
-      socket.to(socket.familyId).emit('user-stop-typing', {
-        userId: socket.userId
-      });
-    }
-  });
-
-  // Handle disconnect
-  socket.on('disconnect', () => {
-    console.log('👋 User disconnected:', socket.id);
-    
-    if (socket.familyId && socket.userId) {
-      // Remove from family room tracking
-      const familyRoom = familyRooms.get(socket.familyId);
-      if (familyRoom) {
-        familyRoom.delete(socket.id);
-        if (familyRoom.size === 0) {
-          familyRooms.delete(socket.familyId);
-        }
-      }
-      
-      // Notify family members that user went offline
-      socket.to(socket.familyId).emit('user-offline', {
-        userId: socket.userId,
-        userName: socket.userName,
-        timestamp: new Date()
-      });
-      
-      // Handle active calls
-      for (const [callId, call] of activeCalls.entries()) {
-        if (call.participants.has(socket.id)) {
-          call.participants.delete(socket.id);
-          
-          // If caller disconnected, end the call
-          if (call.callerId === socket.id) {
-            io.to(`call_${callId}`).emit('call-ended', {
-              callId,
-              endedBy: socket.userName || 'Unknown'
-            });
-            activeCalls.delete(callId);
-          } else {
-            // Notify remaining participants
-            socket.to(`call_${callId}`).emit('participant-left', {
-              userId: socket.userId
-            });
-          }
-        }
-      }
-    }
-  });
-});
-
 // Start server
-server.listen(PORT, () => {
-  console.log(`🚀 Server running on http://localhost:${PORT}`);
-  console.log(`🔌 Socket.IO enabled for real-time communication`);
-  console.log(`📊 Health check: http://localhost:${PORT}/api/health`);
+connectDB().then(() => {
+  server.listen(PORT, () => {
+    console.log(`🚀 Socket.IO server running on port ${PORT}`);
+    console.log(`📊 Status available at: http://localhost:${PORT}/status`);
+  });
 });

@@ -1,20 +1,28 @@
-const express = require('express');
-const http = require('http');
-const { Server } = require('socket.io');
-const cors = require('cors');
+import express from 'express';
+import { MongoClient, ObjectId } from 'mongodb';
+import cors from 'cors';
+import { createServer } from 'http';
+import { Server } from 'socket.io';
 
 const app = express();
-const server = http.createServer(app);
-
-app.use(cors());
-app.use(express.json());
-
+const server = createServer(app);
 const io = new Server(server, {
   cors: {
-    origin: "*",
+    origin: "http://localhost:5173",
     methods: ["GET", "POST"]
   }
 });
+
+const PORT = 3001;
+
+// MongoDB connection
+const MONGODB_URI = 'mongodb://localhost:27017';
+const client = new MongoClient(MONGODB_URI);
+let db;
+
+// Middleware
+app.use(cors());
+app.use(express.json());
 
 // Track active calls and participants
 let activeCall = null;
@@ -168,28 +176,6 @@ io.on('connection', (socket) => {
     }
   });
 
-  // Handle WebRTC signaling
-  socket.on('webrtc-offer', (data) => {
-    socket.to(data.targetId).emit('webrtc-offer', {
-      offer: data.offer,
-      callerId: socket.id
-    });
-  });
-
-  socket.on('webrtc-answer', (data) => {
-    socket.to(data.targetId).emit('webrtc-answer', {
-      answer: data.answer,
-      answerId: socket.id
-    });
-  });
-
-  socket.on('webrtc-ice-candidate', (data) => {
-    socket.to(data.targetId).emit('webrtc-ice-candidate', {
-      candidate: data.candidate,
-      fromId: socket.id
-    });
-  });
-
   // Handle call state synchronization after page refresh
   socket.on('sync-call-state', (data) => {
     console.log('🔄 Call state sync requested:', data);
@@ -233,6 +219,28 @@ io.on('connection', (socket) => {
     }
   });
 
+  // WebRTC signaling
+  socket.on('webrtc-offer', (data) => {
+    socket.to(data.targetId).emit('webrtc-offer', {
+      offer: data.offer,
+      callerId: socket.id
+    });
+  });
+
+  socket.on('webrtc-answer', (data) => {
+    socket.to(data.targetId).emit('webrtc-answer', {
+      answer: data.answer,
+      answerId: socket.id
+    });
+  });
+
+  socket.on('webrtc-ice-candidate', (data) => {
+    socket.to(data.targetId).emit('webrtc-ice-candidate', {
+      candidate: data.candidate,
+      fromId: socket.id
+    });
+  });
+
   // Handle disconnect
   socket.on('disconnect', () => {
     console.log('👤 User disconnected:', socket.id);
@@ -261,6 +269,85 @@ io.on('connection', (socket) => {
   });
 });
 
+// Connect to MongoDB
+async function connectDB() {
+  try {
+    await client.connect();
+    db = client.db('bharat-roots-connect');
+    console.log('✅ Connected to MongoDB');
+  } catch (error) {
+    console.error('❌ MongoDB connection error:', error);
+  }
+}
+
+// Family chat routes
+app.post('/api/family/room', async (req, res) => {
+  try {
+    const { familyId, familyName } = req.body;
+    
+    const room = {
+      familyId,
+      familyName,
+      createdAt: new Date(),
+      lastActivity: new Date()
+    };
+    
+    const result = await db.collection('family_rooms').insertOne(room);
+    res.json({ success: true, roomId: result.insertedId });
+  } catch (error) {
+    console.error('Error creating family room:', error);
+    res.status(500).json({ error: 'Failed to create family room' });
+  }
+});
+
+app.post('/api/family/message', async (req, res) => {
+  try {
+    const { familyId, senderId, senderName, message, messageType = 'text' } = req.body;
+    
+    const newMessage = {
+      familyId,
+      senderId,
+      senderName,
+      message,
+      messageType,
+      timestamp: new Date(),
+      isRead: false
+    };
+    
+    const result = await db.collection('family_messages').insertOne(newMessage);
+    
+    // Emit real-time message to family room
+    io.to(`family-${familyId}`).emit('new-message', {
+      ...newMessage,
+      _id: result.insertedId
+    });
+    
+    res.json({ success: true, messageId: result.insertedId });
+  } catch (error) {
+    console.error('Error sending message:', error);
+    res.status(500).json({ error: 'Failed to send message' });
+  }
+});
+
+app.get('/api/family/messages/:familyId', async (req, res) => {
+  try {
+    const { familyId } = req.params;
+    const { page = 1, limit = 50 } = req.query;
+    
+    const messages = await db.collection('family_messages')
+      .find({ familyId })
+      .sort({ timestamp: -1 })
+      .limit(parseInt(limit))
+      .skip((parseInt(page) - 1) * parseInt(limit))
+      .toArray();
+    
+    res.json({ messages: messages.reverse() });
+  } catch (error) {
+    console.error('Error fetching messages:', error);
+    res.status(500).json({ error: 'Failed to fetch messages' });
+  }
+});
+
 // Status endpoint
 app.get('/status', (req, res) => {
   res.json({
@@ -272,8 +359,9 @@ app.get('/status', (req, res) => {
 });
 
 // Start server
-const PORT = process.env.PORT || 3001;
-server.listen(PORT, () => {
-  console.log(`🚀 Socket.IO server running on port ${PORT}`);
-  console.log(`📊 Status available at: http://localhost:${PORT}/status`);
+connectDB().then(() => {
+  server.listen(PORT, () => {
+    console.log(`🚀 Socket.IO server running on port ${PORT}`);
+    console.log(`📊 Status available at: http://localhost:${PORT}/status`);
+  });
 });
