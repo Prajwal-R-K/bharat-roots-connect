@@ -1,8 +1,9 @@
 import express from 'express';
-import { MongoClient, ObjectId } from 'mongodb';
+import { MongoClient, ObjectId, GridFSBucket } from 'mongodb';
 import cors from 'cors';
 import { createServer } from 'http';
 import { Server } from 'socket.io';
+import multer from 'multer';
 
 const app = express();
 const server = createServer(app);
@@ -19,10 +20,14 @@ const PORT = 3001;
 const MONGODB_URI = 'mongodb://localhost:27017';
 const client = new MongoClient(MONGODB_URI);
 let db;
+let gridFSBucket; // GridFS bucket for storing images
 
 // Middleware
 app.use(cors());
 app.use(express.json());
+
+// Multer setup for handling multipart/form-data uploads (store in memory, then stream to GridFS)
+const upload = multer({ storage: multer.memoryStorage() });
 
 // Track active calls and participants
 let activeCall = null;
@@ -389,7 +394,9 @@ io.on('connection', (socket) => {
 async function connectDB() {
   try {
     await client.connect();
-  db = client.db('bhandan');
+    db = client.db('bhandan');
+    // Initialize GridFS bucket for images
+    gridFSBucket = new GridFSBucket(db, { bucketName: 'chat_images' });
     console.log('✅ Connected to MongoDB');
   } catch (error) {
     console.error('❌ MongoDB connection error:', error);
@@ -484,7 +491,7 @@ app.post('/api/chat/send', async (req, res) => {
       isRead: false
     };
     
-  const result = await db.collection('family_chat_messages').insertOne(newMessage);
+    const result = await db.collection('family_chat_messages').insertOne(newMessage);
     
     // Emit real-time message to family room
     io.to(`family-${familyId}`).emit('new-message', {
@@ -510,7 +517,7 @@ app.get('/api/chat/messages/:familyId', async (req, res) => {
     const { familyId } = req.params;
     const { limit = 50, skip = 0 } = req.query;
     
-  const messages = await db.collection('family_chat_messages')
+    const messages = await db.collection('family_chat_messages')
       .find({ familyId })
       .sort({ timestamp: -1 })
       .limit(parseInt(limit))
@@ -529,13 +536,109 @@ app.get('/api/chat/messages/:familyId', async (req, res) => {
       status: msg.status || 'sent',
       messageType: msg.messageType || 'text',
       readBy: msg.readBy || [],
-      isDeleted: msg.isDeleted || false
+      isDeleted: msg.isDeleted || false,
+      imageId: msg.imageId,
+      imageUrl: msg.imageUrl
     }));
     
     res.json(transformedMessages);
   } catch (error) {
     console.error('Error fetching chat messages:', error);
     res.status(500).json({ error: 'Failed to fetch messages' });
+  }
+});
+
+// Upload chat image and create an image message
+app.post('/api/chat/upload-image', upload.single('image'), async (req, res) => {
+  try {
+    if (!req.file) {
+      return res.status(400).json({ error: 'No file uploaded' });
+    }
+
+    const { familyId, senderId, senderName, content: caption } = req.body;
+    if (!familyId || !senderId || !senderName) {
+      return res.status(400).json({ error: 'Missing required fields: familyId, senderId, senderName' });
+    }
+
+    // Stream the file buffer to GridFS
+    const uploadStream = gridFSBucket.openUploadStream(req.file.originalname, {
+      contentType: req.file.mimetype,
+      metadata: {
+        uploadedAt: new Date(),
+        familyId,
+        senderId,
+        senderName,
+        size: req.file.size
+      }
+    });
+
+    uploadStream.end(req.file.buffer);
+
+    uploadStream.on('error', (err) => {
+      console.error('GridFS upload error:', err);
+      res.status(500).json({ error: 'Failed to upload image' });
+    });
+
+    uploadStream.on('finish', async () => {
+      const imageId = uploadStream.id.toString();
+      const imageUrl = `/api/chat/image/${imageId}`;
+
+      const newMessage = {
+        id: new ObjectId().toString(),
+        familyId,
+        senderId,
+        senderName,
+        content: caption && String(caption).trim().length > 0 ? String(caption) : req.file.originalname,
+        message: caption && String(caption).trim().length > 0 ? String(caption) : req.file.originalname,
+        messageType: 'image',
+        timestamp: new Date(),
+        status: 'sent',
+        readBy: [],
+        isDeleted: false,
+        imageId,
+        imageUrl
+      };
+
+      const result = await db.collection('family_chat_messages').insertOne(newMessage);
+
+      // Emit real-time message to family room
+      io.to(`family-${familyId}`).emit('new-message', {
+        ...newMessage,
+        _id: result.insertedId
+      });
+
+      res.json({ success: true, message: { ...newMessage, _id: result.insertedId } });
+    });
+  } catch (error) {
+    console.error('Error uploading chat image:', error);
+    res.status(500).json({ error: 'Failed to upload chat image' });
+  }
+});
+
+// Stream image from GridFS by id
+app.get('/api/chat/image/:id', async (req, res) => {
+  try {
+    const { id } = req.params;
+    const _id = new ObjectId(id);
+    // Find file metadata to set headers
+    const fileDoc = await db.collection('chat_images.files').findOne({ _id });
+    if (!fileDoc) {
+      return res.status(404).json({ error: 'Image not found' });
+    }
+    const contentType = fileDoc.contentType || fileDoc.metadata?.contentType;
+    if (contentType) {
+      res.setHeader('Content-Type', contentType);
+    }
+    res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
+    const readStream = gridFSBucket.openDownloadStream(_id);
+    readStream.on('error', (err) => {
+      console.error('GridFS read error:', err);
+      res.status(500).end();
+    });
+    readStream.pipe(res);
+  } catch (error) {
+    console.error('Error retrieving image:', error);
+    res.status(500).json({ error: 'Failed to retrieve image' });
   }
 });
 
@@ -549,7 +652,7 @@ app.get('/api/chat/new-messages/:familyId', async (req, res) => {
     }
     
     const sinceDate = new Date(since);
-  const messages = await db.collection('family_chat_messages')
+    const messages = await db.collection('family_chat_messages')
       .find({ 
         familyId,
         timestamp: { $gt: sinceDate }
@@ -569,7 +672,9 @@ app.get('/api/chat/new-messages/:familyId', async (req, res) => {
       status: msg.status || 'sent',
       messageType: msg.messageType || 'text',
       readBy: msg.readBy || [],
-      isDeleted: msg.isDeleted || false
+      isDeleted: msg.isDeleted || false,
+      imageId: msg.imageId,
+      imageUrl: msg.imageUrl
     }));
     
     res.json(transformedMessages);

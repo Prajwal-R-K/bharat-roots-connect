@@ -16,6 +16,8 @@ export interface ChatMessage {
     readAt: Date;
   }>;
   isDeleted: boolean;
+  imageId?: string;
+  imageUrl?: string; // absolute URL after mapping
 }
 
 export interface FamilyChatRoom {
@@ -84,7 +86,8 @@ export const sendMessage = async (messageData: Omit<ChatMessage, '_id' | 'id' | 
       readBy: response.readBy.map((r: any) => ({
         ...r,
         readAt: new Date(r.readAt)
-      }))
+      })),
+      imageUrl: response.imageUrl ? `${API_BASE_URL.replace('/api','')}${response.imageUrl}` : undefined
     };
   } catch (error) {
     console.error('❌ Error sending message:', error);
@@ -123,7 +126,8 @@ export const getFamilyMessages = async (
       readBy: msg.readBy.map((r: any) => ({
         ...r,
         readAt: new Date(r.readAt)
-      }))
+      })),
+      imageUrl: msg.imageUrl ? `${API_BASE_URL.replace('/api','')}${msg.imageUrl}` : undefined
     }));
 
     console.log(`✅ Retrieved ${messages.length} messages`);
@@ -149,7 +153,8 @@ export const getNewMessages = async (
       readBy: msg.readBy.map((r: any) => ({
         ...r,
         readAt: new Date(r.readAt)
-      }))
+      })),
+      imageUrl: msg.imageUrl ? `${API_BASE_URL.replace('/api','')}${msg.imageUrl}` : undefined
     }));
 
     if (messages.length > 0) {
@@ -234,4 +239,34 @@ export const checkServerHealth = async (): Promise<boolean> => {
     console.error('❌ Server health check failed:', error);
     return false;
   }
+};
+
+// Upload an image for chat and create an image message on the server
+export const uploadChatImage = async (
+  params: { familyId: string; senderId: string; senderName: string; file: File; content?: string }
+): Promise<ChatMessage> => {
+  const form = new FormData();
+  form.append('image', params.file);
+  form.append('familyId', params.familyId);
+  form.append('senderId', params.senderId);
+  form.append('senderName', params.senderName);
+  if (params.content && params.content.trim().length > 0) {
+    form.append('content', params.content.trim());
+  }
+
+  const res = await fetch(`${API_BASE_URL}/chat/upload-image`, {
+    method: 'POST',
+    body: form,
+  });
+  if (!res.ok) {
+    throw new Error(`Image upload failed with status ${res.status}`);
+  }
+  const data = await res.json();
+  const msg = data.message || data; // server returns { success, message }
+  return {
+    ...msg,
+    timestamp: new Date(msg.timestamp),
+    readBy: (msg.readBy || []).map((r: any) => ({ ...r, readAt: new Date(r.readAt) })),
+    imageUrl: msg.imageUrl ? `${API_BASE_URL.replace('/api','')}${msg.imageUrl}` : undefined,
+  } as ChatMessage;
 };

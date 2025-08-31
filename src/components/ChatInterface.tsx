@@ -49,7 +49,8 @@ import {
   getNewMessages,
   markMessageAsRead,
   createOrUpdateFamilyRoom,
-  type ChatMessage
+  type ChatMessage,
+  uploadChatImage
 } from "@/lib/chat-api";
 
 interface ChatInterfaceProps {
@@ -80,6 +81,9 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
   
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const emojiPickerRef = useRef<HTMLDivElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const [selectedImage, setSelectedImage] = useState<File | null>(null);
+  const [selectedImagePreview, setSelectedImagePreview] = useState<string | null>(null);
 
   // Auto-scroll to bottom when new messages arrive
   const scrollToBottom = () => {
@@ -224,8 +228,54 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
   }, []);
 
   const handleSendMessage = async () => {
-    if (!newMessage.trim()) return;
+    if (!newMessage.trim() && !selectedImage) return;
 
+    // If an image is attached, send as image message with optional caption
+    if (selectedImage) {
+      const tempId = `img_temp_${Date.now()}`;
+      const tempMessage: ChatMessage = {
+        id: tempId,
+        familyId: user.familyTreeId,
+        senderId: user.userId,
+        senderName: user.name,
+        content: newMessage.trim() || selectedImage.name,
+        timestamp: new Date(),
+        status: 'sending',
+        messageType: 'image',
+        readBy: [],
+        isDeleted: false,
+        imageUrl: selectedImagePreview || undefined
+      };
+      setMessages(prev => [...prev, tempMessage]);
+
+      try {
+        const sent = await uploadChatImage({
+          familyId: user.familyTreeId,
+          senderId: user.userId,
+          senderName: user.name,
+          file: selectedImage,
+          content: newMessage.trim() || undefined
+        });
+
+        setMessages(prev => {
+          const filtered = prev.filter(m => m.id !== tempId && m.id !== sent.id);
+          return [...filtered, { ...sent, status: 'sent' }];
+        });
+        setLastMessageTimestamp(sent.timestamp);
+        // clear input and attachment
+        setNewMessage('');
+        if (selectedImagePreview) URL.revokeObjectURL(selectedImagePreview);
+        setSelectedImage(null);
+        setSelectedImagePreview(null);
+      } catch (err) {
+        console.error('Image upload failed:', err);
+        setMessages(prev => prev.filter(m => m.id !== tempId));
+        toast({ title: 'Upload failed', description: 'Could not upload image. Please try again.', variant: 'destructive' });
+      }
+      return;
+    }
+
+    // Otherwise send normal text message
     const messageContent = newMessage.trim();
     setNewMessage('');
 
@@ -239,7 +289,6 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
         messageType: 'text' as const
       };
 
-      // Optimistically add message
       const tempMessage: ChatMessage = {
         ...messageData,
         id: `temp_${Date.now()}`,
@@ -249,29 +298,20 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
       };
       setMessages(prev => [...prev, tempMessage]);
 
-      // Send to server
       const sentMessageRaw = await sendMessage(messageData);
       const sentMessage = {
         ...sentMessageRaw,
         status: sentMessageRaw.status && sentMessageRaw.status !== 'sending' ? sentMessageRaw.status : 'sent'
       };
 
-      // Replace temp message with server response and remove any duplicate
       setMessages(prev => {
-        // Remove any existing entry with the server ID and the temp ID, then add the server one
         const filtered = prev.filter(m => m.id !== tempMessage.id && m.id !== sentMessage.id);
         return [...filtered, sentMessage];
       });
-      // Advance last seen timestamp to avoid re-fetching the message we just sent
       setLastMessageTimestamp(sentMessage.timestamp);
-
     } catch (error) {
       console.error('Error sending message:', error);
-      toast({
-        title: "Message failed",
-        description: "Failed to send message. Please try again.",
-        variant: "destructive"
-      });
+      toast({ title: 'Message failed', description: 'Failed to send message. Please try again.', variant: 'destructive' });
     }
   };
 
@@ -285,6 +325,22 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
   const handleEmojiSelect = (emoji: any) => {
     const toAdd = emoji?.native || '';
     setNewMessage(prev => prev + toAdd);
+  };
+
+  const handleImageSelected = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    if (selectedImagePreview) URL.revokeObjectURL(selectedImagePreview);
+    setSelectedImage(file);
+    setSelectedImagePreview(URL.createObjectURL(file));
+    // reset input so same file can be re-selected later
+    if (fileInputRef.current) fileInputRef.current.value = '';
+  };
+
+  const clearAttachedImage = () => {
+    if (selectedImagePreview) URL.revokeObjectURL(selectedImagePreview);
+    setSelectedImage(null);
+    setSelectedImagePreview(null);
   };
 
   const formatMessageTime = (timestamp: Date): string => {
@@ -532,26 +588,40 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
                       </p>
                     )}
                     
-                    <div
-                      className={`px-6 py-4 rounded-3xl shadow-lg relative transition-all duration-200 hover:shadow-xl inline-block max-w-lg ${
-                        isOwn
-                          ? 'bg-gradient-to-r from-blue-500 to-blue-600 text-white rounded-br-lg'
-                          : 'bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 border border-gray-200/60 dark:border-gray-600/60 rounded-bl-lg'
-                      }`}
-                      style={{
-                        wordWrap: 'break-word',
-                        overflowWrap: 'break-word'
-                      }}
-                    >
-                      <p className="text-base leading-relaxed whitespace-pre-wrap font-medium">{message.content}</p>
-                      
-                      {/* Message tail/pointer */}
-                      <div className={`absolute bottom-0 w-0 h-0 ${
-                        isOwn 
-                          ? 'right-0 border-l-[12px] border-l-blue-600 border-t-[12px] border-t-transparent'
-                          : 'left-0 border-r-[12px] border-r-white dark:border-r-gray-700 border-t-[12px] border-t-transparent'
-                      }`}></div>
-                    </div>
+                    {message.messageType === 'image' && message.imageUrl ? (
+                      <div className={`p-2 rounded-2xl shadow-lg border ${isOwn ? 'border-blue-200 bg-white/90' : 'border-gray-200 dark:border-gray-600 bg-white dark:bg-gray-700'}`}>
+                        <img
+                          src={message.imageUrl}
+                          alt={message.content}
+                          className="max-w-xs md:max-w-sm lg:max-w-md rounded-xl object-contain"
+                          loading="lazy"
+                        />
+                        {message.content && (
+                          <p className="text-xs mt-2 text-gray-600 dark:text-gray-300 truncate max-w-md">{message.content}</p>
+                        )}
+                      </div>
+                    ) : (
+                      <div
+                        className={`px-6 py-4 rounded-3xl shadow-lg relative transition-all duration-200 hover:shadow-xl inline-block max-w-lg ${
+                          isOwn
+                            ? 'bg-gradient-to-r from-blue-500 to-blue-600 text-white rounded-br-lg'
+                            : 'bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 border border-gray-200/60 dark:border-gray-600/60 rounded-bl-lg'
+                        }`}
+                        style={{
+                          wordWrap: 'break-word',
+                          overflowWrap: 'break-word'
+                        }}
+                      >
+                        <p className="text-base leading-relaxed whitespace-pre-wrap font-medium">{message.content}</p>
+                        
+                        {/* Message tail/pointer */}
+                        <div className={`absolute bottom-0 w-0 h-0 ${
+                          isOwn 
+                            ? 'right-0 border-l-[12px] border-l-blue-600 border-t-[12px] border-t-transparent'
+                            : 'left-0 border-r-[12px] border-r-white dark:border-r-gray-700 border-t-[12px] border-t-transparent'
+                        }`}></div>
+                      </div>
+                    )}
                     
                     <div className={`flex items-center space-x-2 px-2 ${isOwn ? 'justify-end' : 'justify-start'}`}>
                       <p className="text-sm text-gray-500 dark:text-gray-400 font-medium">
@@ -598,7 +668,33 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
       {/* Enhanced Full-Screen Message Input */}
       <div className="p-6 lg:p-8 bg-white/90 dark:bg-gray-800/90 backdrop-blur-lg border-t border-gray-200/60 dark:border-gray-700/60 shadow-lg">
         <div className="flex items-center space-x-4 w-full max-w-7xl mx-auto">
-          <Button variant="ghost" size="lg" className="rounded-full p-3 hover:bg-gray-100 dark:hover:bg-gray-700 transition-all duration-200 hover:scale-105">
+          {selectedImage && selectedImagePreview && (
+            <div className="flex items-center gap-3 p-2 border rounded-xl bg-white/70 dark:bg-gray-700/70">
+              <img src={selectedImagePreview} alt={selectedImage.name} className="w-12 h-12 object-cover rounded-md" />
+              <div className="max-w-[200px]">
+                <p className="text-sm font-medium truncate">{selectedImage.name}</p>
+                <p className="text-xs text-gray-500">Attached image</p>
+              </div>
+              <Button type="button" variant="ghost" size="sm" onClick={clearAttachedImage} title="Remove">
+                ✕
+              </Button>
+            </div>
+          )}
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept="image/*"
+            className="hidden"
+            onChange={handleImageSelected}
+          />
+          <Button
+            type="button"
+            onClick={() => fileInputRef.current?.click()}
+            variant="ghost"
+            size="lg"
+            className="rounded-full p-3 hover:bg-gray-100 dark:hover:bg-gray-700 transition-all duration-200 hover:scale-105"
+            title="Attach image"
+          >
             <Paperclip className="h-5 w-5 text-gray-600 dark:text-gray-300" />
           </Button>
           
@@ -629,10 +725,10 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
           
           <Button
             onClick={handleSendMessage}
-            disabled={!newMessage.trim()}
+            disabled={!newMessage.trim() && !selectedImage}
             size="lg"
             className={`rounded-full p-4 transition-all duration-200 ${
-              newMessage.trim() 
+              newMessage.trim() || selectedImage
                 ? 'bg-gradient-to-r from-blue-500 to-blue-600 hover:from-blue-600 hover:to-blue-700 text-white hover:scale-105 shadow-lg hover:shadow-xl' 
                 : 'bg-gray-200 dark:bg-gray-600 text-gray-400 cursor-not-allowed'
             }`}
