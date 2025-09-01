@@ -1,34 +1,22 @@
 // src/components/FamilyTreeVisualization1.tsx
-import React, { useState, useEffect, useCallback } from 'react';
-import {
-  ReactFlow,
-  Controls,
-  Background,
-  useNodesState,
-  useEdgesState,
-  Node,
-  Edge,
-  Position,
-  Handle,
-  ConnectionLineType,
-  MarkerType,
-  useNodes,
-  useEdges
-} from '@xyflow/react';
-import '@xyflow/react/dist/style.css';
-import { User } from '@/types';
-import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+import React, { useEffect, useRef, useState, useCallback } from "react";
+import { User } from "@/types";
 import { Badge } from "@/components/ui/badge";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
-import { getFamilyRelationships } from '@/lib/neo4j/family-tree';
-import { getUserPersonalizedFamilyTree, deriveExtendedRelationships } from '@/lib/neo4j/relationships';
-import { Heart, Crown, User as UserIcon, Users, Plus, Mail, Phone, Calendar, X } from "lucide-react";
+import { getFamilyRelationships } from "@/lib/neo4j/family-tree";
+import { getUserPersonalizedFamilyTree } from "@/lib/neo4j/relationships";
+import { Mail, ZoomIn, ZoomOut, Maximize, RotateCcw, Info } from "lucide-react";
+
+import cytoscape from "cytoscape";
+import elk from "cytoscape-elk";
+
+cytoscape.use(elk);
 
 interface FamilyMember {
   userId: string;
   name: string;
-  email: string;
-  status: string;
+  email?: string;
+  status?: string;
   relationship?: string;
   createdBy?: string;
   profilePicture?: string;
@@ -38,1355 +26,1468 @@ interface FamilyMember {
 interface CoreRelationship {
   source: string;
   target: string;
-  type: 'PARENTS_OF' | 'SIBLING' | 'MARRIED_TO';
+  type: "PARENTS_OF" | "SIBLING" | "MARRIED_TO";
   sourceName?: string;
   targetName?: string;
-  sourceGender?: string;
-  targetGender?: string;
 }
 
-interface SemanticRelationship {
+interface PersonalizedRelationship {
   source: string;
   target: string;
-  type: string;
+  type?: string;
   sourceName?: string;
   targetName?: string;
-  isExtended?: boolean;
 }
 
 interface FamilyTreeVisualizationProps {
   user: User;
   familyMembers: FamilyMember[];
-  viewMode?: 'personal' | 'all' | 'hyper';
-  level?: number;
+  viewMode?: "personal" | "all";
   minHeight?: string;
   showControls?: boolean;
-  defaultNodeRadius?: number;
-  defaultLineWidth?: number;
-  defaultZoom?: number;
 }
 
-// Enhanced compact family member node component with selection
-const FamilyMemberNode = ({ data, id, selected }: { data: any; id: string; selected?: boolean }) => {
-  const [isHovered, setIsHovered] = useState(false);
-
-  const getNodeColor = (isRoot?: boolean, gender?: string, isCurrentUser?: boolean) => {
-    if (isCurrentUser) return 'from-violet-500 via-purple-500 to-indigo-500';
-    if (isRoot) return 'from-amber-400 via-yellow-400 to-orange-400';
-    
-    if (gender === 'male') return 'from-blue-400 via-sky-400 to-cyan-400';
-    if (gender === 'female') return 'from-pink-400 via-rose-400 to-red-400';
-    return 'from-slate-400 via-gray-400 to-zinc-400';
-  };
-
-  const getRelationshipIcon = (relationship?: string, isRoot?: boolean, isCurrentUser?: boolean) => {
-    if (isCurrentUser) return <Crown className="w-3 h-3 text-yellow-200" />;
-    if (isRoot) return <Crown className="w-3 h-3 text-yellow-200" />;
-    
-    switch (relationship) {
-      case 'father':
-      case 'mother':
-        return <Users className="w-3 h-3 text-white" />;
-      case 'husband':
-      case 'wife':
-        return <Heart className="w-3 h-3 text-white" />;
-      default:
-        return <UserIcon className="w-3 h-3 text-white" />;
+const getCytoscapeStyles = () => [
+  {
+    selector: 'node[type="individual"]',
+    style: {
+      width: 100,
+      height: 100,
+      shape: "ellipse",
+      "background-image": "data(profileImage)",
+      "background-fit": "cover cover",
+      "background-opacity": 1,
+      "border-width": 4,
+      "border-color": "data(borderColor)",
+      "border-opacity": 1,
+      label: "data(displayName)",
+      "text-valign": "bottom",
+      "text-halign": "center",
+      "text-margin-y": 12,
+      "font-size": "14px",
+      "font-weight": "bold",
+      color: "#1f2937", // Darker font for better contrast
+      "text-wrap": "wrap",
+      "text-max-width": "120px",
+      "overlay-opacity": 0,
+      "transition-property": "border-width, background-color, width, height",
+      "transition-duration": 300,
+      // Add subtle shadow for depth
     }
-  };
-
-  const getBorderStyle = () => {
-    if (data.isSelected) return 'border-4 border-blue-500 shadow-2xl shadow-blue-300/60 ring-2 ring-blue-200';
-    if (selected) return 'border-3 border-blue-400 shadow-xl shadow-blue-200/50';
-    if (isHovered) return 'border-2 border-purple-300 shadow-lg shadow-purple-100/50';
-    return 'border border-slate-200/60 shadow-md';
-  };
-
-  const getStatusBadge = () => {
-    if (data.status === 'invited') {
-      return (
-        <div className="absolute -top-1 -right-1 bg-yellow-500 text-white text-[10px] px-1 py-0.5 rounded-full font-semibold shadow-sm animate-pulse">
-          !
-        </div>
-      );
+  },
+  {
+    selector: 'node.hover',
+    style: {
+      width: 110,
+      height: 110,
+      'border-width': 5,
+      'border-color': '#3b82f6',
+      'z-index': 999
     }
-    return null;
-  };
-
-  const isCurrentUser = data.userId === data.loginUserId;
-
-  return (
-    <div 
-      className={`group relative bg-white ${getBorderStyle()} rounded-xl p-2 w-[100px] h-[140px] flex flex-col justify-between transition-all duration-300 hover:scale-110 cursor-pointer backdrop-blur-sm animate-fadeIn ${
-        data.isSelected ? 'animate-pulse z-10' : ''
-      }`}
-      onMouseEnter={() => setIsHovered(true)}
-      onMouseLeave={() => setIsHovered(false)}
-      title={`${data.name}${data.relationship ? ` (${data.relationship})` : ''}${data.email ? ` - ${data.email}` : ''}`}
-    >
-      {/* Connection Handles - Smaller and more subtle */}
-      <Handle 
-        type="target" 
-        position={Position.Top} 
-        className="w-1.5 h-1.5 bg-gradient-to-r from-blue-400 to-purple-400 border border-white shadow-sm opacity-0 group-hover:opacity-100 transition-opacity" 
-      />
-      <Handle 
-        type="source" 
-        position={Position.Bottom} 
-        className="w-1.5 h-1.5 bg-gradient-to-r from-green-400 to-blue-400 border border-white shadow-sm opacity-0 group-hover:opacity-100 transition-opacity" 
-      />
-      <Handle 
-        type="target" 
-        position={Position.Left} 
-        className="w-1.5 h-1.5 bg-gradient-to-r from-red-400 to-pink-400 border border-white shadow-sm opacity-0 group-hover:opacity-100 transition-opacity" 
-      />
-      <Handle 
-        type="source" 
-        position={Position.Right} 
-        className="w-1.5 h-1.5 bg-gradient-to-r from-red-400 to-pink-400 border border-white shadow-sm opacity-0 group-hover:opacity-100 transition-opacity" 
-      />
-
-      {getStatusBadge()}
-
-      {/* Selection indicator */}
-      {data.isSelected && (
-        <div className="absolute -top-2 -right-2 w-5 h-5 bg-blue-500 text-white rounded-full flex items-center justify-center text-[10px] font-bold animate-bounce">
-          ✓
-        </div>
-      )}
-
-      <div className="flex flex-col items-center space-y-1">
-        {/* Compact Avatar */}
-        <div className={`w-10 h-10 bg-gradient-to-br ${getNodeColor(data.isRoot, data.gender, isCurrentUser)} rounded-full flex items-center justify-center shadow-lg ring-1 ring-white/80 ${
-          data.isSelected ? 'ring-3 ring-blue-300 animate-pulse' : ''
-        }`}>
-          {data.profilePicture ? (
-            <Avatar className="w-10 h-10">
-              <AvatarImage src={data.profilePicture} />
-              <AvatarFallback className="text-[10px] font-semibold text-white">
-                {data.name.split(' ').map((n: string) => n[0]).join('').toUpperCase()}
-              </AvatarFallback>
-            </Avatar>
-          ) : (
-            getRelationshipIcon(data.relationship, data.isRoot, isCurrentUser)
-          )}
-        </div>
-
-        {/* Compact Info */}
-        <div className="text-center space-y-0.5">
-          <div className="font-semibold text-slate-800 text-[10px] leading-tight truncate max-w-[90px]">{data.name}</div>
-          
-          {/* Compact Contact Info */}
-          {data.email && (
-            <div className="text-[9px] text-slate-500 truncate max-w-[90px]" title={data.email}>
-              {data.email.split('@')[0]}
-            </div>
-          )}
-
-          {/* Compact Relationship Badge */}
-          {data.relationship && !data.isRoot && !isCurrentUser && (
-            <Badge variant="secondary" className="text-[9px] px-1 py-0.5 h-auto">
-              {data.relationship.charAt(0).toUpperCase() + data.relationship.slice(1)}
-            </Badge>
-          )}
-          
-          {(data.isRoot || isCurrentUser) && (
-            <div className="inline-flex items-center text-[9px] font-semibold text-white px-1.5 py-0.5 rounded-full bg-gradient-to-r from-purple-500 to-indigo-500 shadow-sm">
-              <Crown className="w-2 h-2 mr-0.5" />
-              {isCurrentUser ? 'You' : 'Root'}
-            </div>
-          )}
-        </div>
-      </div>
-
-      {/* Compact Generation Indicator */}
-      <div className="absolute top-1 left-1 text-[9px] font-bold text-slate-400 bg-slate-100/80 px-1 py-0.5 rounded-full">
-        G{data.generation || 0}
-      </div>
-    </div>
-  );
-};
-
-const CoupleNode = ({ data, id, selected }: { data: any; id: string; selected?: boolean }) => {
-  const [isHovered, setIsHovered] = useState(false);
-
-  const member1 = data.member1;
-  const member2 = data.member2;
-
-  const getNodeColor = (member: any) => {
-    const isRoot = member.isRoot;
-    const gender = member.gender;
-    const isCurrentUser = member.userId === data.loginUserId;
-    if (isCurrentUser) return 'from-violet-500 via-purple-500 to-indigo-500';
-    if (isRoot) return 'from-amber-400 via-yellow-400 to-orange-400';
-    if (gender === 'male') return 'from-blue-400 via-sky-400 to-cyan-400';
-    if (gender === 'female') return 'from-pink-400 via-rose-400 to-red-400';
-    return 'from-slate-400 via-gray-400 to-zinc-400';
-  };
-
-  const getRelationshipIcon = (member: any) => {
-    const relationship = member.relationship;
-    const isRoot = member.isRoot;
-    const isCurrentUser = member.userId === data.loginUserId;
-    if (isCurrentUser) return <Crown className="w-3 h-3 text-yellow-200" />;
-    if (isRoot) return <Crown className="w-3 h-3 text-yellow-200" />;
-    switch (relationship) {
-      case 'father':
-      case 'mother':
-        return <Users className="w-3 h-3 text-white" />;
-      case 'husband':
-      case 'wife':
-        return <Heart className="w-3 h-3 text-white" />;
-      default:
-        return <UserIcon className="w-3 h-3 text-white" />;
+  },
+  {
+    selector: 'node[type="couple"]',
+    style: {
+      width: 240,
+      height: 130,
+      shape: "roundrectangle",
+      "background-color": "#ffffff",
+      "background-opacity": 0.9,
+      "border-width": 2,
+      "border-color": "#e5e7eb",
+      "border-opacity": 0.8,
+      label: "",
+      "overlay-opacity": 0,
     }
-  };
-
-  const getBorderStyle = () => {
-    if (data.isSelected) return 'border-4 border-blue-500 shadow-2xl shadow-blue-300/60 ring-2 ring-blue-200';
-    if (selected) return 'border-3 border-blue-400 shadow-xl shadow-blue-200/50';
-    if (isHovered) return 'border-2 border-purple-300 shadow-lg shadow-purple-100/50';
-    return 'border border-slate-200/60 shadow-md';
-  };
-
-  const getStatusBadge = (member: any) => {
-    if (member.status === 'invited') {
-      return (
-        <div className="absolute -top-1 bg-yellow-500 text-white text-[10px] px-1 py-0.5 rounded-full font-semibold shadow-sm animate-pulse">
-          !
-        </div>
-      );
+  },
+  {
+    selector: 'node[type="coupleMember"]',
+    style: {
+      width: 90,
+      height: 90,
+      shape: "ellipse",
+      "background-image": "data(profileImage)",
+      "background-fit": "cover cover",
+      "background-opacity": 1,
+      "border-width": 3,
+      "border-color": "data(borderColor)",
+      "border-opacity": 1,
+      label: "data(displayName)",
+      "text-valign": "bottom",
+      "text-halign": "center",
+      "text-margin-y": 8,
+      "font-size": "12px",
+      "font-weight": "bold",
+      color: "#1f2937",
+      "text-wrap": "wrap",
+      "text-max-width": "100px",
+      "overlay-opacity": 0,
+      "transition-property": "border-width, background-color, width, height",
+      "transition-duration": 300
     }
-    return null;
-  };
+  },
+  {
+    selector: "node.selected",
+    style: {
+      "border-width": 6,
+      "border-color": "#3b82f6",
+      "background-opacity": 1,
+    }
+  },
+  // MARRIAGE EDGES - Straight horizontal red lines
+  {
+    selector: 'edge[type="marriage"]',
+    style: {
+      width: 4,
+      "line-color": "#dc2626",
+      "curve-style": "straight",
+      "line-style": "solid",
+      // Hide marriage edges to match cards-with-heart visual in nodes
+      opacity: 0
+    }
+  },
+  {
+    selector: 'edge[type="divorced"]',
+    style: {
+      width: 4,
+      "line-color": "#6b7280",
+      "curve-style": "straight",
+      "line-style": "dashed",
+      opacity: 0.9,
+      "line-cap": "round",
+      label: "💔",
+      color: "#374151",
+      'text-background-color': '#ffffff',
+      'text-background-opacity': 0.95,
+      'text-background-padding': 4,
+      'text-background-shape': 'roundrectangle',
+      'font-size': 12
+    }
+  },
+  // PARENT-CHILD EDGES - Hidden, will use custom SVG overlay
+  {
+    selector: 'edge[type="parentChild"]',
+    style: {
+      opacity: 0, // Hide cytoscape edges, use custom SVG overlay
+    }
+  },
+  // SIBLING EDGES - Blue horizontal lines
+  {
+    selector: 'edge[type="sibling"]',
+    style: {
+      width: 3,
+      "line-color": "#2563eb",
+      "curve-style": "straight",
+      "line-style": "solid",
+      // Hide sibling connectors to match reference
+      opacity: 0
+    }
+  },
+  {
+    selector: 'edge[type="adopted"]',
+    style: {
+      width: 4,
+      "line-color": "#0ea5e9",
+      "curve-style": "unbundled-bezier",
+      "control-point-distances": "data(curveDistances)",
+      "control-point-weights": "data(curveWeights)",
+      "line-style": "dotted",
+      opacity: 1,
+      "line-cap": "round",
+      'target-arrow-shape': 'triangle',
+      'target-arrow-color': '#1e40af',
+      'arrow-scale': 1.2
+    }
+  },
+  {
+    selector: 'edge.showLabel',
+    style: {
+      label: 'data(relationship)',
+      color: '#1f2937',
+      'font-size': 11,
+      'font-weight': 'bold',
+      'text-background-color': '#ffffff',
+      'text-background-opacity': 0.95,
+      'text-background-padding': 6,
+      'text-background-shape': 'roundrectangle',
+      'text-border-color': '#d1d5db',
+      'text-border-width': 1,
+      'text-border-opacity': 1,
+      'text-outline-color': '#ffffff',
+      'text-outline-width': 2,
+      'text-margin-y': -8
+    }
+  }
+];
 
-  const isRoot = member1.isRoot || member2.isRoot;
-  const isCurrentUser1 = member1.userId === data.loginUserId;
-  const isCurrentUser2 = member2.userId === data.loginUserId;
-
-  return (
-    <div 
-      className={`group relative bg-white ${getBorderStyle()} rounded-xl p-2 w-[200px] h-[140px] flex flex-row items-center justify-between transition-all duration-300 hover:scale-110 cursor-pointer backdrop-blur-sm animate-fadeIn ${
-        data.isSelected ? 'animate-pulse z-10' : ''
-      }`}
-      onMouseEnter={() => setIsHovered(true)}
-      onMouseLeave={() => setIsHovered(false)}
-      title={`${member1.name} & ${member2.name}`}
-    >
-      {/* Connection Handles */}
-      <Handle 
-        type="target" 
-        position={Position.Top} 
-        id="left"
-        className="left-[25%] w-1.5 h-1.5 bg-gradient-to-r from-blue-400 to-purple-400 border border-white shadow-sm opacity-0 group-hover:opacity-100 transition-opacity" 
-      />
-      <Handle 
-        type="target" 
-        position={Position.Top} 
-        id="right"
-        className="left-[75%] w-1.5 h-1.5 bg-gradient-to-r from-blue-400 to-purple-400 border border-white shadow-sm opacity-0 group-hover:opacity-100 transition-opacity" 
-      />
-      <Handle 
-        type="source" 
-        position={Position.Bottom} 
-        id="children"
-        className="left-[50%] w-1.5 h-1.5 bg-gradient-to-r from-green-400 to-blue-400 border border-white shadow-sm opacity-0 group-hover:opacity-100 transition-opacity" 
-      />
-      <Handle 
-        type="target" 
-        position={Position.Left} 
-        className="w-1.5 h-1.5 bg-gradient-to-r from-red-400 to-pink-400 border border-white shadow-sm opacity-0 group-hover:opacity-100 transition-opacity" 
-      />
-      <Handle 
-        type="source" 
-        position={Position.Right} 
-        className="w-1.5 h-1.5 bg-gradient-to-r from-red-400 to-pink-400 border border-white shadow-sm opacity-0 group-hover:opacity-100 transition-opacity" 
-      />
-
-      {/* Left Member */}
-      <div className="flex flex-col items-center w-[45%] space-y-1 relative">
-        {getStatusBadge(member1)}
-        <div className={`w-10 h-10 bg-gradient-to-br ${getNodeColor(member1)} rounded-full flex items-center justify-center shadow-lg ring-1 ring-white/80 animate-spinSlow`}>
-          {member1.profilePicture ? (
-            <Avatar className="w-10 h-10">
-              <AvatarImage src={member1.profilePicture} />
-              <AvatarFallback className="text-[10px] font-semibold text-white">
-                {member1.name.split(' ').map((n: string) => n[0]).join('').toUpperCase()}
-              </AvatarFallback>
-            </Avatar>
-          ) : (
-            getRelationshipIcon(member1)
-          )}
-        </div>
-        <div className="text-center space-y-0.5">
-          <div className="font-semibold text-slate-800 text-[10px] leading-tight truncate max-w-[80px]">{member1.name}</div>
-          {member1.email && (
-            <div className="text-[9px] text-slate-500 truncate max-w-[80px]" title={member1.email}>
-              {member1.email.split('@')[0]}
-            </div>
-          )}
-          {isCurrentUser1 && (
-            <div className="inline-flex items-center text-[9px] font-semibold text-white px-1 py-0.5 rounded-full bg-gradient-to-r from-purple-500 to-indigo-500 shadow-sm">
-              <Crown className="w-2 h-2 mr-0.5" />
-              You
-            </div>
-          )}
-        </div>
-      </div>
-
-      {/* Heart Icon with animation */}
-      <Heart className="absolute top-[40%] left-1/2 transform -translate-x-1/2 -translate-y-1/2 w-4 h-4 text-pink-500 z-10 animate-heartBeat" fill="currentColor" />
-
-      {/* Right Member */}
-      <div className="flex flex-col items-center w-[45%] space-y-1 relative">
-        {getStatusBadge(member2)}
-        <div className={`w-10 h-10 bg-gradient-to-br ${getNodeColor(member2)} rounded-full flex items-center justify-center shadow-lg ring-1 ring-white/80 animate-spinSlow`}>
-          {member2.profilePicture ? (
-            <Avatar className="w-10 h-10">
-              <AvatarImage src={member2.profilePicture} />
-              <AvatarFallback className="text-[10px] font-semibold text-white">
-                {member2.name.split(' ').map((n: string) => n[0]).join('').toUpperCase()}
-              </AvatarFallback>
-            </Avatar>
-          ) : (
-            getRelationshipIcon(member2)
-          )}
-        </div>
-        <div className="text-center space-y-0.5">
-          <div className="font-semibold text-slate-800 text-[10px] leading-tight truncate max-w-[80px]">{member2.name}</div>
-          {member2.email && (
-            <div className="text-[9px] text-slate-500 truncate max-w-[80px]" title={member2.email}>
-              {member2.email.split('@')[0]}
-            </div>
-          )}
-          {isCurrentUser2 && (
-            <div className="inline-flex items-center text-[9px] font-semibold text-white px-1 py-0.5 rounded-full bg-gradient-to-r from-purple-500 to-indigo-500 shadow-sm">
-              <Crown className="w-2 h-2 mr-0.5" />
-              You
-            </div>
-          )}
-        </div>
-      </div>
-
-      {/* Compact Generation Indicator */}
-      <div className="absolute top-1 left-1 text-[9px] font-bold text-slate-400 bg-slate-100/80 px-1 py-0.5 rounded-full">
-        G{data.generation || 0}
-      </div>
-    </div>
-  );
-};
-
-// Enhanced Parent-Child Edge Component with increased curvature and more animation
-const ParentChildEdge = ({ id, sourceX, sourceY, targetX, targetY, style = {}, source, target, data }: any) => {
-  // Increased curve offset for more distinct connections
-  const deltaX = targetX - sourceX;
-  const deltaY = targetY - sourceY;
-  const controlPoint1X = sourceX + deltaX * 0.1;
-  const controlPoint1Y = sourceY + deltaY * 0.9;
-  const controlPoint2X = sourceX + deltaX * 0.9;
-  const controlPoint2Y = sourceY + deltaY * 0.1;
-  
-  const edgePath = `M ${sourceX},${sourceY} C ${controlPoint1X},${controlPoint1Y} ${controlPoint2X},${controlPoint2Y} ${targetX},${targetY}`;
-  
-  return (
-    <>
-      <defs>
-        <linearGradient id={`parent-gradient-${id}`} x1="0%" y1="0%" x2="0%" y2="100%">
-          <stop offset="0%" stopColor="#3b82f6">
-            <animate attributeName="stop-color" values="#3b82f6;#06b6d4;#3b82f6" dur="4s" repeatCount="indefinite" />
-          </stop>
-          <stop offset="100%" stopColor="#1d4ed8">
-            <animate attributeName="stop-color" values="#1d4ed8;#1e40af;#1d4ed8" dur="3s" repeatCount="indefinite" />
-          </stop>
-        </linearGradient>
-        
-        <marker id={`parent-arrow-${id}`} markerWidth="6" markerHeight="6" refX="5" refY="3" orient="auto" markerUnits="strokeWidth">
-          <polygon points="0,0 0,6 6,3" fill="#1d4ed8" />
-        </marker>
-      </defs>
-      
-      <path
-        id={id}
-        style={{
-          ...style,
-          strokeWidth: 2,
-          stroke: `url(#parent-gradient-${id})`,
-          strokeLinecap: 'round',
-          strokeDasharray: '6,3',
-        }}
-        className="react-flow__edge-path animate-dash"
-        d={edgePath}
-        markerEnd={`url(#parent-arrow-${id})`}
-      >
-        <animate attributeName="stroke-dashoffset" values="0;-18;0" dur="4s" repeatCount="indefinite" />
-      </path>
-    </>
-  );
-};
-
-// Enhanced Sibling Edge Component with more animations
-const SiblingEdge = ({ id, sourceX, sourceY, targetX, targetY, style = {} }: any) => {
-  const centerX = (sourceX + targetX) / 2;
-  const centerY = (sourceY + targetY) / 2 - 30;
-  
-  const edgePath = `M ${sourceX},${sourceY} Q ${centerX},${centerY} ${targetX},${targetY}`;
-  
-  return (
-    <>
-      <defs>
-        <linearGradient id={`sibling-gradient-${id}`} x1="0%" y1="0%" x2="100%" y2="0%">
-          <stop offset="0%" stopColor="#8b5cf6">
-            <animate attributeName="stop-color" values="#8b5cf6;#a855f7;#8b5cf6" dur="3s" repeatCount="indefinite" />
-          </stop>
-          <stop offset="50%" stopColor="#a855f7">
-            <animate attributeName="stop-color" values="#a855f7;#9333ea;#a855f7" dur="2s" repeatCount="indefinite" />
-          </stop>
-          <stop offset="100%" stopColor="#8b5cf6">
-            <animate attributeName="stop-color" values="#8b5cf6;#a855f7;#8b5cf6" dur="3s" repeatCount="indefinite" />
-          </stop>
-        </linearGradient>
-      </defs>
-      
-      <path
-        id={id}
-        style={{
-          ...style,
-          strokeWidth: 2,
-          stroke: `url(#sibling-gradient-${id})`,
-          strokeDasharray: '8,4',
-          strokeLinecap: 'round',
-        }}
-        className="react-flow__edge-path animate-dash"
-        d={edgePath}
-      >
-        <animate attributeName="stroke-dashoffset" values="0;-24;0" dur="3s" repeatCount="indefinite" />
-      </path>
-      
-      <text
-        x={centerX}
-        y={centerY - 5}
-        textAnchor="middle"
-        style={{ fontSize: '14px', fill: '#8b5cf6', fontWeight: 'bold' }}
-        className="pointer-events-none animate-bounce"
-      >
-        👫
-      </text>
-    </>
-  );
-};
-
-const nodeTypes = {
-  familyMember: FamilyMemberNode,
-  couple: CoupleNode,
-};
-
-const edgeTypes = {
-  parentChild: ParentChildEdge,
-  sibling: SiblingEdge,
-};
-
-// Enhanced position calculation with better spacing and alignment
-const calculateNodePositions = (
-  members: FamilyMember[], 
-  coreRelationships: CoreRelationship[], 
+const createCytoscapeElements = (
+  members: FamilyMember[],
+  relationships: CoreRelationship[],
   createdByUserId: string,
   loggedInUserId: string
-): { nodes: Node[]; edges: Edge[] } => {
+) => {
+  const elements: cytoscape.ElementDefinition[] = [];
   const nodeMap = new Map<string, FamilyMember>();
-  members.forEach(member => nodeMap.set(member.userId, member));
-  
-  // Identify couples
+  members.forEach((m) => nodeMap.set(m.userId, m));
+
   const spouseMap = new Map<string, string[]>();
-  coreRelationships.forEach(rel => {
-    if (rel.type === 'MARRIED_TO') {
-      if (!spouseMap.has(rel.source)) spouseMap.set(rel.source, []);
-      spouseMap.get(rel.source)!.push(rel.target);
-      if (!spouseMap.has(rel.target)) spouseMap.set(rel.target, []);
-      spouseMap.get(rel.target)!.push(rel.source);
+  relationships.forEach((r) => {
+    if (r.type === "MARRIED_TO") {
+      if (!spouseMap.has(r.source)) spouseMap.set(r.source, []);
+      spouseMap.get(r.source)!.push(r.target);
+      if (!spouseMap.has(r.target)) spouseMap.set(r.target, []);
+      spouseMap.get(r.target)!.push(r.source);
     }
   });
 
-  const couples = new Map<string, {member1: string; member2: string}>();
+  const couples = new Map<string, { member1: string; member2: string }>();
+  spouseMap.forEach((arr, id) => {
+    arr.forEach((s) => {
+      const sorted = [id, s].sort();
+      const key = sorted.join("-");
+      if (!couples.has(key)) couples.set(key, { member1: sorted[0], member2: sorted[1] });
+    });
+  });
+
   const coupleMap = new Map<string, string>();
-  spouseMap.forEach((spouses, id) => {
-    spouses.forEach(spouse => {
-      const sortedIds = [id, spouse].sort();
-      const pair = sortedIds.join('-');
-      if (!couples.has(pair)) {
-        let m1 = nodeMap.get(sortedIds[0])!;
-        let m2 = nodeMap.get(sortedIds[1])!;
-        // Sort by gender: male left if possible
-        if ((m2.gender === 'male' && m1.gender !== 'male') || (m1.gender !== 'male' && m2.gender === 'female')) {
-          [m1, m2] = [m2, m1];
-        }
-        couples.set(pair, {member1: m1.userId, member2: m2.userId});
-      }
-      coupleMap.set(id, pair);
-      coupleMap.set(spouse, pair);
-    });
+  couples.forEach((c, id) => {
+    coupleMap.set(c.member1, id);
+    coupleMap.set(c.member2, id);
   });
 
-  const getGroupId = (id: string) => coupleMap.get(id) || id;
-  const isCouple = (gid: string) => couples.has(gid);
-  const getNodeWidth = (gid: string) => isCouple(gid) ? 200 : 100;
-
-  const positions = new Map<string, { x: number; y: number; generation: number }>();
-  const processedGroups = new Set<string>();
-  
-  // Improved spacing constants for better readability and alignment
-  const GENERATION_SPACING = 250;
-  const BASE_SPACING = 220;
-  const MIN_NODE_SPACING = 180;
-  
-  // Start with root group
-  const rootGroup = getGroupId(createdByUserId);
-  positions.set(rootGroup, { x: 0, y: 0, generation: 0 });
-  
-  // Build relationship maps (individual level)
-  const parentChildMap = new Map<string, string[]>();
-  const childParentMap = new Map<string, string[]>();
-  const siblingMap = new Map<string, string[]>();
-  
-  coreRelationships.forEach(rel => {
-    switch (rel.type) {
-      case 'PARENTS_OF':
-        if (!parentChildMap.has(rel.source)) parentChildMap.set(rel.source, []);
-        parentChildMap.get(rel.source)!.push(rel.target);
-        
-        if (!childParentMap.has(rel.target)) childParentMap.set(rel.target, []);
-        childParentMap.get(rel.target)!.push(rel.source);
-        break;
-        
-      case 'SIBLING':
-        if (!siblingMap.has(rel.source)) siblingMap.set(rel.source, []);
-        siblingMap.get(rel.source)!.push(rel.target);
-        if (!siblingMap.has(rel.target)) siblingMap.set(rel.target, []);
-        siblingMap.get(rel.target)!.push(rel.source);
-        break;
-    }
-  });
-  
-  const findFreePosition = (preferredX: number, preferredY: number): { x: number; y: number } => {
-    let testX = preferredX;
-    let testY = preferredY;
-    let attempts = 0;
-    const maxAttempts = 20;
-
-    while (attempts < maxAttempts) {
-      const hasCollision = Array.from(positions.values()).some(pos => {
-        const distance = Math.sqrt(
-          Math.pow(pos.x - testX, 2) + Math.pow(pos.y - testY, 2)
-        );
-        return distance < MIN_NODE_SPACING;
-      });
-
-      if (!hasCollision) {
-        return { x: testX, y: testY };
-      }
-
-      const angle = (attempts * 45) * (Math.PI / 180);
-      const radius = 100 * (1 + Math.floor(attempts / 8));
-      testX = preferredX + Math.cos(angle) * radius;
-      testY = preferredY + Math.sin(angle) * radius;
-      attempts++;
-    }
-
-    return { x: testX, y: testY };
-  };
-  
-  const queue: Array<{ groupId: string; generation: number }> = [
-    { groupId: rootGroup, generation: 0 }
-  ];
-  
-  while (queue.length > 0) {
-    const { groupId, generation } = queue.shift()!;
-    
-    if (processedGroups.has(groupId)) continue;
-    processedGroups.add(groupId);
-    
-    const currentPos = positions.get(groupId)!;
-    const members = isCouple(groupId) ? [couples.get(groupId)!.member1, couples.get(groupId)!.member2] : [groupId];
-    
-    // Position parents
-    let allParents: string[] = [];
-    members.forEach(m => {
-      const parents = childParentMap.get(m) || [];
-      allParents = [...new Set([...allParents, ...parents])];
-    });
-    if (allParents.length > 0) {
-      let totalSpan = 0;
-      allParents.forEach(pId => totalSpan += getNodeWidth(getGroupId(pId)));
-      totalSpan += (allParents.length - 1) * BASE_SPACING;
-      let startX = currentPos.x - totalSpan / 2;
-      allParents.forEach((parentId) => {
-        const parentGroup = getGroupId(parentId);
-        if (!positions.has(parentGroup)) {
-          const parentGen = generation - 1;
-          const thisWidth = getNodeWidth(parentGroup);
-          const preferredX = startX + thisWidth / 2;
-          const freePos = findFreePosition(preferredX, parentGen * GENERATION_SPACING);
-          positions.set(parentGroup, { x: freePos.x, y: freePos.y, generation: parentGen });
-          queue.push({ groupId: parentGroup, generation: parentGen });
-          startX += thisWidth + BASE_SPACING;
-        }
-      });
-    }
-    
-    // Position children
-    let allChildren: string[] = [];
-    members.forEach(m => {
-      const children = parentChildMap.get(m) || [];
-      allChildren = [...new Set([...allChildren, ...children])];
-    });
-    if (allChildren.length > 0) {
-      let totalSpan = 0;
-      allChildren.forEach(cId => totalSpan += getNodeWidth(getGroupId(cId)));
-      totalSpan += (allChildren.length - 1) * BASE_SPACING;
-      let startX = currentPos.x - totalSpan / 2;
-      allChildren.forEach((childId) => {
-        const childGroup = getGroupId(childId);
-        if (!positions.has(childGroup)) {
-          const childGen = generation + 1;
-          const thisWidth = getNodeWidth(childGroup);
-          const preferredX = startX + thisWidth / 2;
-          const freePos = findFreePosition(preferredX, childGen * GENERATION_SPACING);
-          positions.set(childGroup, { x: freePos.x, y: freePos.y, generation: childGen });
-          queue.push({ groupId: childGroup, generation: childGen });
-          startX += thisWidth + BASE_SPACING;
-        }
-      });
-    }
-    
-    // Position siblings
-    let allSiblings: string[] = [];
-    members.forEach(m => {
-      const sibs = siblingMap.get(m) || [];
-      allSiblings = [...new Set([...allSiblings, ...sibs.filter(s => !members.includes(s))])];
-    });
-    if (allSiblings.length > 0) {
-      let totalSpan = 0;
-      allSiblings.forEach(sId => totalSpan += getNodeWidth(getGroupId(sId)));
-      totalSpan += (allSiblings.length - 1) * BASE_SPACING;
-      let startX = currentPos.x - totalSpan / 2;
-      allSiblings.forEach((sibId, index) => {
-        const sibGroup = getGroupId(sibId);
-        if (!positions.has(sibGroup)) {
-          const thisWidth = getNodeWidth(sibGroup);
-          const preferredX = startX + thisWidth / 2 + (index % 2 === 0 ? BASE_SPACING : -BASE_SPACING);
-          const freePos = findFreePosition(preferredX, currentPos.y);
-          positions.set(sibGroup, { x: freePos.x, y: freePos.y, generation });
-          queue.push({ groupId: sibGroup, generation });
-          startX += thisWidth + BASE_SPACING;
-        }
-      });
-    }
-  }
-  
-  // Create nodes
-  const nodes: Node[] = [];
-  positions.forEach((pos, groupId) => {
-    if (isCouple(groupId)) {
-      const {member1: m1Id, member2: m2Id} = couples.get(groupId)!;
-      const m1 = nodeMap.get(m1Id)!;
-      const m2 = nodeMap.get(m2Id)!;
-      nodes.push({
-        id: groupId,
-        type: 'couple',
-        position: { x: pos.x + 600, y: pos.y + 300 },
-        data: {
-          member1: { ...m1, userId: m1Id, isRoot: m1Id === createdByUserId, generation: pos.generation, loginUserId: loggedInUserId, isSelected: false },
-          member2: { ...m2, userId: m2Id, isRoot: m2Id === createdByUserId, generation: pos.generation, loginUserId: loggedInUserId, isSelected: false },
-          isSelected: false
-        }
-      });
-    } else {
-      const m = nodeMap.get(groupId)!;
-      nodes.push({
-        id: groupId,
-        type: 'familyMember',
-        position: { x: pos.x + 600, y: pos.y + 300 },
-        data: { ...m, isRoot: groupId === createdByUserId, generation: pos.generation, loginUserId: loggedInUserId, isSelected: false }
-      });
-    }
-  });
-  
-  // Create edges
-  const edges: Edge[] = [];
-  const edgeSet = new Set<string>();
-  
-  coreRelationships.forEach(rel => {
-    if (rel.type === 'MARRIED_TO') return;
-    
-    const sourceGroup = getGroupId(rel.source);
-    const targetGroup = getGroupId(rel.target);
-    if (sourceGroup === targetGroup) return;
-    
-    let edgeId = `${rel.type}-${rel.source}-${rel.target}`;
-    if (edgeSet.has(edgeId)) return;
-    
-    const edge: Edge = {
-      id: edgeId,
-      source: sourceGroup,
-      target: targetGroup,
-      type: rel.type === 'PARENTS_OF' ? 'parentChild' : 'sibling',
-      animated: true,
-      style: { strokeWidth: 2 },
-      data: {
-        relationship: rel.type,
-        sourceName: rel.sourceName,
-        targetName: rel.targetName
-      }
+  // Enhanced color scheme with better contrast and visual hierarchy
+  const safeColor = (member?: FamilyMember, isRoot = false, isCurrent = false) => {
+    if (isCurrent) return { 
+      bgColor: "#fbbf24", 
+      gradientColors: "#fbbf24 #f59e0b", 
+      borderColor: "#d97706" 
     };
-    
-    if (isCouple(sourceGroup)) {
-      edge.sourceHandle = 'children';
-    }
-    
-    if (isCouple(targetGroup)) {
-      const {member1, member2} = couples.get(targetGroup)!;
-      edge.targetHandle = rel.target === member1 ? 'left' : 'right';
-    }
-    
-    if (rel.type === 'SIBLING') {
-      const sorted = [sourceGroup, targetGroup].sort().join('-');
-      if (edgeSet.has(sorted)) return;
-      edge.id = `sibling-${sorted}`;
-      edgeSet.add(sorted);
-    } else {
-      edgeSet.add(edgeId);
-    }
-    
-    edges.push(edge);
-  });
-  
-  return { nodes, edges };
-};
+    if (isRoot) return { 
+      bgColor: "#f59e0b", 
+      gradientColors: "#f59e0b #f97316", 
+      borderColor: "#ea580c" 
+    };
+    if (!member) return { 
+      bgColor: "#e5e7eb", 
+      gradientColors: "#e5e7eb #d1d5db", 
+      borderColor: "#9ca3af" 
+    };
+    if (member.gender === "male") return { 
+      bgColor: "#3b82f6", 
+      gradientColors: "#3b82f6 #1d4ed8", 
+      borderColor: "#1e40af" 
+    };
+    if (member.gender === "female") return { 
+      bgColor: "#ec4899", 
+      gradientColors: "#ec4899 #be185d", 
+      borderColor: "#be185d" 
+    };
+    return { 
+      bgColor: "#8b5cf6", 
+      gradientColors: "#8b5cf6 #7c3aed", 
+      borderColor: "#6d28d9" 
+    };
+  };
 
-// Relationship calculation function
-const calculateRelationship = (
-  person1Id: string, 
-  person2Id: string, 
-  coreRelationships: CoreRelationship[], 
-  familyMembers: FamilyMember[]
-): string => {
-  const person1 = familyMembers.find(m => m.userId === person1Id);
-  const person2 = familyMembers.find(m => m.userId === person2Id);
-  
-  if (!person1 || !person2) return 'Unknown relationship';
-
-  // Build relationship maps for analysis
-  const parentChildMap = new Map<string, string[]>();
-  const childParentMap = new Map<string, string[]>();
-  const spouseMap = new Map<string, string[]>();
-  const siblingMap = new Map<string, string[]>();
-  
-  coreRelationships.forEach(rel => {
-    switch (rel.type) {
-      case 'PARENTS_OF':
-        if (!parentChildMap.has(rel.source)) parentChildMap.set(rel.source, []);
-        parentChildMap.get(rel.source)!.push(rel.target);
-        
-        if (!childParentMap.has(rel.target)) childParentMap.set(rel.target, []);
-        childParentMap.get(rel.target)!.push(rel.source);
-        break;
-        
-      case 'MARRIED_TO':
-        if (!spouseMap.has(rel.source)) spouseMap.set(rel.source, []);
-        spouseMap.get(rel.source)!.push(rel.target);
-        if (!spouseMap.has(rel.target)) spouseMap.set(rel.target, []);
-        spouseMap.get(rel.target)!.push(rel.source);
-        break;
-        
-      case 'SIBLING':
-        if (!siblingMap.has(rel.source)) siblingMap.set(rel.source, []);
-        siblingMap.get(rel.source)!.push(rel.target);
-        if (!siblingMap.has(rel.target)) siblingMap.set(rel.target, []);
-        siblingMap.get(rel.target)!.push(rel.source);
-        break;
-    }
-  });
-
-  // Check direct relationships first
-  if (spouseMap.get(person1Id)?.includes(person2Id)) {
-    return `${person1.name} and ${person2.name} are married to each other`;
-  }
-  
-  if (parentChildMap.get(person1Id)?.includes(person2Id)) {
-    return `${person1.name} is the parent of ${person2.name}`;
-  }
-  
-  if (childParentMap.get(person1Id)?.includes(person2Id)) {
-    return `${person1.name} is the child of ${person2.name}`;
-  }
-  
-  if (siblingMap.get(person1Id)?.includes(person2Id)) {
-    return `${person1.name} and ${person2.name} are siblings`;
-  }
-
-  // Check for extended relationships using BFS
-  const visited = new Set<string>();
-  const queue: Array<{id: string, path: string[], relationship: string}> = [
-    {id: person1Id, path: [person1Id], relationship: 'self'}
-  ];
-  
-  while (queue.length > 0) {
-    const current = queue.shift()!;
-    
-    if (visited.has(current.id)) continue;
-    visited.add(current.id);
-    
-    if (current.id === person2Id && current.path.length > 1) {
-      // Found the target, analyze the path
-      return analyzeRelationshipPath(current.path, familyMembers, coreRelationships);
+  // Create default avatar based on gender and initials
+  const createDefaultAvatar = (member: FamilyMember): string => {
+    if (member.profilePicture && member.profilePicture !== "/placeholder.svg") {
+      return member.profilePicture;
     }
     
-    if (current.path.length > 6) continue; // Limit search depth
+    // Create a simple SVG avatar with initials
+    const initials = member.name.split(' ').map(n => n[0]).join('').substring(0, 2).toUpperCase();
+    const colors = safeColor(member);
     
-    // Add connected people to queue
-    const connections = [
-      ...(parentChildMap.get(current.id) || []),
-      ...(childParentMap.get(current.id) || []),
-      ...(spouseMap.get(current.id) || []),
-      ...(siblingMap.get(current.id) || [])
-    ];
+    const svg = `
+      <svg width="100" height="100" viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg">
+        <defs>
+          <linearGradient id="grad-${member.userId}" x1="0%" y1="0%" x2="100%" y2="100%">
+            <stop offset="0%" style="stop-color:${colors.bgColor};stop-opacity:1" />
+            <stop offset="100%" style="stop-color:${colors.borderColor};stop-opacity:1" />
+          </linearGradient>
+        </defs>
+        <circle cx="50" cy="50" r="48" fill="url(#grad-${member.userId})" stroke="${colors.borderColor}" stroke-width="2"/>
+        <text x="50" y="60" font-family="Arial, sans-serif" font-size="24" font-weight="bold" fill="white" text-anchor="middle">${initials}</text>
+      </svg>
+    `;
     
-    connections.forEach(connectedId => {
-      if (!visited.has(connectedId)) {
-        queue.push({
-          id: connectedId,
-          path: [...current.path, connectedId],
-          relationship: 'extended'
-        });
+    return `data:image/svg+xml;base64,${btoa(svg)}`;
+  };
+
+  const processed = new Set<string>();
+
+  couples.forEach((couple, coupleId) => {
+    const m1 = nodeMap.get(couple.member1);
+    const m2 = nodeMap.get(couple.member2);
+    if (!m1 || !m2) return;
+
+    elements.push({
+      data: { 
+        id: coupleId, 
+        type: "couple", 
+        bgColor: "#ffffff", 
+        gradientColors: "#ffffff #f8fafc", 
+        borderColor: "#e2e8f0" 
       }
     });
-  }
-  
-  return `${person1.name} and ${person2.name} appear to be distantly related or not directly connected`;
+
+    [m1, m2].forEach((m) => {
+      const isRoot = m.userId === createdByUserId;
+      const isCurrent = m.userId === loggedInUserId;
+      const colors = safeColor(m, isRoot, isCurrent);
+      const displayName = m.name.length > 12 ? m.name.substring(0, 12) + "..." : m.name;
+      elements.push({
+        data: {
+          id: `${coupleId}_${m.userId}`,
+          parent: coupleId,
+          type: "coupleMember",
+          originalId: m.userId,
+          displayName,
+          fullName: m.name,
+          email: m.email || "",
+          status: m.status || "",
+          relationship: m.relationship || "",
+          gender: m.gender || "",
+          isRoot,
+          isCurrent,
+          ...colors,
+          profileImage: createDefaultAvatar(m)
+        }
+      });
+      processed.add(m.userId);
+    });
+  });
+
+  members.forEach((m) => {
+    if (processed.has(m.userId)) return;
+    const isRoot = m.userId === createdByUserId;
+    const isCurrent = m.userId === loggedInUserId;
+    const colors = safeColor(m, isRoot, isCurrent);
+    let displayName = m.name.length > 15 ? m.name.substring(0, 15) + "..." : m.name;
+    if (isCurrent) displayName = `👑 ${displayName}`;
+    elements.push({
+      data: {
+        id: m.userId,
+        type: "individual",
+        displayName,
+        fullName: m.name,
+        email: m.email || "",
+        status: m.status || "",
+        relationship: m.relationship || "",
+        gender: m.gender || "",
+        isRoot,
+        isCurrent,
+        ...colors,
+        profileImage: createDefaultAvatar(m)
+      }
+    });
+  });
+
+  const parentEdgeSet = new Set<string>();
+
+  relationships.forEach((rel) => {
+    let sourceGroup = coupleMap.get(rel.source) || rel.source;
+    const targetGroup = coupleMap.get(rel.target) || rel.target;
+    if (sourceGroup === targetGroup && rel.type === "MARRIED_TO") return;
+    
+    const raw = String(rel.type || '').toUpperCase();
+    let type: 'marriage' | 'divorced' | 'parentChild' | 'adopted' | 'sibling' = 'sibling';
+    
+    if (raw === 'MARRIED_TO' || raw === 'MARRIAGE') type = 'marriage';
+    else if (raw === 'DIVORCED' || raw === 'DIVORCED_FROM' || raw === 'DIVORCED_TO') type = 'divorced';
+    else if (raw === 'PARENTS_OF') type = 'parentChild';
+    else if (raw === 'ADOPTED_PARENTS_OF' || raw === 'ADOPTED_OF' || raw === 'ADOPTED') type = 'adopted';
+
+    if (rel.type === "PARENTS_OF") {
+      const otherSpouses = spouseMap.get(rel.source) || [];
+      if (otherSpouses.length > 0) {
+        const coupleId = coupleMap.get(rel.source);
+        if (coupleId) {
+          sourceGroup = coupleId;
+        }
+      }
+      const key = `${sourceGroup}->${targetGroup}`;
+      if (parentEdgeSet.has(key)) return;
+      parentEdgeSet.add(key);
+    }
+
+    let sourceName = rel.sourceName || "";
+    if (type === "parentChild" && sourceGroup !== rel.source) {
+      const parts = String(sourceGroup).split("-");
+      if (parts.length === 2) {
+        const p1 = nodeMap.get(parts[0]);
+        const p2 = nodeMap.get(parts[1]);
+        const n1 = p1?.name || parts[0];
+        const n2 = p2?.name || parts[1];
+        sourceName = `${n1} & ${n2}`;
+      }
+    }
+
+    elements.push({
+      data: {
+        id: `${type}_${sourceGroup}_${targetGroup}`,
+        source: sourceGroup,
+        target: targetGroup,
+        type,
+        relationship: rel.type,
+        sourceName,
+        targetName: rel.targetName || "",
+        curveDistances: [0, 0, 0],
+        curveWeights: [0.1, 0.65, 0.95],
+        edgeDash: [0, 0],
+        lineStyle: "solid",
+        edgeWidth: type === 'parentChild' ? 4 : 3,
+        edgeColor: type === 'parentChild' ? '#00bfff' : (type === 'adopted' ? '#0ea5e9' : (type === 'marriage' ? '#dc2626' : '#2563eb'))
+      }
+    });
+  });
+
+  return elements;
 };
 
-const analyzeRelationshipPath = (
-  path: string[], 
-  familyMembers: FamilyMember[], 
-  coreRelationships: CoreRelationship[]
-): string => {
-  if (path.length < 2) return 'No relationship';
-  
-  const person1 = familyMembers.find(m => m.userId === path[0]);
-  const person2 = familyMembers.find(m => m.userId === path[path.length - 1]);
-  
-  if (!person1 || !person2) return 'Unknown relationship';
-  
-  // Simplified relationship analysis based on path length and connections
-  if (path.length === 3) {
-    // Could be grandparent-grandchild, aunt/uncle-niece/nephew, etc.
-    return `${person1.name} and ${person2.name} are likely grandparent-grandchild or aunt/uncle-niece/nephew`;
-  } else if (path.length === 4) {
-    return `${person1.name} and ${person2.name} are likely cousins or great-grandparent-great-grandchild`;
-  } else if (path.length > 4) {
-    return `${person1.name} and ${person2.name} are distantly related (${path.length - 1} degrees of separation)`;
+// Enhanced ELK layout options for better hierarchy alignment
+const elkOptions: cytoscape.LayoutOptions = {
+  name: "elk",
+  elk: {
+    algorithm: "org.eclipse.elk.layered",
+    "org.eclipse.elk.direction": "DOWN",
+    "org.eclipse.elk.spacing.nodeNode": 100, // Increased horizontal spacing
+    "org.eclipse.elk.layered.spacing.nodeNodeBetweenLayers": 150, // Increased vertical spacing between generations
+    "org.eclipse.elk.spacing.edgeNode": 50,
+    "org.eclipse.elk.spacing.edgeEdge": 30,
+    "org.eclipse.elk.layered.crossingMinimization.strategy": "LAYER_SWEEP",
+    "org.eclipse.elk.layered.nodePlacement.strategy": "NETWORK_SIMPLEX",
+    "org.eclipse.elk.layered.cycleBreaking.strategy": "GREEDY",
+    "org.eclipse.elk.insideSelfLoops.activate": true,
+    "org.eclipse.elk.separateConnectedComponents": true,
+    "org.eclipse.elk.spacing.componentComponent": 120,
+    // Additional options for better centering
+    "org.eclipse.elk.alignment": "CENTER",
+    "org.eclipse.elk.layered.unnecessaryBendpoints": false,
+    "org.eclipse.elk.layered.spacing.edgeNodeBetweenLayers": 40
   }
-  
-  return `${person1.name} and ${person2.name} are related through the family tree`;
 };
 
-const FamilyTreeVisualization: React.FC<FamilyTreeVisualizationProps> = ({ 
-  user, 
+const FamilyTreeVisualization: React.FC<FamilyTreeVisualizationProps> = ({
+  user,
   familyMembers,
-  viewMode = 'personal',
-  minHeight = '600px',
+  viewMode = "personal",
+  minHeight = "600px",
   showControls = true
 }) => {
+  const containerRef = useRef<HTMLDivElement>(null);
+  const cyRef = useRef<cytoscape.Core | null>(null);
+  const svgRef = useRef<SVGSVGElement>(null);
+  const [nodePopup, setNodePopup] = useState<{
+    id: string;
+    x: number;
+    y: number;
+    data: FamilyMember | null;
+    isCoupleMember?: boolean;
+  } | null>(null);
+
   const [coreRelationships, setCoreRelationships] = useState<CoreRelationship[]>([]);
   const [isLoading, setIsLoading] = useState(true);
-  const [selectedEdge, setSelectedEdge] = useState<Edge | null>(null);
-  const [relationshipDetailsOpen, setRelationshipDetailsOpen] = useState(false);
   const [selectedNodes, setSelectedNodes] = useState<string[]>([]);
   const [nodeDetailsOpen, setNodeDetailsOpen] = useState(false);
   const [relationshipAnalysisOpen, setRelationshipAnalysisOpen] = useState(false);
-  const [calculatedRelationship, setCalculatedRelationship] = useState<string>('');
-  const [selectedCouple, setSelectedCouple] = useState<string | null>(null);
-  const [coupleDetailsOpen, setCoupleDetailsOpen] = useState(false);
-  
-  // Calculate nodes and edges
-  const { nodes: calculatedNodes, edges: calculatedEdges } = React.useMemo(() => {
-    if (!coreRelationships.length || !familyMembers.length) {
-      return { nodes: [], edges: [] };
-    }
+  const [calculatedRelationship, setCalculatedRelationship] = useState<string>("");
+  const [selectedEdge, setSelectedEdge] = useState<cytoscape.EdgeSingular | null>(null);
+  const [relationshipDetailsOpen, setRelationshipDetailsOpen] = useState(false);
+  const [selectionMode, setSelectionMode] = useState<"single" | "pair">("pair");
+  const [activeMemberId, setActiveMemberId] = useState<string | null>(null);
+  const [showLegend, setShowLegend] = useState(true);
+
+  // Enhanced edge styling with better defaults
+  const [edgeCurvature, setEdgeCurvature] = useState<number>(60);
+  const [parentChildColor, setParentChildColor] = useState<string>("#20b2aa"); // Teal color like reference
+  const [marriageColor, setMarriageColor] = useState<string>("#dc2626");
+  const [siblingColor, setSiblingColor] = useState<string>("#2563eb");
+
+  // Custom SVG edge rendering for perfect curved dotted lines with flowing animation
+  const renderCustomEdges = useCallback(() => {
+    if (!cyRef.current || !svgRef.current) return;
     
-    const rootUserId = user.createdBy === 'self' ? user.userId : user.createdBy;
-    return calculateNodePositions(familyMembers, coreRelationships, rootUserId, user.userId);
-  }, [familyMembers, coreRelationships, user.createdBy, user.userId]);
-  
-  const [nodes, setNodes, onNodesChange] = useNodesState(calculatedNodes);
-  const [edges, setEdges, onEdgesChange] = useEdgesState(calculatedEdges);
-  
-  // Update nodes and edges when calculated values change
+    const svg = svgRef.current;
+    // Clear existing custom edges
+    svg.innerHTML = '';
+    
+    // Add CSS for static dashed lines like in reference image
+    const style = document.createElementNS('http://www.w3.org/2000/svg', 'style');
+    style.textContent = `
+      .reference-edge {
+        stroke-dasharray: 5 3;
+        stroke-linecap: round;
+      }
+    `;
+    svg.appendChild(style);
+    
+    const edges = cyRef.current.edges('[type="parentChild"]');
+    
+    edges.forEach((edge) => {
+      const edgeId = edge.id();
+      const sourceId = edge.data('source');
+      const targetId = edge.data('target');
+      
+      // Get the actual target node - this could be individual or couple container
+      const actualTargetNode = cyRef.current.$id(targetId);
+      if (actualTargetNode.empty()) return;
+      
+      // For source, handle both individual nodes and couple containers
+      let sourceNode = cyRef.current.$id(sourceId);
+      let startX, startY;
+      
+      if (sourceNode.data('type') === 'couple') {
+        // Source is couple container - determine which member is the actual parent
+        const sourceMembers = sourceNode.children('[type="coupleMember"]');
+        const sourceName = edge.data('sourceName');
+        
+        let sourceParent = null;
+        // Find the specific parent within the couple
+        sourceMembers.forEach(member => {
+          if (member.data('name') === sourceName || member.data('userId') === sourceName) {
+            sourceParent = member;
+          }
+        });
+        
+        if (sourceParent) {
+          // Connect from the specific parent's position
+          const parentPos = sourceParent.renderedPosition();
+          const parentBox = sourceParent.renderedBoundingBox();
+          startX = parentPos.x;
+          startY = parentBox.y2; // Bottom of specific parent
+        } else {
+          // Fallback to container center
+          const sourcePos = sourceNode.renderedPosition();
+          const sourceBox = sourceNode.renderedBoundingBox();
+          startX = sourcePos.x;
+          startY = sourceBox.y2; // Bottom of couple container
+        }
+      } else {
+        // Source is individual node
+        const sourcePos = sourceNode.renderedPosition();
+        const sourceBox = sourceNode.renderedBoundingBox();
+        startX = sourcePos.x;
+        startY = sourceBox.y2; // Bottom of individual node
+      }
+      
+      // For target, always connect to the specific individual node
+      let endX, endY;
+      
+      if (actualTargetNode.data('type') === 'couple') {
+        // Target is couple container - connect to specific connection points
+        const coupleMembers = actualTargetNode.children('[type="coupleMember"]');
+        const containerPos = actualTargetNode.renderedPosition();
+        const containerBox = actualTargetNode.renderedBoundingBox();
+        
+        if (coupleMembers.length >= 2) {
+          // Determine which member based on target name
+          const targetName = edge.data('targetName');
+          let targetMember = null;
+          
+          // Try to match by name first
+          coupleMembers.forEach(member => {
+            if (member.data('name') === targetName || member.data('userId') === targetName) {
+              targetMember = member;
+            }
+          });
+          
+          if (targetMember) {
+            // Connect to the top of the specific member within the container
+            const memberPos = targetMember.renderedPosition();
+            endX = memberPos.x;
+            endY = containerBox.y1; // Top edge of container at member's X position
+          } else {
+            // If no specific match, use left/right logic based on source position
+            const leftMember = coupleMembers[0];
+            const rightMember = coupleMembers[1];
+            
+            // Choose member based on which is closer to source X position
+            const leftPos = leftMember.renderedPosition();
+            const rightPos = rightMember.renderedPosition();
+            const distanceToLeft = Math.abs(startX - leftPos.x);
+            const distanceToRight = Math.abs(startX - rightPos.x);
+            
+            if (distanceToLeft < distanceToRight) {
+              endX = leftPos.x;
+            } else {
+              endX = rightPos.x;
+            }
+            endY = containerBox.y1; // Top edge of container
+          }
+        } else {
+          // Single member or fallback
+          endX = containerPos.x;
+          endY = containerBox.y1;
+        }
+      } else {
+        // Target is individual node
+        const targetPos = actualTargetNode.renderedPosition();
+        const targetBox = actualTargetNode.renderedBoundingBox();
+        endX = targetPos.x;
+        endY = targetBox.y1; // Top of individual node
+      }
+      
+      // Create smooth curved path with dramatic bending especially at target node
+      const midY = startY + (endY - startY) * 0.5;
+      const controlX1 = startX;
+      const controlY1 = startY + (endY - startY) * 0.6; // Strong curve from source
+      const controlX2 = endX;
+      const controlY2 = endY - (endY - startY) * 0.8; // Much more dramatic bending to target node
+      
+      // SVG path for smooth bezier curve matching reference
+      const pathData = `M ${startX} ${startY} C ${controlX1} ${controlY1}, ${controlX2} ${controlY2}, ${endX} ${endY}`;
+      
+      // Create path element with exact reference image styling
+      const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+      path.setAttribute('d', pathData);
+      path.setAttribute('stroke', parentChildColor);
+      path.setAttribute('stroke-width', '2.5');
+      path.setAttribute('fill', 'none');
+      path.setAttribute('class', 'reference-edge'); // Static dashed lines like reference
+      
+      // Create small triangle arrowhead like in reference
+      const arrowSize = 7; // Smaller like reference image
+      const angle = Math.atan2(endY - controlY2, endX - controlX2);
+      const arrowX1 = endX - arrowSize * Math.cos(angle - Math.PI / 7);
+      const arrowY1 = endY - arrowSize * Math.sin(angle - Math.PI / 7);
+      const arrowX2 = endX - arrowSize * Math.cos(angle + Math.PI / 7);
+      const arrowY2 = endY - arrowSize * Math.sin(angle + Math.PI / 7);
+      
+      const arrowPath = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+      arrowPath.setAttribute('d', `M ${endX} ${endY} L ${arrowX1} ${arrowY1} L ${arrowX2} ${arrowY2} Z`);
+      arrowPath.setAttribute('fill', parentChildColor);
+      arrowPath.setAttribute('stroke', 'none'); // Solid fill like reference
+      
+      svg.appendChild(path);
+      svg.appendChild(arrowPath);
+    });
+  }, [parentChildColor]);
+
   useEffect(() => {
-    setNodes(calculatedNodes);
-    setEdges(calculatedEdges);
-  }, [calculatedNodes, calculatedEdges, setNodes, setEdges]);
-  
-  // Fetch core relationships
-  useEffect(() => {
-    const fetchRelationships = async () => {
+    const fetch = async () => {
       setIsLoading(true);
       try {
-        let relationshipData: CoreRelationship[] = [];
-        
-        if (viewMode === 'personal') {
-          const personalData = await getUserPersonalizedFamilyTree(user.userId, user.familyTreeId);
-          relationshipData = personalData.map(rel => ({
-            source: rel.source,
-            target: rel.target,
-            type: mapSemanticToCore(rel.type),
-            sourceName: rel.sourceName,
-            targetName: rel.targetName
-          })).filter(rel => rel.type) as CoreRelationship[];
+        let rels: CoreRelationship[] = [];
+        if (viewMode === "personal") {
+          const personal = (await getUserPersonalizedFamilyTree(user.userId, user.familyTreeId)) as PersonalizedRelationship[];
+          const mapped = personal.map((r): CoreRelationship | null => {
+            const t = String(r.type || "").toLowerCase();
+            let core: CoreRelationship["type"] | null = null;
+            if (["father", "mother", "son", "daughter", "grandfather", "grandmother", "grandson", "granddaughter"].includes(t)) core = "PARENTS_OF";
+            else if (["husband", "wife", "spouse"].includes(t)) core = "MARRIED_TO";
+            else if (["brother", "sister", "sibling"].includes(t)) core = "SIBLING";
+            if (!core) return null;
+            return { source: r.source, target: r.target, type: core, sourceName: r.sourceName, targetName: r.targetName };
+          });
+          const isCore = (x: CoreRelationship | null): x is CoreRelationship => x !== null;
+          rels = mapped.filter(isCore);
         } else {
-          relationshipData = await getFamilyRelationships(user.familyTreeId);
+          rels = await getFamilyRelationships(user.familyTreeId);
         }
-        
-        setCoreRelationships(relationshipData);
-      } catch (error) {
-        console.error('Error fetching relationships:', error);
+        setCoreRelationships(rels);
+      } catch (e) {
+        console.error("fetch relationships error", e);
         setCoreRelationships([]);
       } finally {
         setIsLoading(false);
       }
     };
-    
-    fetchRelationships();
+    fetch();
   }, [user.userId, user.familyTreeId, viewMode]);
-  
-  // Helper function to map semantic relationship back to core relationship
-  const mapSemanticToCore = (semanticType: string): 'PARENTS_OF' | 'SIBLING' | 'MARRIED_TO' | null => {
-    const type = semanticType.toLowerCase();
-    
-    if (['father', 'mother', 'son', 'daughter', 'grandfather', 'grandmother', 'grandson', 'granddaughter'].includes(type)) {
-      return 'PARENTS_OF';
-    } else if (['husband', 'wife', 'spouse'].includes(type)) {
-      return 'MARRIED_TO';
-    } else if (['brother', 'sister', 'sibling'].includes(type)) {
-      return 'SIBLING';
+
+  useEffect(() => {
+    if (!containerRef.current) return;
+
+    const elements = createCytoscapeElements(
+      familyMembers || [],
+      coreRelationships || [],
+      user.createdBy === "self" ? user.userId : (user.createdBy || user.userId),
+      user.userId
+    );
+
+    if (cyRef.current) {
+      cyRef.current.destroy();
+      cyRef.current = null;
     }
-    
-    return null;
-  };
-  
-  // Handle node click for selection
-  const onNodeClick = useCallback((event: React.MouseEvent, node: Node) => {
-    event.stopPropagation();
-    
-    if (node.type === 'couple') {
-      setSelectedCouple(node.id);
-      setCoupleDetailsOpen(true);
-      return;
-    }
-    
-    if (selectedNodes.includes(node.id)) {
-      // Deselect if already selected
-      const newSelection = selectedNodes.filter(id => id !== node.id);
-      setSelectedNodes(newSelection);
-      
-      // Update node selection state
-      setNodes(nodes => nodes.map(n => ({
-        ...n,
-        data: { ...n.data, isSelected: newSelection.includes(n.id) }
-      })));
-      
-      if (newSelection.length === 0) {
+
+    cyRef.current = cytoscape({
+      container: containerRef.current,
+      elements,
+      // @ts-expect-error cytoscape's StylesheetJson typing is stricter than the runtime accepts
+      style: getCytoscapeStyles(),
+      zoomingEnabled: true,
+      panningEnabled: true,
+      boxSelectionEnabled: false,
+      autounselectify: false,
+      autoungrabify: false,
+      minZoom: 0.2,
+      maxZoom: 4
+    });
+
+    // Enhanced hover effects
+    cyRef.current.on("mouseover", "node", (evt: cytoscape.EventObject) => {
+      (evt.target as cytoscape.NodeSingular).addClass("hover");
+    });
+    cyRef.current.on("mouseout", "node", (evt: cytoscape.EventObject) => {
+      (evt.target as cytoscape.NodeSingular).removeClass("hover");
+    });
+
+    cyRef.current.on("tap", "node", (evt: cytoscape.EventObject) => {
+      const node = evt.target as cytoscape.NodeSingular;
+      const nodeId: string = (node.data("originalId") as string) || node.id();
+      setSelectedNodes((prev) => {
+        let next = prev;
+        if (prev.includes(nodeId)) {
+          next = prev.filter((s) => s !== nodeId);
+          node.removeClass("selected");
+          setRelationshipAnalysisOpen(false);
+          setNodeDetailsOpen(next.length === 1);
+        } else if ((selectionMode === "pair" && prev.length < 2) || (selectionMode === "single" && prev.length < 1)) {
+          next = [...prev, nodeId];
+          node.addClass("selected");
+          if (selectionMode === "single" && next.length === 1) {
+            setActiveMemberId(nodeId);
+            setNodeDetailsOpen(true);
+            setTimeout(() => {
+              setSelectedNodes([]);
+              if (cyRef.current) {
+                cyRef.current.nodes().removeClass("selected");
+              }
+            }, 0);
+          } else if (next.length === 1) {
+            setNodeDetailsOpen(true);
+          }
+          if (selectionMode === "pair" && next.length === 2) {
+            const rel = calculateRelationship(next[0], next[1], coreRelationships, familyMembers);
+            setCalculatedRelationship(rel);
+            setRelationshipAnalysisOpen(true);
+            setNodeDetailsOpen(false);
+            setTimeout(() => {
+              setSelectedNodes([]);
+              if (cyRef.current) {
+                cyRef.current.nodes().removeClass("selected");
+              }
+            }, 0);
+          }
+        }
+        return next;
+      });
+
+      const rawId: string = node.data("originalId") || node.id();
+      const member = familyMembers.find((m) => m.userId === rawId) || null;
+      const bb = node.renderedBoundingBox();
+      const x = bb.x2 + 15;
+      const y = bb.y1;
+      setNodePopup({ id: node.id(), x, y, data: member, isCoupleMember: node.data("type") === "coupleMember" });
+    });
+
+    cyRef.current.on("tap", "edge", (evt: cytoscape.EventObject) => {
+      const edge = evt.target as cytoscape.EdgeSingular;
+      if (edge.hasClass("showLabel")) {
+        edge.removeClass("showLabel");
+      } else {
+        if (cyRef.current) {
+          cyRef.current.edges().removeClass("showLabel");
+        }
+        edge.addClass("showLabel");
+      }
+      setSelectedEdge(edge);
+      setRelationshipDetailsOpen(true);
+    });
+
+    cyRef.current.on("tap", (evt: cytoscape.EventObject) => {
+      if (evt.target === cyRef.current) {
+        setSelectedNodes([]);
+        cyRef.current.nodes().removeClass("selected");
         setNodeDetailsOpen(false);
         setRelationshipAnalysisOpen(false);
+        setNodePopup(null);
       }
-    } else if (selectedNodes.length < 2) {
-      // Select node (max 2)
-      const newSelection = [...selectedNodes, node.id];
-      setSelectedNodes(newSelection);
+    });
+
+    const layout = cyRef.current.layout(elkOptions);
+    
+    // Enhanced edge shaping with perfect centering for children
+    const shapeParentChildEdges = () => {
+      if (!cyRef.current) return;
+      const edges = cyRef.current.edges('[type = "parentChild"]');
       
-      // Update node selection state
-      setNodes(nodes => nodes.map(n => ({
-        ...n,
-        data: { ...n.data, isSelected: newSelection.includes(n.id) }
-      })));
-      
-      if (newSelection.length === 1) {
-        setNodeDetailsOpen(true);
-      } else if (newSelection.length === 2) {
-        // Calculate relationship between two nodes
-        const relationship = calculateRelationship(
-          newSelection[0], 
-          newSelection[1], 
-          coreRelationships, 
-          familyMembers
-        );
-        setCalculatedRelationship(relationship);
-        setRelationshipAnalysisOpen(true);
-        setNodeDetailsOpen(false);
-      }
-    }
-  }, [selectedNodes, nodes, setNodes, coreRelationships, familyMembers]);
-  
-  // Handle edge click to show relationship details
-  const onEdgeClick = useCallback((event: React.MouseEvent, edge: Edge) => {
-    event.stopPropagation();
-    setSelectedEdge(edge);
-    setRelationshipDetailsOpen(true);
-  }, []);
-  
-  // Handle pane click to deselect all
-  const onPaneClick = useCallback(() => {
-    setSelectedNodes([]);
-    setNodes(nodes => nodes.map(n => ({
-      ...n,
-      data: { ...n.data, isSelected: false }
-    })));
-    setNodeDetailsOpen(false);
-    setRelationshipAnalysisOpen(false);
-  }, [setNodes]);
-  
-  // Get selected node details
-  const getSelectedNodeDetails = () => {
-    if (selectedNodes.length !== 1) return null;
-    const node = nodes.find(n => n.id === selectedNodes[0]);
-    return node ? familyMembers.find(m => m.userId === node.id) : null;
-  };
-  
-  // Get selected couple details
-  const getSelectedCoupleDetails = () => {
-    if (!selectedCouple) return null;
-    const node = nodes.find(n => n.id === selectedCouple);
-    if (!node || node.type !== 'couple') return null;
-    return {
-      member1: familyMembers.find(m => (m as any).userId === (node.data.member1 as any).userId),
-      member2: familyMembers.find(m => (m as any).userId === (node.data.member2 as any).userId)
+      // Group edges by source (parent/couple)
+      const groups = new Map<string, cytoscape.EdgeSingular[]>();
+      edges.forEach((e) => {
+        const sid = e.source().id();
+        const arr = groups.get(sid) || [];
+        arr.push(e as cytoscape.EdgeSingular);
+        groups.set(sid, arr);
+      });
+
+      groups.forEach((childEdges) => {
+        const count = childEdges.length;
+        
+        if (count === 1) {
+          // Single child: slight straight start then a gentle curve into the node
+          childEdges[0].data({ 
+            curveDistances: [0, Math.min(edgeCurvature, 80) * 0.6, 0], 
+            curveWeights: [0.1, 0.65, 0.95],
+            lineStyle: 'dotted', 
+            edgeWidth: 2, 
+            edgeColor: parentChildColor 
+          });
+          return;
+        }
+
+        // Multiple children: center them symmetrically
+        const spacing = Math.min(edgeCurvature, 80); // Max spacing to prevent overcrowding
+        const totalWidth = (count - 1) * spacing;
+        const startOffset = -totalWidth / 2;
+
+        childEdges.forEach((edge, index) => {
+          const horizontalOffset = startOffset + (index * spacing);
+          // Straight near source (0), then bulge, then 0 near target
+          const distances = [0, horizontalOffset, 0];
+          const weights = [0.1, 0.65, 0.95];
+          edge.data({ 
+            curveDistances: distances, 
+            curveWeights: weights,
+            lineStyle: 'dotted', 
+            edgeWidth: 2, 
+            edgeColor: parentChildColor 
+          });
+        });
+      });
+
+      // Update other edge colors
+      cyRef.current.edges('[type = "marriage"]').data('line-color', marriageColor);
+      cyRef.current.edges('[type = "sibling"]').data('line-color', siblingColor);
     };
+
+    // Perfect centering and fitting on layout completion
+    cyRef.current.one('layoutstop', () => {
+      if (!cyRef.current) return;
+      
+      // First shape the edges for proper hierarchy
+      shapeParentChildEdges();
+      
+      // Then fit and center the entire tree
+      setTimeout(() => {
+        if (!cyRef.current) return;
+        cyRef.current.fit(undefined, 80);
+        cyRef.current.center();
+        
+        // Update popup position if open
+        setNodePopup((prev) => {
+          if (!prev) return prev;
+          const n = cyRef.current!.$id(prev.id);
+          if (!n.empty()) {
+            const bb = n.renderedBoundingBox();
+            return { ...prev, x: bb.x2 + 15, y: bb.y1 };
+          }
+          return prev;
+        });
+      }, 100);
+    });
+
+    layout.run();
+
+    // Enhanced resize handling for consistent centering
+    let ro: ResizeObserver | null = null;
+    const containerEl = containerRef.current;
+    if (containerEl) {
+      ro = new ResizeObserver(() => {
+        if (!cyRef.current) return;
+        cyRef.current.resize();
+        cyRef.current.fit(undefined, 80);
+        cyRef.current.center();
+        shapeParentChildEdges();
+        renderCustomEdges();
+        
+        setNodePopup((prev) => {
+          if (!prev) return prev;
+          const n = cyRef.current!.$id(prev.id);
+          if (!n.empty()) {
+            const bb = n.renderedBoundingBox();
+            return { ...prev, x: bb.x2 + 15, y: bb.y1 };
+          }
+          return prev;
+        });
+      });
+      ro.observe(containerEl);
+    }
+
+    const updatePopupPosition = () => {
+      if (!cyRef.current) return;
+      setNodePopup((prev) => {
+        if (!prev) return prev;
+        const n = cyRef.current!.$id(prev.id);
+        if (n.nonempty()) {
+          const bb = n.renderedBoundingBox();
+          return { ...prev, x: bb.x2 + 15, y: bb.y1 };
+        }
+        return prev;
+      });
+    };
+    cyRef.current.on('pan zoom', updatePopupPosition);
+    cyRef.current.on('pan zoom', renderCustomEdges);
+    
+    // Add dynamic edge updates for node movement
+    cyRef.current.on('drag', 'node', renderCustomEdges);
+    cyRef.current.on('position', 'node', renderCustomEdges);
+    cyRef.current.on('move', 'node', renderCustomEdges);
+    cyRef.current.on('grab', 'node', renderCustomEdges);
+    cyRef.current.on('free', 'node', renderCustomEdges);
+
+    // Initial render of custom edges
+    setTimeout(renderCustomEdges, 100);
+
+    return () => {
+      if (cyRef.current) {
+        cyRef.current.destroy();
+        cyRef.current = null;
+      }
+      if (ro && containerEl) {
+        ro.unobserve(containerEl);
+        ro.disconnect();
+      }
+      cyRef.current?.off('pan', updatePopupPosition);
+      cyRef.current?.off('zoom', updatePopupPosition);
+      cyRef.current?.off('drag', renderCustomEdges);
+      cyRef.current?.off('position', renderCustomEdges);
+      cyRef.current?.off('move', renderCustomEdges);
+      cyRef.current?.off('grab', renderCustomEdges);
+      cyRef.current?.off('free', renderCustomEdges);
+    };
+  }, [coreRelationships, familyMembers, user, selectionMode, parentChildColor, marriageColor, siblingColor, edgeCurvature, renderCustomEdges]);
+
+  // Update edge styling when colors change
+  useEffect(() => {
+    if (!cyRef.current) return;
+    
+    const updateEdgeColors = () => {
+      cyRef.current!.edges('[type = "parentChild"]').data('edgeColor', parentChildColor);
+      cyRef.current!.edges('[type = "marriage"]').data('line-color', marriageColor);
+      cyRef.current!.edges('[type = "sibling"]').data('line-color', siblingColor);
+      
+      // Re-shape parent-child edges with new curvature
+      const edges = cyRef.current!.edges('[type = "parentChild"]');
+      const groups = new Map<string, cytoscape.EdgeSingular[]>();
+      edges.forEach((e) => {
+        const sid = e.source().id();
+        const arr = groups.get(sid) || [];
+        arr.push(e as cytoscape.EdgeSingular);
+        groups.set(sid, arr);
+      });
+
+      groups.forEach((childEdges) => {
+        const count = childEdges.length;
+        
+        if (count === 1) {
+          childEdges[0].data({ 
+            curveDistances: [0, Math.min(edgeCurvature, 80) * 0.6, 0], 
+            curveWeights: [0.1, 0.65, 0.95],
+            edgeColor: parentChildColor 
+          });
+          return;
+        }
+
+        const spacing = Math.min(edgeCurvature, 80);
+        const totalWidth = (count - 1) * spacing;
+        const startOffset = -totalWidth / 2;
+
+        childEdges.forEach((edge, index) => {
+          const horizontalOffset = startOffset + (index * spacing);
+          const distances = [0, horizontalOffset, 0];
+          const weights = [0.1, 0.65, 0.95];
+          edge.data({ 
+            curveDistances: distances, 
+            curveWeights: weights,
+            edgeColor: parentChildColor 
+          });
+        });
+      });
+    };
+
+    updateEdgeColors();
+    renderCustomEdges(); // Re-render edges when colors or curvature change
+  }, [edgeCurvature, parentChildColor, marriageColor, siblingColor, renderCustomEdges]);
+
+
+  const calculateRelationship = (
+    person1Id: string,
+    person2Id: string,
+    coreRels: CoreRelationship[],
+    members: FamilyMember[]
+  ): string => {
+    const p1 = members.find((m) => m.userId === person1Id);
+    const p2 = members.find((m) => m.userId === person2Id);
+    if (!p1 || !p2) return "Unknown relationship";
+    
+    const parentMap = new Map<string, string[]>();
+    const childMap = new Map<string, string[]>();
+    const spouseMap = new Map<string, string[]>();
+    const siblingMap = new Map<string, string[]>();
+    
+    coreRels.forEach((r) => {
+      if (r.type === "PARENTS_OF") {
+        if (!parentMap.has(r.source)) parentMap.set(r.source, []);
+        parentMap.get(r.source)!.push(r.target);
+        if (!childMap.has(r.target)) childMap.set(r.target, []);
+        childMap.get(r.target)!.push(r.source);
+      } else if (r.type === "MARRIED_TO") {
+        if (!spouseMap.has(r.source)) spouseMap.set(r.source, []);
+        spouseMap.get(r.source)!.push(r.target);
+        if (!spouseMap.has(r.target)) spouseMap.set(r.target, []);
+        spouseMap.get(r.target)!.push(r.source);
+      } else if (r.type === "SIBLING") {
+        if (!siblingMap.has(r.source)) siblingMap.set(r.source, []);
+        siblingMap.get(r.source)!.push(r.target);
+        if (!siblingMap.has(r.target)) siblingMap.set(r.target, []);
+        siblingMap.get(r.target)!.push(r.source);
+      }
+    });
+    
+    if (spouseMap.get(person1Id)?.includes(person2Id)) return `${p1.name} and ${p2.name} are married to each other`;
+    if (parentMap.get(person1Id)?.includes(person2Id)) return `${p1.name} is the parent of ${p2.name}`;
+    if (childMap.get(person1Id)?.includes(person2Id)) return `${p1.name} is the child of ${p2.name}`;
+    if (siblingMap.get(person1Id)?.includes(person2Id)) return `${p1.name} and ${p2.name} are siblings`;
+    return `${p1.name} and ${p2.name} appear to be distantly related or not directly connected`;
+  };
+
+  // Enhanced UI controls
+  const handleZoomIn = () => {
+    if (!cyRef.current) return;
+    cyRef.current.zoom({ level: cyRef.current.zoom() * 1.25, renderedPosition: { x: 0, y: 0 } });
   };
   
-  if (isLoading) {
-    return (
-      <div className="flex items-center justify-center" style={{ minHeight }}>
-        <div className="animate-pulse text-center">
-          <div className="w-16 h-16 bg-gradient-to-br from-blue-200 to-purple-200 rounded-full mx-auto mb-4 animate-bounce"></div>
-          <p className="text-slate-600 font-medium">Loading family tree...</p>
-        </div>
-      </div>
-    );
-  }
+  const handleZoomOut = () => {
+    if (!cyRef.current) return;
+    cyRef.current.zoom({ level: cyRef.current.zoom() / 1.25, renderedPosition: { x: 0, y: 0 } });
+  };
   
+  const handleFit = () => {
+    if (!cyRef.current) return;
+    cyRef.current.fit(undefined, 60);
+    cyRef.current.center();
+  };
+  
+  const handleRelayout = () => {
+    if (!cyRef.current) return;
+    const layout = cyRef.current.layout(elkOptions);
+    layout.run();
+    setTimeout(() => {
+      if (cyRef.current) {
+        cyRef.current.fit(undefined, 60);
+        cyRef.current.center();
+      }
+    }, 800);
+  };
+
+  const selectedMember = (() => {
+    if (activeMemberId) return familyMembers.find((m) => m.userId === activeMemberId) || null;
+    if (selectedNodes.length === 1) return familyMembers.find((m) => m.userId === selectedNodes[0]) || null;
+    return null;
+  })();
+
   return (
-    <div className="w-full bg-gradient-to-br from-slate-50 via-blue-50 to-indigo-50 rounded-xl border border-slate-200/60 shadow-lg overflow-hidden" style={{ height: minHeight }}>
-      <ReactFlow
-        nodes={nodes}
-        edges={edges}
-        onNodesChange={onNodesChange}
-        onEdgesChange={onEdgesChange}
-        onNodeClick={onNodeClick}
-        onEdgeClick={onEdgeClick}
-        onPaneClick={onPaneClick}
-        nodeTypes={nodeTypes}
-        edgeTypes={edgeTypes}
-        fitView
-        fitViewOptions={{ 
-          padding: 0.15,
-          includeHiddenNodes: false,
-          minZoom: 0.4,
-          maxZoom: 2.5
-        }}
-        connectionLineType={ConnectionLineType.SmoothStep}
-        defaultEdgeOptions={{
-          type: 'smoothstep',
-          markerEnd: { type: MarkerType.ArrowClosed },
-        }}
-        className="bg-gradient-to-br from-slate-50 via-blue-50 to-indigo-50"
-        nodesDraggable={true}
-        nodesConnectable={false}
-        elementsSelectable={true}
-        zoomOnScroll={true}
-        zoomOnPinch={true}
-        panOnScroll={false}
-        panOnScrollSpeed={0.5}
-        zoomOnDoubleClick={false}
-        minZoom={0.3}
-        maxZoom={3}
-        defaultViewport={{ x: 0, y: 0, zoom: 0.8 }}
-      >
-        <Background 
-          color="#e2e8f0" 
-          gap={24} 
-          size={1}
-          variant={"cross" as any}
-          className="opacity-40"
+    <div className="w-full relative rounded-xl p-4 bg-gradient-to-br from-slate-50 via-white to-blue-50 shadow-lg" style={{ minHeight }}>
+      {showControls && (
+        <div className="flex flex-wrap gap-3 items-center mb-4 p-3 bg-white/80 backdrop-blur rounded-lg shadow-sm border">
+          {/* Selection Mode */}
+          <div className="flex items-center gap-2">
+            <span className="text-sm font-medium text-gray-700">Selection:</span>
+            <button
+              type="button"
+              onClick={() => setSelectionMode("single")}
+              className={`px-3 py-1.5 rounded-md text-sm font-medium transition-all ${
+                selectionMode === 'single' 
+                  ? 'bg-blue-100 border-blue-300 text-blue-700 shadow-sm' 
+                  : 'bg-white border-gray-200 text-gray-600 hover:bg-gray-50'
+              } border`}
+            >
+              Single
+            </button>
+            <button
+              type="button"
+              onClick={() => setSelectionMode("pair")}
+              className={`px-3 py-1.5 rounded-md text-sm font-medium transition-all ${
+                selectionMode === 'pair' 
+                  ? 'bg-blue-100 border-blue-300 text-blue-700 shadow-sm' 
+                  : 'bg-white border-gray-200 text-gray-600 hover:bg-gray-50'
+              } border`}
+            >
+              Pair
+            </button>
+          </div>
+
+          {/* Navigation Controls */}
+          <div className="flex items-center gap-1 border-l pl-3">
+            <button
+              type="button"
+              onClick={handleZoomIn}
+              className="inline-flex items-center gap-1 rounded-md border border-gray-200 px-2 py-1.5 text-sm hover:bg-gray-50 transition-colors"
+              title="Zoom In"
+            >
+              <ZoomIn className="w-4 h-4" />
+            </button>
+            <button
+              type="button"
+              onClick={handleZoomOut}
+              className="inline-flex items-center gap-1 rounded-md border border-gray-200 px-2 py-1.5 text-sm hover:bg-gray-50 transition-colors"
+              title="Zoom Out"
+            >
+              <ZoomOut className="w-4 h-4" />
+            </button>
+            <button
+              type="button"
+              onClick={handleFit}
+              className="inline-flex items-center gap-1 rounded-md border border-gray-200 px-2 py-1.5 text-sm hover:bg-gray-50 transition-colors"
+              title="Fit to View"
+            >
+              <Maximize className="w-4 h-4" />
+            </button>
+            <button
+              type="button"
+              onClick={handleRelayout}
+              className="inline-flex items-center gap-1 rounded-md border border-gray-200 px-2 py-1.5 text-sm hover:bg-gray-50 transition-colors"
+              title="Re-layout Tree"
+            >
+              <RotateCcw className="w-4 h-4" />
+            </button>
+          </div>
+
+
+          {/* Legend Toggle */}
+          <div className="ml-auto flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => setShowLegend(!showLegend)}
+              className="inline-flex items-center gap-1 rounded-md border border-gray-200 px-2 py-1.5 text-sm hover:bg-gray-50 transition-colors"
+              title="Toggle Legend"
+            >
+              <Info className="w-4 h-4" />
+              Legend
+            </button>
+            {selectedNodes.length > 0 && (
+              <div className="text-sm text-blue-600 font-medium">
+                {selectedNodes.length} selected
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      <div className="relative">
+        <div 
+          ref={containerRef} 
+          className="w-full rounded-xl shadow-lg ring-1 ring-gray-200 bg-white/60 backdrop-blur-sm" 
+          style={{ minHeight }} 
         />
-        {showControls && (
-          <Controls 
-            className="bg-white/80 backdrop-blur-sm border border-slate-200/60 rounded-lg shadow-md"
-            showZoom={true}
-            showFitView={true}
-            showInteractive={false}
-          />
+        
+        {/* Custom SVG overlay for perfect curved dotted edges */}
+        <svg
+          ref={svgRef}
+          className="absolute inset-0 pointer-events-none"
+          style={{ width: '100%', height: '100%' }}
+        />
+
+       {/* Enhanced Legend */}
+        {showLegend && (
+          <div className="absolute top-4 right-4 bg-white/95 backdrop-blur-sm rounded-lg shadow-lg border p-4 min-w-[200px]">
+            <h3 className="font-semibold text-sm text-gray-800 mb-3 flex items-center gap-2">
+              <Info className="w-4 h-4" />
+              Family Tree Legend
+            </h3>
+            
+            {/* Node Types */}
+            <div className="space-y-2 mb-4">
+              <h4 className="text-xs font-medium text-gray-600 uppercase tracking-wide">People</h4>
+              <div className="space-y-1.5 text-xs">
+                <div className="flex items-center gap-2">
+                  <div className="w-4 h-4 rounded-full bg-blue-500 border-2 border-blue-600"></div>
+                  <span>Male</span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <div className="w-4 h-4 rounded-full bg-pink-500 border-2 border-pink-600"></div>
+                  <span>Female</span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <div className="w-4 h-4 rounded-full bg-yellow-400 border-2 border-yellow-600"></div>
+                  <span>You (Current User)</span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <div className="w-4 h-4 rounded-full bg-orange-500 border-2 border-orange-600"></div>
+                  <span>Tree Creator</span>
+                </div>
+              </div>
+            </div>
+
+            {/* Relationship Lines */}
+            <div className="space-y-2">
+              <h4 className="text-xs font-medium text-gray-600 uppercase tracking-wide">Relationships</h4>
+              <div className="space-y-1.5 text-xs">
+                <div className="flex items-center gap-2">
+                  <div className="w-6 h-0.5 bg-green-500 rounded"></div>
+                  <span>Parent → Child</span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <div className="w-6 h-0.5 bg-red-600 rounded"></div>
+                  <span>Marriage ❤️</span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <div className="w-6 h-0.5 bg-blue-600 rounded"></div>
+                  <span>Siblings</span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <div className="w-6 h-0.5 bg-cyan-500 rounded" style={{borderTop: "2px dotted #0ea5e9"}}></div>
+                  <span>Adopted</span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <div className="w-6 h-0.5 bg-gray-500 rounded" style={{borderTop: "2px dashed #6b7280"}}></div>
+                  <span>Divorced 💔</span>
+                </div>
+              </div>
+            </div>
+
+            {/* Instructions */}
+            <div className="mt-4 pt-3 border-t border-gray-200">
+              <div className="text-xs text-gray-600 space-y-1">
+                <div>• Click nodes to select</div>
+                <div>• Click edges to show labels</div>
+                <div>• Drag to pan, scroll to zoom</div>
+              </div>
+            </div>
+          </div>
         )}
-      </ReactFlow>
-      
-      {/* Node Details Dialog */}
-      <Dialog open={nodeDetailsOpen} onOpenChange={setNodeDetailsOpen}>
-        <DialogContent className="max-w-md bg-white/95 backdrop-blur-sm border border-slate-200/60">
-          <DialogHeader>
-            <DialogTitle className="flex items-center gap-2 text-slate-800">
-              <UserIcon className="w-5 h-5 text-blue-500" />
-              Family Member Details
-            </DialogTitle>
-            <DialogDescription className="text-slate-600">
-              Information about the selected family member
-            </DialogDescription>
-          </DialogHeader>
-          
-          {(() => {
-            const member = getSelectedNodeDetails();
-            if (!member) return null;
-            
-            return (
-              <div className="space-y-4">
-                <div className="text-center p-4 bg-gradient-to-br from-blue-50 to-indigo-50 rounded-lg border border-blue-200/40">
-                  <div className="text-lg font-semibold text-blue-800">{member.name}</div>
-                  <div className="text-sm text-blue-600 mt-1">
-                    {member.relationship || 'Family Member'}
-                  </div>
-                </div>
-                
-                <div className="space-y-3 text-sm">
-                  {member.email && (
-                    <div className="flex items-center gap-2 p-2 bg-slate-50 rounded-lg">
-                      <Mail className="w-4 h-4 text-slate-500" />
-                      <span className="text-slate-700">{member.email}</span>
-                    </div>
-                  )}
-                  
-                  <div className="flex items-center gap-2 p-2 bg-slate-50 rounded-lg">
-                    <Badge variant="outline" className={`${
-                      member.status === 'active' ? 'bg-green-50 text-green-700 border-green-200' :
-                      member.status === 'invited' ? 'bg-yellow-50 text-yellow-700 border-yellow-200' :
-                      'bg-gray-50 text-gray-700 border-gray-200'
-                    }`}>
-                      {member.status === 'active' ? '✓ Active' : 
-                       member.status === 'invited' ? '⏳ Invited' : 
-                       '❓ Unknown'}
-                    </Badge>
-                  </div>
-                  
-                  {member.gender && (
-                    <div className="flex items-center gap-2 p-2 bg-slate-50 rounded-lg">
-                      <span className="text-slate-500">Gender:</span>
-                      <span className="text-slate-700 capitalize">{member.gender}</span>
-                    </div>
-                  )}
-                </div>
-              </div>
-            );
-          })()}
-        </DialogContent>
-      </Dialog>
-      
-      {/* Couple Details Dialog */}
-      <Dialog open={coupleDetailsOpen} onOpenChange={setCoupleDetailsOpen}>
-        <DialogContent className="max-w-lg bg-white/95 backdrop-blur-sm border border-slate-200/60">
-          <DialogHeader>
-            <DialogTitle className="flex items-center gap-2 text-slate-800">
-              <Heart className="w-5 h-5 text-pink-500" />
-              Couple Details
-            </DialogTitle>
-            <DialogDescription className="text-slate-600">
-              Information about the selected couple
-            </DialogDescription>
-          </DialogHeader>
-          
-          {(() => {
-            const couple = getSelectedCoupleDetails();
-            if (!couple) return null;
-            
-            const { member1, member2 } = couple;
-            
-            return (
-              <div className="space-y-4">
-                <div className="grid grid-cols-2 gap-4">
-                  <div className="text-center p-4 bg-gradient-to-br from-blue-50 to-indigo-50 rounded-lg border border-blue-200/40">
-                    <div className="text-lg font-semibold text-blue-800">{member1.name}</div>
-                    <div className="text-sm text-blue-600 mt-1">
-                      {member1.relationship || 'Family Member'}
-                    </div>
-                  </div>
-                  <div className="text-center p-4 bg-gradient-to-br from-blue-50 to-indigo-50 rounded-lg border border-blue-200/40">
-                    <div className="text-lg font-semibold text-blue-800">{member2.name}</div>
-                    <div className="text-sm text-blue-600 mt-1">
-                      {member2.relationship || 'Family Member'}
-                    </div>
-                  </div>
-                </div>
-                
-                <div className="grid grid-cols-2 gap-4 text-sm">
-                  <div className="space-y-3">
-                    {member1.email && (
-                      <div className="flex items-center gap-2 p-2 bg-slate-50 rounded-lg">
-                        <Mail className="w-4 h-4 text-slate-500" />
-                        <span className="text-slate-700">{member1.email}</span>
-                      </div>
-                    )}
-                    <div className="flex items-center gap-2 p-2 bg-slate-50 rounded-lg">
-                      <Badge variant="outline" className={`${
-                        member1.status === 'active' ? 'bg-green-50 text-green-700 border-green-200' :
-                        member1.status === 'invited' ? 'bg-yellow-50 text-yellow-700 border-yellow-200' :
-                        'bg-gray-50 text-gray-700 border-gray-200'
-                      }`}>
-                        {member1.status === 'active' ? '✓ Active' : 
-                         member1.status === 'invited' ? '⏳ Invited' : 
-                         '❓ Unknown'}
-                      </Badge>
-                    </div>
-                    {member1.gender && (
-                      <div className="flex items-center gap-2 p-2 bg-slate-50 rounded-lg">
-                        <span className="text-slate-500">Gender:</span>
-                        <span className="text-slate-700 capitalize">{member1.gender}</span>
-                      </div>
-                    )}
-                  </div>
-                  <div className="space-y-3">
-                    {member2.email && (
-                      <div className="flex items-center gap-2 p-2 bg-slate-50 rounded-lg">
-                        <Mail className="w-4 h-4 text-slate-500" />
-                        <span className="text-slate-700">{member2.email}</span>
-                      </div>
-                    )}
-                    <div className="flex items-center gap-2 p-2 bg-slate-50 rounded-lg">
-                      <Badge variant="outline" className={`${
-                        member2.status === 'active' ? 'bg-green-50 text-green-700 border-green-200' :
-                        member2.status === 'invited' ? 'bg-yellow-50 text-yellow-700 border-yellow-200' :
-                        'bg-gray-50 text-gray-700 border-gray-200'
-                      }`}>
-                        {member2.status === 'active' ? '✓ Active' : 
-                         member2.status === 'invited' ? '⏳ Invited' : 
-                         '❓ Unknown'}
-                      </Badge>
-                    </div>
-                    {member2.gender && (
-                      <div className="flex items-center gap-2 p-2 bg-slate-50 rounded-lg">
-                        <span className="text-slate-500">Gender:</span>
-                        <span className="text-slate-700 capitalize">{member2.gender}</span>
-                      </div>
-                    )}
-                  </div>
-                </div>
-              </div>
-            );
-          })()}
-        </DialogContent>
-      </Dialog>
-      
-      {/* Relationship Analysis Dialog */}
-      <Dialog open={relationshipAnalysisOpen} onOpenChange={setRelationshipAnalysisOpen}>
-        <DialogContent className="max-w-lg bg-white/95 backdrop-blur-sm border border-slate-200/60">
-          <DialogHeader>
-            <DialogTitle className="flex items-center gap-2 text-slate-800">
-              <Users className="w-5 h-5 text-purple-500" />
-              Relationship Analysis
-            </DialogTitle>
-            <DialogDescription className="text-slate-600">
-              Analysis of the relationship between selected family members
-            </DialogDescription>
-          </DialogHeader>
-          
-          {selectedNodes.length === 2 && (
-            <div className="space-y-4">
-              <div className="grid grid-cols-2 gap-4">
-                {selectedNodes.map((nodeId, index) => {
-                  const member = familyMembers.find(m => m.userId === nodeId);
-                  if (!member) return null;
-                  
-                  return (
-                    <div key={nodeId} className="text-center p-3 bg-gradient-to-br from-purple-50 to-pink-50 rounded-lg border border-purple-200/40">
-                      <div className="font-semibold text-purple-800">{member.name}</div>
-                      <div className="text-xs text-purple-600 mt-1">
-                        {member.relationship || 'Family Member'}
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-              
-              <div className="p-4 bg-gradient-to-br from-blue-50 to-indigo-50 rounded-lg border border-blue-200/40">
-                <h4 className="font-semibold text-blue-800 mb-2 flex items-center gap-2">
-                  <Heart className="w-4 h-4" />
-                  Relationship Analysis
-                </h4>
-                <p className="text-blue-700 text-sm leading-relaxed">
-                  {calculatedRelationship}
-                </p>
-              </div>
-              
-              <div className="flex justify-center">
-                <button
-                  onClick={() => {
-                    setRelationshipAnalysisOpen(false);
-                    setSelectedNodes([]);
-                    setNodes(nodes => nodes.map(n => ({
-                      ...n,
-                      data: { ...n.data, isSelected: false }
-                    })));
+
+        {/* Enhanced Popup Card */}
+        {nodePopup && nodePopup.data && (
+          <div 
+            className="absolute z-50 bg-white/95 backdrop-blur-sm rounded-lg shadow-xl border-2 border-blue-200 p-3 min-w-[200px] transform transition-all duration-200"
+            style={{ 
+              left: `${nodePopup.x}px`, 
+              top: `${nodePopup.y}px`,
+              maxWidth: '250px'
+            }}
+          >
+            <div className="flex items-start gap-3">
+              <div className="w-12 h-12 rounded-full overflow-hidden border-2 border-gray-200 flex-shrink-0">
+                <img 
+                  src={nodePopup.data.profilePicture || "/placeholder.svg"} 
+                  alt={nodePopup.data.name}
+                  className="w-full h-full object-cover"
+                  onError={(e) => {
+                    const target = e.target as HTMLImageElement;
+                    const colors = safeColor(nodePopup.data);
+                    const initials = nodePopup.data!.name.split(' ').map(n => n[0]).join('').substring(0, 2).toUpperCase();
+                    const svg = `data:image/svg+xml;base64,${btoa(`
+                      <svg width="48" height="48" viewBox="0 0 48 48" xmlns="http://www.w3.org/2000/svg">
+                        <circle cx="24" cy="24" r="22" fill="${colors.bgColor}" stroke="${colors.borderColor}" stroke-width="2"/>
+                        <text x="24" y="30" font-family="Arial" font-size="14" font-weight="bold" fill="white" text-anchor="middle">${initials}</text>
+                      </svg>
+                    `)}`;
+                    target.src = svg;
                   }}
-                  className="px-4 py-2 bg-purple-500 text-white rounded-lg hover:bg-purple-600 transition-colors flex items-center gap-2"
-                >
-                  <X className="w-4 h-4" />
-                  Close Analysis
-                </button>
+                />
               </div>
+              <div className="flex-1 min-w-0">
+                <h3 className="font-semibold text-gray-900 truncate">{nodePopup.data.name}</h3>
+                {nodePopup.data.email && (
+                  <div className="flex items-center gap-1 text-xs text-gray-600 mt-1">
+                    <Mail className="w-3 h-3" />
+                    <span className="truncate">{nodePopup.data.email}</span>
+                  </div>
+                )}
+                <div className="flex flex-wrap gap-1 mt-2">
+                  {nodePopup.data.gender && (
+                    <Badge variant="secondary" className="text-xs">{nodePopup.data.gender}</Badge>
+                  )}
+                  {nodePopup.data.status && (
+                    <Badge variant="outline" className="text-xs">{nodePopup.data.status}</Badge>
+                  )}
+                  {nodePopup.data.relationship && (
+                    <Badge className="text-xs">{nodePopup.data.relationship}</Badge>
+                  )}
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* Loading overlay with better styling */}
+      {isLoading && (
+        <div className="absolute inset-0 flex items-center justify-center pointer-events-none bg-white/50 backdrop-blur-sm rounded-xl">
+          <div className="rounded-lg bg-white shadow-lg px-6 py-4 text-sm font-medium text-gray-700 flex items-center gap-3">
+            <div className="w-5 h-5 border-2 border-blue-600 border-t-transparent rounded-full animate-spin"></div>
+            Loading family tree...
+          </div>
+        </div>
+      )}
+
+      {/* Enhanced Node Details Dialog */}
+      <Dialog
+        open={nodeDetailsOpen}
+        onOpenChange={(open) => {
+          setNodeDetailsOpen(open);
+          if (!open) setActiveMemberId(null);
+        }}
+      >
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <div className="w-8 h-8 rounded-full bg-blue-100 flex items-center justify-center">
+                <Mail className="w-4 h-4 text-blue-600" />
+              </div>
+              Member Details
+            </DialogTitle>
+            <DialogDescription>Complete information about the selected family member</DialogDescription>
+          </DialogHeader>
+          {selectedMember ? (
+            <div className="space-y-4">
+              <div className="flex items-center gap-4">
+                <div className="w-16 h-16 rounded-full overflow-hidden border-4 border-gray-200">
+                  <img 
+                    src={selectedMember.profilePicture || "/placeholder.svg"} 
+                    alt={selectedMember.name}
+                    className="w-full h-full object-cover"
+                  />
+                </div>
+                <div>
+                  <h3 className="text-lg font-bold text-gray-900">{selectedMember.name}</h3>
+                  {selectedMember.email && (
+                    <div className="flex items-center gap-2 text-sm text-gray-600 mt-1">
+                      <Mail className="w-4 h-4" /> 
+                      <span>{selectedMember.email}</span>
+                    </div>
+                  )}
+                </div>
+              </div>
+              
+              <div className="grid grid-cols-2 gap-4">
+                {selectedMember.gender && (
+                  <div>
+                    <label className="text-xs font-medium text-gray-500 uppercase tracking-wide">Gender</label>
+                    <Badge variant="secondary" className="mt-1">{selectedMember.gender}</Badge>
+                  </div>
+                )}
+                {selectedMember.status && (
+                  <div>
+                    <label className="text-xs font-medium text-gray-500 uppercase tracking-wide">Status</label>
+                    <Badge variant="outline" className="mt-1">{selectedMember.status}</Badge>
+                  </div>
+                )}
+                {selectedMember.relationship && (
+                  <div className="col-span-2">
+                    <label className="text-xs font-medium text-gray-500 uppercase tracking-wide">Relationship</label>
+                    <Badge className="mt-1">{selectedMember.relationship}</Badge>
+                  </div>
+                )}
+              </div>
+            </div>
+          ) : (
+            <div className="text-center py-8 text-gray-600">
+              <Info className="w-8 h-8 mx-auto mb-2 text-gray-400" />
+              Select a single node to view details.
             </div>
           )}
         </DialogContent>
       </Dialog>
-      
-      {/* Enhanced Relationship Details Dialog */}
-      <Dialog open={relationshipDetailsOpen} onOpenChange={setRelationshipDetailsOpen}>
-        <DialogContent className="max-w-md bg-white/95 backdrop-blur-sm border border-slate-200/60">
+
+      {/* Enhanced Relationship Analysis Dialog */}
+      <Dialog open={relationshipAnalysisOpen} onOpenChange={setRelationshipAnalysisOpen}>
+        <DialogContent className="max-w-lg">
           <DialogHeader>
-            <DialogTitle className="flex items-center gap-2 text-slate-800">
-              <Heart className="w-5 h-5 text-rose-500" />
-              Relationship Details
+            <DialogTitle className="flex items-center gap-2">
+              <div className="w-8 h-8 rounded-full bg-green-100 flex items-center justify-center">
+                <span className="text-green-600 font-bold">↔</span>
+              </div>
+              Relationship Analysis
             </DialogTitle>
-            <DialogDescription className="text-slate-600">
-              Family connection information
-            </DialogDescription>
+            <DialogDescription>Understanding the connection between selected family members</DialogDescription>
           </DialogHeader>
-          
-          {selectedEdge && (
+          <div className="space-y-4">
+            <div className="bg-gradient-to-r from-blue-50 to-green-50 rounded-lg p-4 border-l-4 border-blue-500">
+              <p className="text-gray-800 font-medium">{calculatedRelationship}</p>
+            </div>
+            {selectedNodes.length === 2 && (
+              <div className="grid grid-cols-2 gap-4">
+                {selectedNodes.map((nodeId, index) => {
+                  const member = familyMembers.find(m => m.userId === nodeId);
+                  if (!member) return null;
+                  return (
+                    <div key={nodeId} className="text-center">
+                      <div className="w-12 h-12 mx-auto rounded-full overflow-hidden border-2 border-gray-200 mb-2">
+                        <img 
+                          src={member.profilePicture || "/placeholder.svg"} 
+                          alt={member.name}
+                          className="w-full h-full object-cover"
+                        />
+                      </div>
+                      <p className="font-medium text-sm">{member.name}</p>
+                      {member.relationship && (
+                        <p className="text-xs text-gray-600">{member.relationship}</p>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Enhanced Edge Details Dialog */}
+      <Dialog open={relationshipDetailsOpen} onOpenChange={setRelationshipDetailsOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <div className="w-8 h-8 rounded-full bg-purple-100 flex items-center justify-center">
+                <span className="text-purple-600 font-bold">—</span>
+              </div>
+              Connection Details
+            </DialogTitle>
+            <DialogDescription>Information about the selected relationship</DialogDescription>
+          </DialogHeader>
+          {selectedEdge ? (
             <div className="space-y-4">
-              <div className="text-center p-4 bg-gradient-to-br from-blue-50 to-indigo-50 rounded-lg border border-blue-200/40">
-                <div className="text-lg font-semibold text-blue-800 capitalize">
-                  {selectedEdge.data?.relationship === 'MARRIED_TO' ? 'Marriage' : 
-                   selectedEdge.data?.relationship === 'PARENTS_OF' ? 'Parent-Child' : 
-                   selectedEdge.data?.relationship === 'SIBLING' ? 'Sibling' : 
-                   selectedEdge.type}
+              <div className="bg-gray-50 rounded-lg p-4 space-y-3">
+                <div className="flex items-center justify-between">
+                  <span className="font-medium text-gray-700">Relationship Type:</span>
+                  <Badge variant={
+                    selectedEdge.data("type") === "marriage" ? "default" :
+                    selectedEdge.data("type") === "parentChild" ? "secondary" : "outline"
+                  }>
+                    {selectedEdge.data("relationship")}
+                  </Badge>
                 </div>
-                <div className="text-sm text-blue-600 mt-1">
-                  Direct family relationship
+                <div className="flex items-center justify-between">
+                  <span className="font-medium text-gray-700">From:</span>
+                  <span className="text-sm">{selectedEdge.data("sourceName") || selectedEdge.data("source")}</span>
                 </div>
-              </div>
-              
-              <div className="grid grid-cols-2 gap-4 text-sm">
-                <div className="text-center p-3 bg-slate-50 rounded-lg">
-                  <div className="font-medium text-slate-700 mb-1">From</div>
-                  <div className="text-slate-600 font-semibold">{(selectedEdge.data as any)?.sourceName || 'Unknown'}</div>
-                </div>
-                <div className="text-center p-3 bg-slate-50 rounded-lg">
-                  <div className="font-medium text-slate-700 mb-1">To</div>
-                  <div className="text-slate-600 font-semibold">{(selectedEdge.data as any)?.targetName || 'Unknown'}</div>
+                <div className="flex items-center justify-between">
+                  <span className="font-medium text-gray-700">To:</span>
+                  <span className="text-sm">{selectedEdge.data("targetName") || selectedEdge.data("target")}</span>
                 </div>
               </div>
               
-              <div className="text-xs text-blue-700 bg-blue-50 p-3 rounded-lg border border-blue-200/40">
-                <strong>Connection Type:</strong> {
-                  selectedEdge.type === 'marriage' ? '💍 Marriage Bond' : 
-                  selectedEdge.type === 'parentChild' ? '👨‍👩‍👧‍👦 Parent-Child Link' : 
-                  selectedEdge.type === 'sibling' ? '👫 Sibling Connection' : 'Family Relation'
-                }
+              {/* Visual representation of the edge */}
+              <div className="flex items-center justify-center p-4">
+                <div className="flex items-center gap-3">
+                  <div className="w-8 h-8 rounded-full bg-gray-300"></div>
+                  <div className={`h-0.5 w-12 ${
+                    selectedEdge.data("type") === "marriage" ? "bg-red-600" :
+                    selectedEdge.data("type") === "parentChild" ? "bg-green-500" :
+                    selectedEdge.data("type") === "sibling" ? "bg-blue-600" : "bg-gray-400"
+                  }`}></div>
+                  <div className="w-8 h-8 rounded-full bg-gray-300"></div>
+                </div>
               </div>
+            </div>
+          ) : (
+            <div className="text-center py-8 text-gray-600">
+              <Info className="w-8 h-8 mx-auto mb-2 text-gray-400" />
+              Select an edge to view connection details.
             </div>
           )}
         </DialogContent>
