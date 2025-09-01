@@ -12,6 +12,7 @@ import EditProfilePage from "@/pages/EditProfilePage";
 import ChatPage from "@/pages/ChatPage";
 import GroupViewPage from "@/pages/GroupViewPage";
 import EventsPage from "@/pages/events";
+import PostsPageWrapper from "@/pages/PostsPageWrapper";
 
 const queryClient = new QueryClient();
 
@@ -31,6 +32,7 @@ function App() {
               <Route path="/chat" element={<ChatPage />} />
               <Route path="/groups" element={<GroupViewPage />} />
               <Route path="/events" element={<EventsPage />} />
+              <Route path="/posts" element={<PostsPageWrapper />} />
               <Route path="/" element={<Navigate to="/auth" replace />} />
               <Route path="*" element={<Navigate to="/auth" replace />} />
             </Routes>

@@ -745,6 +745,234 @@ app.get('/api/chat/online-members/:familyId', async (req, res) => {
   }
 });
 
+// Family Posts API endpoints
+app.post('/api/posts/create', upload.array('images', 10), async (req, res) => {
+  try {
+    const { familyId, userId, userName, description } = req.body;
+    
+    if (!familyId || !userId || !userName) {
+      return res.status(400).json({ error: 'Missing required fields: familyId, userId, userName' });
+    }
+
+    const images = [];
+    
+    // Process uploaded images
+    if (req.files && req.files.length > 0) {
+      for (const file of req.files) {
+        const uploadStream = gridFSBucket.openUploadStream(file.originalname, {
+          contentType: file.mimetype,
+          metadata: {
+            uploadedAt: new Date(),
+            familyId,
+            userId,
+            userName,
+            size: file.size,
+            type: 'post_image'
+          }
+        });
+
+        uploadStream.end(file.buffer);
+        
+        await new Promise((resolve, reject) => {
+          uploadStream.on('finish', resolve);
+          uploadStream.on('error', reject);
+        });
+
+        images.push({
+          imageId: uploadStream.id.toString(),
+          imageUrl: `/api/posts/image/${uploadStream.id.toString()}`,
+          originalName: file.originalname
+        });
+      }
+    }
+
+    const newPost = {
+      id: new ObjectId().toString(),
+      familyId,
+      userId,
+      userName,
+      description: description || '',
+      images,
+      likes: [],
+      comments: [],
+      createdAt: new Date(),
+      updatedAt: new Date()
+    };
+
+    const result = await db.collection('family_posts').insertOne(newPost);
+    
+    // Emit real-time notification to family members
+    io.to(`family-${familyId}`).emit('new-post', {
+      ...newPost,
+      _id: result.insertedId
+    });
+
+    res.json({ 
+      success: true, 
+      post: { ...newPost, _id: result.insertedId }
+    });
+  } catch (error) {
+    console.error('Error creating post:', error);
+    res.status(500).json({ error: 'Failed to create post' });
+  }
+});
+
+app.get('/api/posts/:familyId', async (req, res) => {
+  try {
+    const { familyId } = req.params;
+    const { limit = 20, skip = 0 } = req.query;
+    
+    const posts = await db.collection('family_posts')
+      .find({ familyId })
+      .sort({ createdAt: -1 })
+      .limit(parseInt(limit))
+      .skip(parseInt(skip))
+      .toArray();
+    
+    res.json(posts);
+  } catch (error) {
+    console.error('Error fetching posts:', error);
+    res.status(500).json({ error: 'Failed to fetch posts' });
+  }
+});
+
+app.post('/api/posts/:postId/like', async (req, res) => {
+  try {
+    const { postId } = req.params;
+    const { userId, userName } = req.body;
+    
+    if (!userId || !userName) {
+      return res.status(400).json({ error: 'Missing userId or userName' });
+    }
+
+    const post = await db.collection('family_posts').findOne({ id: postId });
+    if (!post) {
+      return res.status(404).json({ error: 'Post not found' });
+    }
+
+    const existingLike = post.likes.find(like => like.userId === userId);
+    let updatedLikes;
+    
+    if (existingLike) {
+      // Unlike
+      updatedLikes = post.likes.filter(like => like.userId !== userId);
+    } else {
+      // Like
+      updatedLikes = [...post.likes, { userId, userName, likedAt: new Date() }];
+    }
+
+    await db.collection('family_posts').updateOne(
+      { id: postId },
+      { 
+        $set: { 
+          likes: updatedLikes,
+          updatedAt: new Date()
+        }
+      }
+    );
+
+    // Emit real-time update
+    io.to(`family-${post.familyId}`).emit('post-liked', {
+      postId,
+      likes: updatedLikes,
+      action: existingLike ? 'unlike' : 'like',
+      userId,
+      userName
+    });
+
+    res.json({ success: true, likes: updatedLikes });
+  } catch (error) {
+    console.error('Error toggling like:', error);
+    res.status(500).json({ error: 'Failed to toggle like' });
+  }
+});
+
+app.post('/api/posts/:postId/comment', async (req, res) => {
+  try {
+    const { postId } = req.params;
+    const { userId, userName, comment } = req.body;
+    
+    if (!userId || !userName || !comment) {
+      return res.status(400).json({ error: 'Missing required fields' });
+    }
+
+    const post = await db.collection('family_posts').findOne({ id: postId });
+    if (!post) {
+      return res.status(404).json({ error: 'Post not found' });
+    }
+
+    const newComment = {
+      id: new ObjectId().toString(),
+      userId,
+      userName,
+      comment: comment.trim(),
+      createdAt: new Date()
+    };
+
+    const updatedComments = [...post.comments, newComment];
+
+    await db.collection('family_posts').updateOne(
+      { id: postId },
+      { 
+        $set: { 
+          comments: updatedComments,
+          updatedAt: new Date()
+        }
+      }
+    );
+
+    // Emit real-time update
+    io.to(`family-${post.familyId}`).emit('post-commented', {
+      postId,
+      comment: newComment,
+      totalComments: updatedComments.length
+    });
+
+    res.json({ success: true, comment: newComment });
+  } catch (error) {
+    console.error('Error adding comment:', error);
+    res.status(500).json({ error: 'Failed to add comment' });
+  }
+});
+
+// Stream post images from GridFS
+app.get('/api/posts/image/:id', async (req, res) => {
+  try {
+    const { id } = req.params;
+    const _id = new ObjectId(id);
+    
+    const fileDoc = await db.collection('chat_images.files').findOne({ _id });
+    if (!fileDoc) {
+      return res.status(404).json({ error: 'Image not found' });
+    }
+    
+    const contentType = fileDoc.contentType || fileDoc.metadata?.contentType;
+    if (contentType) {
+      res.setHeader('Content-Type', contentType);
+    }
+    res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
+    
+    const readStream = gridFSBucket.openDownloadStream(_id);
+    readStream.on('error', (err) => {
+      console.error('GridFS read error:', err);
+      res.status(500).end();
+    });
+    readStream.pipe(res);
+  } catch (error) {
+    console.error('Error retrieving post image:', error);
+    res.status(500).json({ error: 'Failed to retrieve image' });
+  }
+});
+
+// Health check endpoint
+app.get('/api/health', (req, res) => {
+  res.json({
+    status: 'ok',
+    database: 'connected',
+    timestamp: new Date().toISOString()
+  });
+});
+
 // Status endpoint
 app.get('/status', (req, res) => {
   res.json({

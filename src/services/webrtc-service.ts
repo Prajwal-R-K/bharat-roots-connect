@@ -862,6 +862,22 @@ class WebRTCService {
     return this.currentCall;
   }
 
+  // Expose generic event subscription helpers so other features can reuse the same socket
+  // without creating duplicate connections.
+  public on<T = any>(event: string, handler: (data: T) => void): void {
+    if (!this.socket) return;
+    this.socket.on(event, handler as any);
+  }
+
+  public off(event: string, handler?: (...args: any[]) => void): void {
+    if (!this.socket) return;
+    if (handler) {
+      this.socket.off(event, handler as any);
+    } else {
+      this.socket.removeAllListeners(event);
+    }
+  }
+
   // Check and request media permissions
   async checkMediaPermissions(callType: 'voice' | 'video'): Promise<{ audio: boolean; video: boolean }> {
     const permissions = { audio: false, video: false };

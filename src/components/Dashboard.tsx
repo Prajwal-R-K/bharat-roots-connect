@@ -392,6 +392,42 @@ const Dashboard: React.FC<DashboardProps> = ({ user: initialUser, onUserUpdate }
           </CardContent>
         </Card>
 
+        {/* Recent Family Posts Preview */}
+        <Card className="mb-8 shadow-lg border-0 bg-gradient-to-r from-pink-50 to-rose-100">
+          <CardHeader>
+            <div className="flex items-center justify-between">
+              <CardTitle className="flex items-center gap-2 text-gray-800">
+                <Mail className="w-5 h-5" />
+                Recent Family Posts
+              </CardTitle>
+              <Button 
+                variant="outline" 
+                size="sm"
+                onClick={() => navigate('/posts')}
+                className="border-pink-200 hover:bg-pink-50"
+              >
+                View All Posts
+              </Button>
+            </div>
+          </CardHeader>
+          <CardContent>
+            <div className="text-center py-8">
+              <div className="w-16 h-16 bg-gradient-to-br from-pink-500/20 to-rose-500/20 rounded-full flex items-center justify-center mx-auto mb-4">
+                <Mail className="w-8 h-8 text-pink-500" />
+              </div>
+              <h3 className="text-lg font-semibold text-gray-900 mb-2">Share Your Moments</h3>
+              <p className="text-gray-500 mb-4">Create and share posts with your family members</p>
+              <Button 
+                className="bg-gradient-to-r from-pink-500 to-rose-500 hover:from-pink-600 hover:to-rose-600 text-white"
+                onClick={() => navigate('/posts')}
+              >
+                <Plus className="w-4 h-4 mr-2" />
+                Create First Post
+              </Button>
+            </div>
+          </CardContent>
+        </Card>
+
         {/* Family Tree Visualization */}
         <Card className="shadow-2xl border-0 bg-gradient-to-br from-blue-50 via-indigo-50 to-purple-50">
           <CardHeader className="bg-gradient-to-r from-indigo-600 to-purple-600 text-white rounded-t-lg">
