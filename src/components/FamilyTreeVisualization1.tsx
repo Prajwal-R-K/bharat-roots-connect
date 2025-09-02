@@ -7,7 +7,7 @@ import { Badge } from "@/components/ui/badge";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { getFamilyRelationships } from "@/lib/neo4j/family-tree";
 import { getUserPersonalizedFamilyTree } from "@/lib/neo4j/relationships";
-import { Mail, ZoomIn, ZoomOut, Maximize, RotateCcw, Info } from "lucide-react";
+import { Mail, ZoomIn, ZoomOut, Maximize, RotateCcw, Info, Search, X } from "lucide-react";
 
 import cytoscape from "cytoscape";
 import elk from "cytoscape-elk";
@@ -81,11 +81,18 @@ const getCytoscapeStyles = () => [
   {
     selector: 'node.hover',
     style: {
-      width: 110,
-      height: 110,
-      'border-width': 5,
+      'border-width': 3,
       'border-color': '#3b82f6',
-      'z-index': 999
+      'border-opacity': 0.8,
+    }
+  },
+  {
+    selector: 'node.highlighted',
+    style: {
+      'border-width': 4,
+      'border-color': '#ef4444',
+      'border-opacity': 1,
+      'box-shadow': '0 0 20px #ef4444'
     }
   },
   {
@@ -330,7 +337,12 @@ const createCytoscapeElements = (
           isRoot,
           isCurrent,
           ...colors,
-          profileImage: getAvatarForMember(m, m.profilePicture)
+          profileImage: getAvatarForMember({
+            gender: m.gender,
+            age: m.age,
+            dateOfBirth: m.dateOfBirth,
+            married: m.married
+          }, m.profilePicture)
         }
       });
       processed.add(m.userId);
@@ -475,7 +487,10 @@ const FamilyTreeVisualization: React.FC<FamilyTreeVisualizationProps> = ({
   const [relationshipDetailsOpen, setRelationshipDetailsOpen] = useState(false);
   const [selectionMode, setSelectionMode] = useState<"single" | "pair">("pair");
   const [activeMemberId, setActiveMemberId] = useState<string | null>(null);
-  const [showLegend, setShowLegend] = useState(true);
+  const [showLegend, setShowLegend] = useState(false);
+  const [showSearch, setShowSearch] = useState(false);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [searchResults, setSearchResults] = useState<FamilyMember[]>([]);
 
   // Enhanced edge styling with better defaults
   const [edgeCurvature, setEdgeCurvature] = useState<number>(60);
@@ -697,11 +712,14 @@ const FamilyTreeVisualization: React.FC<FamilyTreeVisualizationProps> = ({
       style: getCytoscapeStyles(),
       zoomingEnabled: true,
       panningEnabled: true,
+      userZoomingEnabled: false,
+      userPanningEnabled: false,
       boxSelectionEnabled: false,
       autounselectify: false,
-      autoungrabify: false,
+      autoungrabify: true,
       minZoom: 0.2,
-      maxZoom: 4
+      maxZoom: 4,
+      wheelSensitivity: 0
     });
 
     // Enhanced hover effects
@@ -1068,90 +1086,158 @@ const FamilyTreeVisualization: React.FC<FamilyTreeVisualizationProps> = ({
   })();
 
   return (
-    <div className="w-full relative rounded-xl p-4 bg-gradient-to-br from-slate-50 via-white to-blue-50 shadow-lg" style={{ minHeight }}>
+    <div className="w-full relative" style={{ minHeight }}>
       {showControls && (
-        <div className="flex flex-wrap gap-3 items-center mb-4 p-3 bg-white/80 backdrop-blur rounded-lg shadow-sm border">
-          {/* Selection Mode */}
-          <div className="flex items-center gap-2">
-            <span className="text-sm font-medium text-gray-700">Selection:</span>
+        <div className="flex items-center gap-1 mb-4">
+          <button
+            type="button"
+            onClick={handleZoomIn}
+            className="inline-flex items-center justify-center w-10 h-10 rounded-lg border border-gray-300 bg-white hover:bg-gray-50 transition-colors shadow-sm"
+            title="Zoom In"
+          >
+            <ZoomIn className="w-5 h-5" />
+          </button>
+          <button
+            type="button"
+            onClick={handleZoomOut}
+            className="inline-flex items-center justify-center w-10 h-10 rounded-lg border border-gray-300 bg-white hover:bg-gray-50 transition-colors shadow-sm"
+            title="Zoom Out"
+          >
+            <ZoomOut className="w-5 h-5" />
+          </button>
+          <button
+            type="button"
+            onClick={handleFit}
+            className="inline-flex items-center justify-center w-10 h-10 rounded-lg border border-gray-300 bg-white hover:bg-gray-50 transition-colors shadow-sm"
+            title="Fit to View"
+          >
+            <Maximize className="w-5 h-5" />
+          </button>
+          <button
+            type="button"
+            onClick={handleRelayout}
+            className="inline-flex items-center justify-center w-10 h-10 rounded-lg border border-gray-300 bg-white hover:bg-gray-50 transition-colors shadow-sm"
+            title="Re-layout Tree"
+          >
+            <RotateCcw className="w-5 h-5" />
+          </button>
+          <button
+            type="button"
+            onClick={() => setShowSearch(!showSearch)}
+            className="inline-flex items-center justify-center w-10 h-10 rounded-lg border border-gray-300 bg-white hover:bg-gray-50 transition-colors shadow-sm"
+            title="Search Member"
+          >
+            <Search className="w-5 h-5" />
+          </button>
+        </div>
+      )}
+
+      {/* Search Panel */}
+      {showSearch && (
+        <div className="mb-4 p-4 bg-white rounded-lg shadow-lg border">
+          <div className="flex items-center gap-2 mb-3">
+            <Search className="w-4 h-4 text-gray-500" />
+            <input
+              type="text"
+              placeholder="Search family member by name..."
+              value={searchQuery}
+              onChange={(e) => {
+                const query = e.target.value;
+                setSearchQuery(query);
+                if (query.trim()) {
+                  const results = familyMembers.filter(member => 
+                    member.name.toLowerCase().includes(query.toLowerCase())
+                  );
+                  setSearchResults(results);
+                } else {
+                  setSearchResults([]);
+                }
+              }}
+              className="flex-1 px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+            />
             <button
-              type="button"
-              onClick={() => setSelectionMode("single")}
-              className={`px-3 py-1.5 rounded-md text-sm font-medium transition-all ${
-                selectionMode === 'single' 
-                  ? 'bg-blue-100 border-blue-300 text-blue-700 shadow-sm' 
-                  : 'bg-white border-gray-200 text-gray-600 hover:bg-gray-50'
-              } border`}
+              onClick={() => {
+                setShowSearch(false);
+                setSearchQuery('');
+                setSearchResults([]);
+              }}
+              className="p-2 text-gray-500 hover:text-gray-700"
             >
-              Single
-            </button>
-            <button
-              type="button"
-              onClick={() => setSelectionMode("pair")}
-              className={`px-3 py-1.5 rounded-md text-sm font-medium transition-all ${
-                selectionMode === 'pair' 
-                  ? 'bg-blue-100 border-blue-300 text-blue-700 shadow-sm' 
-                  : 'bg-white border-gray-200 text-gray-600 hover:bg-gray-50'
-              } border`}
-            >
-              Pair
+              <X className="w-4 h-4" />
             </button>
           </div>
-
-          {/* Navigation Controls */}
-          <div className="flex items-center gap-1 border-l pl-3">
-            <button
-              type="button"
-              onClick={handleZoomIn}
-              className="inline-flex items-center gap-1 rounded-md border border-gray-200 px-2 py-1.5 text-sm hover:bg-gray-50 transition-colors"
-              title="Zoom In"
-            >
-              <ZoomIn className="w-4 h-4" />
-            </button>
-            <button
-              type="button"
-              onClick={handleZoomOut}
-              className="inline-flex items-center gap-1 rounded-md border border-gray-200 px-2 py-1.5 text-sm hover:bg-gray-50 transition-colors"
-              title="Zoom Out"
-            >
-              <ZoomOut className="w-4 h-4" />
-            </button>
-            <button
-              type="button"
-              onClick={handleFit}
-              className="inline-flex items-center gap-1 rounded-md border border-gray-200 px-2 py-1.5 text-sm hover:bg-gray-50 transition-colors"
-              title="Fit to View"
-            >
-              <Maximize className="w-4 h-4" />
-            </button>
-            <button
-              type="button"
-              onClick={handleRelayout}
-              className="inline-flex items-center gap-1 rounded-md border border-gray-200 px-2 py-1.5 text-sm hover:bg-gray-50 transition-colors"
-              title="Re-layout Tree"
-            >
-              <RotateCcw className="w-4 h-4" />
-            </button>
-          </div>
-
-
-          {/* Legend Toggle */}
-          <div className="ml-auto flex items-center gap-2">
-            <button
-              type="button"
-              onClick={() => setShowLegend(!showLegend)}
-              className="inline-flex items-center gap-1 rounded-md border border-gray-200 px-2 py-1.5 text-sm hover:bg-gray-50 transition-colors"
-              title="Toggle Legend"
-            >
-              <Info className="w-4 h-4" />
-              Legend
-            </button>
-            {selectedNodes.length > 0 && (
-              <div className="text-sm text-blue-600 font-medium">
-                {selectedNodes.length} selected
-              </div>
-            )}
-          </div>
+          
+          {searchResults.length > 0 && (
+            <div className="space-y-2 max-h-40 overflow-y-auto">
+              {searchResults.map(member => (
+                <button
+                  key={member.userId}
+                  onClick={() => {
+                    if (cyRef.current) {
+                      console.log('Searching for member:', member.name, 'ID:', member.userId);
+                      
+                      // Remove previous highlights
+                      cyRef.current.nodes().removeClass('highlighted');
+                      
+                      const node = cyRef.current.getElementById(member.userId);
+                      console.log('Found node:', node.length > 0);
+                      
+                      if (node.length > 0) {
+                        // Stop any ongoing animations
+                        cyRef.current.stop();
+                        
+                        // Complete reset of the viewport
+                        cyRef.current.reset();
+                        
+                        // Fit all nodes to ensure everything is visible
+                        cyRef.current.fit(cyRef.current.nodes(), 100);
+                        
+                        // Wait a bit longer for the reset to complete
+                        setTimeout(() => {
+                          if (cyRef.current) {
+                            // Get fresh node reference after reset
+                            const freshNode = cyRef.current.getElementById(member.userId);
+                            if (freshNode.length > 0) {
+                              console.log('Animating to fresh node position:', freshNode.position());
+                              
+                              // Animate to the node with higher zoom for better visibility
+                              cyRef.current.animate({
+                                center: { eles: freshNode },
+                                zoom: 3
+                              }, {
+                                duration: 1200,
+                                easing: 'ease-in-out',
+                                complete: () => {
+                                  // Add highlight after animation completes
+                                  freshNode.addClass('highlighted');
+                                  setTimeout(() => freshNode.removeClass('highlighted'), 4000);
+                                }
+                              });
+                            }
+                          }
+                        }, 800);
+                      } else {
+                        console.warn('Node not found for member:', member.userId);
+                      }
+                    }
+                    // Keep search open for multiple searches
+                    setSearchQuery('');
+                    setSearchResults([]);
+                  }}
+                  className="w-full text-left p-2 hover:bg-gray-50 rounded-md border border-gray-200 transition-colors"
+                >
+                  <div className="font-medium text-gray-900">{member.name}</div>
+                  <div className="text-sm text-gray-500">{member.relationship || 'Family Member'}</div>
+                </button>
+              ))}
+            </div>
+          )}
+          
+          {searchQuery && searchResults.length === 0 && (
+            <div className="text-sm text-gray-500 text-center py-2">
+              No members found matching "{searchQuery}"
+            </div>
+          )}
         </div>
       )}
 
@@ -1169,74 +1255,6 @@ const FamilyTreeVisualization: React.FC<FamilyTreeVisualizationProps> = ({
           style={{ width: '100%', height: '100%' }}
         />
 
-       {/* Enhanced Legend */}
-        {showLegend && (
-          <div className="absolute top-4 right-4 bg-white/95 backdrop-blur-sm rounded-lg shadow-lg border p-4 min-w-[200px]">
-            <h3 className="font-semibold text-sm text-gray-800 mb-3 flex items-center gap-2">
-              <Info className="w-4 h-4" />
-              Family Tree Legend
-            </h3>
-            
-            {/* Node Types */}
-            <div className="space-y-2 mb-4">
-              <h4 className="text-xs font-medium text-gray-600 uppercase tracking-wide">People</h4>
-              <div className="space-y-1.5 text-xs">
-                <div className="flex items-center gap-2">
-                  <div className="w-4 h-4 rounded-full bg-blue-500 border-2 border-blue-600"></div>
-                  <span>Male</span>
-                </div>
-                <div className="flex items-center gap-2">
-                  <div className="w-4 h-4 rounded-full bg-pink-500 border-2 border-pink-600"></div>
-                  <span>Female</span>
-                </div>
-                <div className="flex items-center gap-2">
-                  <div className="w-4 h-4 rounded-full bg-yellow-400 border-2 border-yellow-600"></div>
-                  <span>You (Current User)</span>
-                </div>
-                <div className="flex items-center gap-2">
-                  <div className="w-4 h-4 rounded-full bg-orange-500 border-2 border-orange-600"></div>
-                  <span>Tree Creator</span>
-                </div>
-              </div>
-            </div>
-
-            {/* Relationship Lines */}
-            <div className="space-y-2">
-              <h4 className="text-xs font-medium text-gray-600 uppercase tracking-wide">Relationships</h4>
-              <div className="space-y-1.5 text-xs">
-                <div className="flex items-center gap-2">
-                  <div className="w-6 h-0.5 bg-green-500 rounded"></div>
-                  <span>Parent → Child</span>
-                </div>
-                <div className="flex items-center gap-2">
-                  <div className="w-6 h-0.5 bg-red-600 rounded"></div>
-                  <span>Marriage ❤️</span>
-                </div>
-                <div className="flex items-center gap-2">
-                  <div className="w-6 h-0.5 bg-blue-600 rounded"></div>
-                  <span>Siblings</span>
-                </div>
-                <div className="flex items-center gap-2">
-                  <div className="w-6 h-0.5 bg-cyan-500 rounded" style={{borderTop: "2px dotted #0ea5e9"}}></div>
-                  <span>Adopted</span>
-                </div>
-                <div className="flex items-center gap-2">
-                  <div className="w-6 h-0.5 bg-gray-500 rounded" style={{borderTop: "2px dashed #6b7280"}}></div>
-                  <span>Divorced 💔</span>
-                </div>
-              </div>
-            </div>
-
-            {/* Instructions */}
-            <div className="mt-4 pt-3 border-t border-gray-200">
-              <div className="text-xs text-gray-600 space-y-1">
-                <div>• Click nodes to select</div>
-                <div>• Click edges to show labels</div>
-                <div>• Drag to pan, scroll to zoom</div>
-              </div>
-            </div>
-          </div>
-        )}
 
         {/* Enhanced Popup Card */}
         {nodePopup && nodePopup.data && (

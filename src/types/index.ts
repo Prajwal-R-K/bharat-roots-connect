@@ -29,8 +29,15 @@ export interface FamilyTree {
 }
 
 export interface FamilyMember {
+  userId: string;
+  name: string;
   email: string;
   relationship: string;
+  gender?: string;
+  age?: number;
+  dateOfBirth?: string;
+  married?: string;
+  profilePicture?: string;
 }
 
 export interface Relationship {

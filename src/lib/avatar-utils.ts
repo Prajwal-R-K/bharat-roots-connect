@@ -25,40 +25,44 @@ const calculateAge = (dateOfBirth: string): number => {
 };
 
 /**
- * Get default avatar based on gender and age
+ * Get default avatar based on gender, age, and marital status
  */
-export const getDefaultAvatar = (gender?: string, age?: number, dateOfBirth?: string): string => {
+export const getDefaultAvatar = (gender?: string, age?: number, dateOfBirth?: string, married?: string): string => {
   // Calculate age if not provided but dateOfBirth is available
   const actualAge = age || (dateOfBirth ? calculateAge(dateOfBirth) : 25);
   
   // Normalize gender
   const normalizedGender = gender?.toLowerCase() || 'male';
+  const isMarried = married?.toLowerCase() === 'married';
   
-  // Age-based avatar selection
-  if (actualAge <= 12) {
-    // Child
-    return normalizedGender === 'female' ? '/avatars/childdaughter.png' : '/avatars/children.png';
-  } else if (actualAge <= 25) {
-    // Young adult
+  // Age-based avatar selection with exact constraints
+  if (actualAge < 12) {
+    // Children under 12
+    return normalizedGender === 'female' ? '/avatars/childdaughter.png' : '/avatars/chiledson.png';
+  } else if (actualAge >= 12 && actualAge < 30) {
+    // Young adults 12-29
     return normalizedGender === 'female' ? '/avatars/women.png' : '/avatars/man.png';
-  } else if (actualAge <= 50) {
-    // Adult
+  } else if (isMarried && actualAge >= 30 && actualAge < 50) {
+    // Married adults 30-49 (parents)
     return normalizedGender === 'female' ? '/avatars/mother.png' : '/avatars/father.png';
-  } else {
-    // Senior
+  } else if (isMarried && actualAge >= 50 && actualAge < 100) {
+    // Married seniors 50-99 (grandparents)
     return normalizedGender === 'female' ? '/avatars/grandmother.png' : '/avatars/grandfather.png';
+  } else {
+    // Default for unmarried adults or edge cases
+    return normalizedGender === 'female' ? '/avatars/women.png' : '/avatars/man.png';
   }
 };
 
 /**
  * Get avatar for family member with fallback to profile picture
  */
-export const getAvatarForMember = (member: AvatarSelection, profilePictureUrl?: string): string => {
+export const getAvatarForMember = (member: AvatarSelection & { married?: string }, profilePictureUrl?: string): string => {
   // If user has uploaded a profile picture, use that
   if (profilePictureUrl) {
     return profilePictureUrl;
   }
   
-  // Otherwise use default avatar based on age and gender
-  return getDefaultAvatar(member.gender, member.age, member.dateOfBirth);
+  // Otherwise use default avatar based on age, gender, and marital status
+  return getDefaultAvatar(member.gender, member.age, member.dateOfBirth, member.married);
 };

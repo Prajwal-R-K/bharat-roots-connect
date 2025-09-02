@@ -17,8 +17,6 @@ import { User as UserType } from '@/types';
 import FamilyTreeVisualization from './FamilyTreeVisualization1';
 import { format } from 'date-fns';
 import { cn } from '@/lib/utils';
-import familyBackground from '@/assets/family-background.jpg';
-import dashboardStats from '@/assets/dashboard-stats.png';
 
 interface DashboardProps {
   user: UserType;
@@ -101,6 +99,7 @@ const Dashboard: React.FC<DashboardProps> = ({ user: initialUser, onUserUpdate }
         address: editData.address || '',
         dateOfBirth: editData.dateOfBirth || '',
         married: editData.married || '',
+        gender: editData.gender || '',
       };
 
       console.log('=== PROFILE UPDATE DEBUG ===');
@@ -399,10 +398,15 @@ const Dashboard: React.FC<DashboardProps> = ({ user: initialUser, onUserUpdate }
       <div className="min-h-screen">
         {/* Enhanced Welcome Section - Full Window Size */}
         <div 
-          className="relative bg-cover bg-center h-screen flex items-center justify-center overflow-hidden"
-          style={{ backgroundImage: `url(${familyBackground})` }}
+          className="relative bg-cover bg-center bg-no-repeat h-screen flex items-center justify-center overflow-hidden"
+          style={{ 
+            backgroundImage: 'url(/dashboard.jpg)',
+            backgroundSize: 'cover',
+            backgroundPosition: 'center center',
+            backgroundRepeat: 'no-repeat'
+          }}
         >
-          <div className="absolute inset-0 bg-black/40"></div>
+          <div className="absolute inset-0 bg-black/25"></div>
           
           {/* Floating animation particles */}
           <div className="absolute inset-0 overflow-hidden">
@@ -415,41 +419,36 @@ const Dashboard: React.FC<DashboardProps> = ({ user: initialUser, onUserUpdate }
           </div>
           
           <div className="relative text-center px-6 max-w-4xl mx-auto">
-            {/* Animated flowing color text */}
-            <h1 className="text-5xl md:text-7xl lg:text-8xl font-bold mb-8 font-serif">
-              <span className="relative inline-block">
-                <span className="absolute inset-0 bg-gradient-to-r from-red-500 via-yellow-500 via-green-500 via-blue-500 via-indigo-500 to-purple-500 bg-clip-text text-transparent animate-gradient-x bg-[length:400%_400%]">
-                  Welcome to Your Family
-                </span>
-                <span className="relative bg-gradient-to-r from-red-500 via-yellow-500 via-green-500 via-blue-500 via-indigo-500 to-purple-500 bg-clip-text text-transparent animate-gradient-x bg-[length:400%_400%]">
-                  Welcome to Your Family
-                </span>
+            {/* Pure White Animated Text */}
+            <h1 className="text-5xl md:text-7xl lg:text-8xl font-bold mb-8 font-serif text-white drop-shadow-2xl">
+              <span className="relative inline-block animate-pulse">
+                Welcome to Your Family
               </span>
             </h1>
             
-            <p className="text-xl md:text-2xl text-white/90 font-medium mb-12 animate-pulse">
+            <p className="text-xl md:text-2xl font-medium mb-12 animate-bounce text-white drop-shadow-lg font-serif">
               Connect, share, and celebrate together
             </p>
             
-            {/* Animated moving dots */}
+            {/* Animated moving dots - Pure White */}
             <div className="flex justify-center space-x-4 mb-12">
-              <div className="w-4 h-4 bg-white rounded-full animate-bounce [animation-delay:-0.3s]"></div>
-              <div className="w-4 h-4 bg-yellow-400 rounded-full animate-bounce [animation-delay:-0.15s]"></div>
-              <div className="w-4 h-4 bg-pink-400 rounded-full animate-bounce"></div>
-              <div className="w-4 h-4 bg-blue-400 rounded-full animate-bounce [animation-delay:0.15s]"></div>
-              <div className="w-4 h-4 bg-green-400 rounded-full animate-bounce [animation-delay:0.3s]"></div>
+              <div className="w-4 h-4 bg-white rounded-full animate-bounce [animation-delay:-0.3s] shadow-lg"></div>
+              <div className="w-4 h-4 bg-white rounded-full animate-bounce [animation-delay:-0.15s] shadow-lg"></div>
+              <div className="w-4 h-4 bg-white rounded-full animate-bounce shadow-lg"></div>
+              <div className="w-4 h-4 bg-white rounded-full animate-bounce [animation-delay:0.15s] shadow-lg"></div>
+              <div className="w-4 h-4 bg-white rounded-full animate-bounce [animation-delay:0.3s] shadow-lg"></div>
             </div>
             
-            {/* Animated Family Tree View Button */}
+            {/* Animated Family Tree View Button - White theme */}
             <button
               onClick={() => {
                 const familyTreeSection = document.getElementById('family-tree-section');
                 familyTreeSection?.scrollIntoView({ behavior: 'smooth', block: 'start' });
               }}
-              className="group relative inline-flex items-center justify-center px-8 py-4 text-lg font-bold text-white transition-all duration-300 bg-gradient-to-r from-purple-600 to-pink-600 rounded-full shadow-2xl hover:shadow-purple-500/50 hover:scale-110 transform animate-pulse hover:animate-none"
+              className="group relative inline-flex items-center justify-center px-8 py-4 text-lg font-bold transition-all duration-300 bg-white/20 backdrop-blur-sm text-white rounded-full shadow-2xl hover:shadow-white/30 hover:scale-110 transform animate-pulse hover:animate-none border-2 border-white/50 hover:bg-white/30"
             >
-              <span className="absolute inset-0 w-full h-full bg-gradient-to-r from-purple-400 to-pink-400 rounded-full blur opacity-30 group-hover:opacity-50 transition-opacity duration-300"></span>
-              <span className="relative flex items-center gap-3">
+              <span className="absolute inset-0 w-full h-full bg-white/10 rounded-full blur opacity-30 group-hover:opacity-50 transition-opacity duration-300"></span>
+              <span className="relative flex items-center gap-3 font-serif">
                 <svg className="w-6 h-6 animate-spin group-hover:animate-none" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 14l-7 7m0 0l-7-7m7 7V3" />
                 </svg>
@@ -464,27 +463,15 @@ const Dashboard: React.FC<DashboardProps> = ({ user: initialUser, onUserUpdate }
 
         {/* Family Tree Section */}
         <div id="family-tree-section" className="min-h-screen p-6">
-          <Card className="shadow-xl border-0 bg-white/90 backdrop-blur-sm rounded-2xl overflow-hidden">
-            <CardContent className="p-0">
-              <div className="bg-gradient-to-br from-indigo-500 via-purple-500 to-pink-500 p-8 min-h-[800px] relative overflow-hidden">
-                {/* Animated background elements */}
-                <div className="absolute inset-0 opacity-20">
-                  <div className="absolute top-10 left-10 w-20 h-20 bg-white rounded-full animate-pulse"></div>
-                  <div className="absolute top-40 right-20 w-16 h-16 bg-yellow-300 rounded-full animate-bounce"></div>
-                  <div className="absolute bottom-20 left-20 w-12 h-12 bg-pink-300 rounded-full animate-ping"></div>
-                  <div className="absolute bottom-40 right-10 w-24 h-24 bg-blue-300 rounded-full animate-pulse"></div>
-                </div>
-                
-                <FamilyTreeVisualization
-                  user={user}
-                  familyMembers={familyMembers}
-                  viewMode="all"
-                  minHeight="750px"
-                  showControls={true}
-                />
-              </div>
-            </CardContent>
-          </Card>
+          <div className="min-h-[800px]">
+            <FamilyTreeVisualization
+              user={user}
+              familyMembers={familyMembers}
+              viewMode="all"
+              minHeight="750px"
+              showControls={true}
+            />
+          </div>
         </div>
       </div>
 
@@ -585,29 +572,88 @@ const Dashboard: React.FC<DashboardProps> = ({ user: initialUser, onUserUpdate }
 
                       <div>
                         <Label htmlFor="dateOfBirth" className="text-sm font-medium text-slate-700 font-serif">Date of Birth</Label>
-                        <Popover>
-                          <PopoverTrigger asChild>
-                            <Button
-                              variant="outline"
-                              className={cn(
-                                "w-full justify-start text-left font-normal mt-1 border-slate-300 focus:border-amber-500",
-                                !editData?.dateOfBirth && "text-slate-500"
-                              )}
-                            >
-                              <CalendarIcon className="mr-2 h-4 w-4" />
-                              {editData?.dateOfBirth ? format(new Date(editData.dateOfBirth), 'PPP') : "Pick a date"}
-                            </Button>
-                          </PopoverTrigger>
-                          <PopoverContent className="w-auto p-0" align="start">
-                            <CalendarComponent
-                              mode="single"
-                              selected={editData?.dateOfBirth ? new Date(editData.dateOfBirth) : undefined}
-                              onSelect={handleDateChange}
-                              disabled={(date) => date > new Date() || date < new Date("1900-01-01")}
-                              initialFocus
-                            />
-                          </PopoverContent>
-                        </Popover>
+                        <div className="grid grid-cols-3 gap-2 mt-1">
+                          <Select 
+                            value={editData?.dateOfBirth ? new Date(editData.dateOfBirth).getDate().toString() : ''} 
+                            onValueChange={(day) => {
+                              if (editData?.dateOfBirth) {
+                                const currentDate = new Date(editData.dateOfBirth);
+                                currentDate.setDate(parseInt(day));
+                                handleDateChange(currentDate);
+                              } else {
+                                const newDate = new Date();
+                                newDate.setDate(parseInt(day));
+                                handleDateChange(newDate);
+                              }
+                            }}
+                          >
+                            <SelectTrigger className="border-slate-300 focus:border-amber-500">
+                              <SelectValue placeholder="Day" />
+                            </SelectTrigger>
+                            <SelectContent>
+                              {Array.from({length: 31}, (_, i) => i + 1).map(day => (
+                                <SelectItem key={day} value={day.toString()}>{day}</SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                          
+                          <Select 
+                            value={editData?.dateOfBirth ? (new Date(editData.dateOfBirth).getMonth() + 1).toString() : ''} 
+                            onValueChange={(month) => {
+                              if (editData?.dateOfBirth) {
+                                const currentDate = new Date(editData.dateOfBirth);
+                                currentDate.setMonth(parseInt(month) - 1);
+                                handleDateChange(currentDate);
+                              } else {
+                                const newDate = new Date();
+                                newDate.setMonth(parseInt(month) - 1);
+                                handleDateChange(newDate);
+                              }
+                            }}
+                          >
+                            <SelectTrigger className="border-slate-300 focus:border-amber-500">
+                              <SelectValue placeholder="Month" />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="1">January</SelectItem>
+                              <SelectItem value="2">February</SelectItem>
+                              <SelectItem value="3">March</SelectItem>
+                              <SelectItem value="4">April</SelectItem>
+                              <SelectItem value="5">May</SelectItem>
+                              <SelectItem value="6">June</SelectItem>
+                              <SelectItem value="7">July</SelectItem>
+                              <SelectItem value="8">August</SelectItem>
+                              <SelectItem value="9">September</SelectItem>
+                              <SelectItem value="10">October</SelectItem>
+                              <SelectItem value="11">November</SelectItem>
+                              <SelectItem value="12">December</SelectItem>
+                            </SelectContent>
+                          </Select>
+                          
+                          <Select 
+                            value={editData?.dateOfBirth ? new Date(editData.dateOfBirth).getFullYear().toString() : ''} 
+                            onValueChange={(year) => {
+                              if (editData?.dateOfBirth) {
+                                const currentDate = new Date(editData.dateOfBirth);
+                                currentDate.setFullYear(parseInt(year));
+                                handleDateChange(currentDate);
+                              } else {
+                                const newDate = new Date();
+                                newDate.setFullYear(parseInt(year));
+                                handleDateChange(newDate);
+                              }
+                            }}
+                          >
+                            <SelectTrigger className="border-slate-300 focus:border-amber-500">
+                              <SelectValue placeholder="Year" />
+                            </SelectTrigger>
+                            <SelectContent className="max-h-40">
+                              {Array.from({length: 100}, (_, i) => new Date().getFullYear() - i).map(year => (
+                                <SelectItem key={year} value={year.toString()}>{year}</SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                        </div>
                         {editData?.dateOfBirth && (
                           <p className="text-sm text-amber-600 mt-1 font-medium">
                             Age: {calculateAge(editData.dateOfBirth)} years
