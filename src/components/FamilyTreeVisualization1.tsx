@@ -402,6 +402,15 @@ const createCytoscapeElements = (
       }
     }
 
+    // CRITICAL FIX: Only create edge if both source and target nodes exist
+    const sourceExists = elements.some(el => el.data.id === sourceGroup);
+    const targetExists = elements.some(el => el.data.id === targetGroup);
+    
+    if (!sourceExists || !targetExists) {
+      console.warn(`Skipping edge creation - missing nodes: source=${sourceExists}, target=${targetExists}, sourceGroup=${sourceGroup}, targetGroup=${targetGroup}`);
+      return;
+    }
+
     elements.push({
       data: {
         id: `${type}_${sourceGroup}_${targetGroup}`,
