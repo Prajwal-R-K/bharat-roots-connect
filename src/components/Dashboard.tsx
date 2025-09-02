@@ -1,5 +1,5 @@
 import * as React from 'react';
-import { User, Calendar, MessageSquare, Users, Settings, Home, Plus, Download, Mail, LogOut, X, CalendarIcon, UserPlus, Camera, Menu } from 'lucide-react';
+import { User, Calendar, MessageSquare, Users, Settings, Home, Plus, Download, Mail, LogOut, X, CalendarIcon, UserPlus, Camera, Menu, Eye, EyeOff } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -17,6 +17,8 @@ import { User as UserType } from '@/types';
 import FamilyTreeVisualization from './FamilyTreeVisualization1';
 import { format } from 'date-fns';
 import { cn } from '@/lib/utils';
+import familyBackground from '@/assets/family-background.jpg';
+import dashboardStats from '@/assets/dashboard-stats.png';
 
 interface DashboardProps {
   user: UserType;
@@ -36,8 +38,9 @@ const Dashboard: React.FC<DashboardProps> = ({ user: initialUser, onUserUpdate }
   const [editData, setEditData] = React.useState<UserType | null>(null);
   const [uploadingPhoto, setUploadingPhoto] = React.useState(false);
   
-  // State for mobile menu
+  // State for mobile menu and stats panel
   const [mobileMenuOpen, setMobileMenuOpen] = React.useState(false);
+  const [statsVisible, setStatsVisible] = React.useState(true);
 
   // Update user state when initialUser prop changes
   React.useEffect(() => {
@@ -61,6 +64,16 @@ const Dashboard: React.FC<DashboardProps> = ({ user: initialUser, onUserUpdate }
     setEditData({ ...editData, [name]: value });
   };
 
+  const handleSelectChange = (name: string, value: string) => {
+    if (!editData) return;
+    setEditData({ ...editData, [name]: value });
+  };
+
+  const handleDateChange = (date: Date | undefined) => {
+    if (!editData || !date) return;
+    setEditData({ ...editData, dateOfBirth: date.toISOString().split('T')[0] });
+  };
+
   // Calculate age from date of birth
   const calculateAge = (dateOfBirth: string) => {
     if (!dateOfBirth) return null;
@@ -77,64 +90,51 @@ const Dashboard: React.FC<DashboardProps> = ({ user: initialUser, onUserUpdate }
   const handleSaveProfile = async () => {
     if (!editData) return;
     
-    // Show loading state
     const loadingToast = toast({
       title: 'Updating profile...',
       description: 'Please wait while we save your changes.',
     });
 
     try {
-      // Prepare update data with all fields
       const updateData: any = {
         name: editData.name || '',
-        phone: editData.phone || '', // Ensure phone is always a string, even if empty
+        phone: editData.phone || '',
         address: editData.address || '',
         dateOfBirth: editData.dateOfBirth || '',
         married: editData.married || '',
       };
 
-      // Debug logging
       console.log('=== PROFILE UPDATE DEBUG ===');
       console.log('User ID:', editData.userId);
       console.log('Update data being sent:', updateData);
-      console.log('Phone number being saved:', updateData.phone);
 
-      // Only include password if it's been changed (not empty)
       if (editData.password && editData.password.trim() !== '') {
         updateData.password = editData.password;
         console.log('Password update included');
       }
 
-      // Update user profile in Neo4j backend
       console.log('Calling updateUserProfile...');
       await updateUserProfile(editData.userId, updateData);
       console.log('updateUserProfile completed successfully');
       
-      // Small delay to ensure database commit
       await new Promise(resolve => setTimeout(resolve, 500));
       
-      // Fetch fresh user data from the database to ensure UI consistency
       console.log('Fetching fresh user data for ID:', editData.userId);
       const freshUserData = await getUserByEmailOrId(editData.userId);
       console.log('Fetched fresh data:', freshUserData);
 
       if (freshUserData) {
-        // Update component state with the absolute latest data
         setUser(freshUserData);
         setProfileDetails(freshUserData);
-        
-        // CRITICAL: Pass the fresh data up to the parent component (DashboardPage)
         onUserUpdate(freshUserData);
         console.log('onUserUpdate called with fresh data.');
 
-        // Dismiss loading toast and show success
         loadingToast.dismiss();
         toast({
           title: 'Profile Updated!',
           description: 'Your changes have been saved successfully.',
         });
       } else {
-        // This case is unlikely but good to handle
         throw new Error('Could not retrieve updated user data from the database.');
       }
       
@@ -142,7 +142,6 @@ const Dashboard: React.FC<DashboardProps> = ({ user: initialUser, onUserUpdate }
 
     } catch (err) {
       console.error('=== PROFILE UPDATE FAILED ===', err);
-      // Dismiss loading toast and show error
       loadingToast.dismiss();
       toast({ 
         title: 'Error Updating Profile', 
@@ -157,7 +156,6 @@ const Dashboard: React.FC<DashboardProps> = ({ user: initialUser, onUserUpdate }
     const file = event.target.files?.[0];
     if (!file) return;
 
-    // Validate file type
     if (!file.type.startsWith('image/')) {
       toast({
         title: 'Invalid file type',
@@ -167,7 +165,6 @@ const Dashboard: React.FC<DashboardProps> = ({ user: initialUser, onUserUpdate }
       return;
     }
 
-    // Validate file size (5MB max)
     if (file.size > 5 * 1024 * 1024) {
       toast({
         title: 'File too large',
@@ -180,14 +177,10 @@ const Dashboard: React.FC<DashboardProps> = ({ user: initialUser, onUserUpdate }
     setUploadingPhoto(true);
     
     try {
-      // Upload photo to backend
       const result = await uploadProfilePhoto(user.userId, user.familyTreeId, file);
-      
-      // Update user profile with new photo URL
       const fullPhotoUrl = getProfilePhotoUrl(result.photoUrl);
       await updateUserProfile(user.userId, { profilePicture: fullPhotoUrl });
       
-      // Fetch fresh user data
       const freshUserData = await getUserByEmailOrId(user.userId);
       if (freshUserData) {
         setUser(freshUserData);
@@ -208,7 +201,6 @@ const Dashboard: React.FC<DashboardProps> = ({ user: initialUser, onUserUpdate }
       });
     } finally {
       setUploadingPhoto(false);
-      // Clear the input
       event.target.value = '';
     }
   };
@@ -232,20 +224,16 @@ const Dashboard: React.FC<DashboardProps> = ({ user: initialUser, onUserUpdate }
   const pendingInvites = familyMembers.filter(m => m.status === 'invited');
   const treeCreatedDate = user.createdAt ? new Date(user.createdAt).toLocaleDateString() : new Date().toLocaleDateString();
 
-  const myRelations = familyMembers
-    .filter(member => member.relationship && member.email !== user.email)
-    .slice(0, 5); // Show top 5 relations
-
   return (
-    <div className="min-h-screen bg-gray-50">
-      {/* Professional Navbar */}
-      <nav className="bg-white shadow-lg border-b border-gray-200 sticky top-0 z-40">
+    <div className="min-h-screen bg-gradient-to-br from-slate-50 via-blue-50 to-indigo-100">
+      {/* Enhanced Navbar with Family Background Theme */}
+      <nav className="bg-white/95 backdrop-blur-md shadow-xl border-b border-slate-200/50 sticky top-0 z-40">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex justify-between items-center h-16">
-            {/* Logo/Brand */}
+            {/* Logo/Brand with enhanced styling */}
             <div className="flex items-center">
               <div className="flex-shrink-0">
-                <h1 className="text-2xl font-bold bg-gradient-to-r from-indigo-600 to-purple-600 bg-clip-text text-transparent">
+                <h1 className="text-2xl font-bold bg-gradient-to-r from-amber-600 via-orange-600 to-red-600 bg-clip-text text-transparent drop-shadow-sm">
                   Parivaar Bhandan
                 </h1>
               </div>
@@ -256,7 +244,7 @@ const Dashboard: React.FC<DashboardProps> = ({ user: initialUser, onUserUpdate }
               <div className="ml-10 flex items-baseline space-x-1">
                 <Button 
                   variant="ghost" 
-                  className="text-gray-700 hover:bg-indigo-50 hover:text-indigo-600 px-4 py-2 rounded-md text-sm font-medium flex items-center gap-2 transition-all duration-200"
+                  className="text-slate-700 hover:bg-amber-50 hover:text-amber-700 px-4 py-2 rounded-lg text-sm font-medium flex items-center gap-2 transition-all duration-300 font-serif"
                   onClick={() => navigate('/family-tree')}
                 >
                   <Users className="w-4 h-4" />
@@ -264,7 +252,7 @@ const Dashboard: React.FC<DashboardProps> = ({ user: initialUser, onUserUpdate }
                 </Button>
                 <Button 
                   variant="ghost" 
-                  className="text-gray-700 hover:bg-indigo-50 hover:text-indigo-600 px-4 py-2 rounded-md text-sm font-medium flex items-center gap-2 transition-all duration-200"
+                  className="text-slate-700 hover:bg-amber-50 hover:text-amber-700 px-4 py-2 rounded-lg text-sm font-medium flex items-center gap-2 transition-all duration-300 font-serif"
                   onClick={() => navigate('/events')}
                 >
                   <Calendar className="w-4 h-4" />
@@ -272,7 +260,7 @@ const Dashboard: React.FC<DashboardProps> = ({ user: initialUser, onUserUpdate }
                 </Button>
                 <Button 
                   variant="ghost" 
-                  className="text-gray-700 hover:bg-indigo-50 hover:text-indigo-600 px-4 py-2 rounded-md text-sm font-medium flex items-center gap-2 transition-all duration-200"
+                  className="text-slate-700 hover:bg-amber-50 hover:text-amber-700 px-4 py-2 rounded-lg text-sm font-medium flex items-center gap-2 transition-all duration-300 font-serif"
                   onClick={() => navigate('/posts')}
                 >
                   <Mail className="w-4 h-4" />
@@ -280,7 +268,7 @@ const Dashboard: React.FC<DashboardProps> = ({ user: initialUser, onUserUpdate }
                 </Button>
                 <Button 
                   variant="ghost" 
-                  className="text-gray-700 hover:bg-indigo-50 hover:text-indigo-600 px-4 py-2 rounded-md text-sm font-medium flex items-center gap-2 transition-all duration-200"
+                  className="text-slate-700 hover:bg-amber-50 hover:text-amber-700 px-4 py-2 rounded-lg text-sm font-medium flex items-center gap-2 transition-all duration-300 font-serif"
                   onClick={() => navigate('/chat')}
                 >
                   <MessageSquare className="w-4 h-4" />
@@ -291,14 +279,14 @@ const Dashboard: React.FC<DashboardProps> = ({ user: initialUser, onUserUpdate }
 
             {/* Profile Section & Mobile Toggle */}
             <div className="flex items-center gap-3">
-              {/* Profile Avatar - Always Visible */}
+              {/* Profile Avatar */}
               <div className="relative">
                 <Avatar 
-                  className="h-10 w-10 ring-2 ring-indigo-300 shadow-lg cursor-pointer hover:ring-indigo-400 transition-all duration-200 hover:shadow-xl"
+                  className="h-10 w-10 ring-2 ring-amber-300 shadow-lg cursor-pointer hover:ring-amber-400 transition-all duration-200 hover:shadow-xl"
                   onClick={() => setProfileOpen(true)}
                 >
                   <AvatarImage src={user.profilePicture} alt={user.name} />
-                  <AvatarFallback className="bg-gradient-to-br from-indigo-500 to-purple-600 text-white font-semibold text-sm">
+                  <AvatarFallback className="bg-gradient-to-br from-amber-500 to-orange-600 text-white font-semibold text-sm">
                     {user.name?.split(' ').map(n => n[0]).join('').toUpperCase() || 'U'}
                   </AvatarFallback>
                 </Avatar>
@@ -306,15 +294,15 @@ const Dashboard: React.FC<DashboardProps> = ({ user: initialUser, onUserUpdate }
               
               {/* User Info - Desktop Only */}
               <div className="text-right hidden lg:block">
-                <div className="text-sm font-semibold text-gray-900">{user.name}</div>
-                <div className="text-xs text-gray-500 font-medium">Family ID: {user.familyTreeId}</div>
+                <div className="text-sm font-semibold text-slate-900 font-serif">{user.name}</div>
+                <div className="text-xs text-slate-500 font-medium">Family ID: {user.familyTreeId}</div>
               </div>
               
               {/* Desktop Logout Button */}
               <Button 
                 variant="outline" 
                 size="sm"
-                className="hidden md:flex text-gray-600 hover:text-gray-800 border-gray-300 hover:bg-gray-50"
+                className="hidden md:flex text-slate-600 hover:text-slate-800 border-slate-300 hover:bg-slate-50 font-serif"
                 onClick={() => {
                   localStorage.removeItem('userData');
                   localStorage.removeItem('userId');
@@ -325,12 +313,12 @@ const Dashboard: React.FC<DashboardProps> = ({ user: initialUser, onUserUpdate }
                 <span className="hidden lg:inline font-medium">Logout</span>
               </Button>
               
-              {/* Mobile Menu Toggle - Improved Styling */}
+              {/* Mobile Menu Toggle */}
               <Button
                 variant="ghost"
                 size="sm"
                 onClick={() => setMobileMenuOpen(true)}
-                className="md:hidden p-2 h-10 w-10 rounded-lg bg-gradient-to-r from-indigo-50 to-purple-50 hover:from-indigo-100 hover:to-purple-100 border border-indigo-200 text-indigo-600 hover:text-indigo-700 shadow-sm transition-all duration-200"
+                className="md:hidden p-2 h-10 w-10 rounded-lg bg-gradient-to-r from-amber-50 to-orange-50 hover:from-amber-100 hover:to-orange-100 border border-amber-200 text-amber-600 hover:text-amber-700 shadow-sm transition-all duration-200"
               >
                 <Menu className="w-5 h-5" />
               </Button>
@@ -339,21 +327,18 @@ const Dashboard: React.FC<DashboardProps> = ({ user: initialUser, onUserUpdate }
         </div>
       </nav>
 
-      {/* Mobile Slide-in Menu */}
+      {/* Mobile Menu */}
       {mobileMenuOpen && (
         <>
-          {/* Backdrop */}
           <div 
             className="fixed inset-0 bg-black bg-opacity-50 z-50 md:hidden"
             onClick={() => setMobileMenuOpen(false)}
           />
           
-          {/* Slide-in Menu */}
           <div className="fixed top-0 right-0 h-full w-80 bg-white shadow-2xl z-50 transform transition-transform duration-300 ease-in-out md:hidden">
-            {/* Menu Header */}
-            <div className="bg-gradient-to-r from-indigo-600 to-purple-600 px-6 py-4 text-white">
+            <div className="bg-gradient-to-r from-amber-600 to-orange-600 px-6 py-4 text-white">
               <div className="flex items-center justify-between">
-                <h2 className="text-lg font-semibold">Menu</h2>
+                <h2 className="text-lg font-semibold font-serif">Menu</h2>
                 <Button
                   variant="ghost"
                   size="sm"
@@ -365,603 +350,415 @@ const Dashboard: React.FC<DashboardProps> = ({ user: initialUser, onUserUpdate }
               </div>
             </div>
 
-            {/* User Profile Section */}
-            <div className="px-6 py-4 border-b border-gray-200">
+            <div className="px-6 py-4 border-b border-slate-200">
               <div className="flex items-center gap-3 mb-3">
                 <Avatar 
-                  className="h-12 w-12 ring-2 ring-indigo-300 shadow-lg cursor-pointer"
+                  className="h-12 w-12 ring-2 ring-amber-300 shadow-lg cursor-pointer"
                   onClick={() => {
                     setProfileOpen(true);
                     setMobileMenuOpen(false);
                   }}
                 >
                   <AvatarImage src={user.profilePicture} alt={user.name} />
-                  <AvatarFallback className="bg-gradient-to-br from-indigo-500 to-purple-600 text-white font-semibold">
+                  <AvatarFallback className="bg-gradient-to-br from-amber-500 to-orange-600 text-white font-semibold">
                     {user.name?.split(' ').map(n => n[0]).join('').toUpperCase() || 'U'}
                   </AvatarFallback>
                 </Avatar>
                 <div>
-                  <div className="text-sm font-semibold text-gray-900">{user.name}</div>
-                  <div className="text-xs text-gray-500">Family ID: {user.familyTreeId}</div>
+                  <div className="text-sm font-semibold text-slate-900 font-serif">{user.name}</div>
+                  <div className="text-xs text-slate-500">Family ID: {user.familyTreeId}</div>
                 </div>
               </div>
             </div>
 
-            {/* Navigation Menu Items */}
             <div className="px-4 py-4 space-y-2">
-              <Button 
-                variant="ghost" 
-                className="w-full justify-start text-gray-700 hover:bg-indigo-50 hover:text-indigo-600 h-12"
-                onClick={() => {
-                  navigate('/family-tree');
-                  setMobileMenuOpen(false);
-                }}
-              >
-                <Users className="w-5 h-5 mr-3" />
-                Family Tree
-              </Button>
-              
-              <Button 
-                variant="ghost" 
-                className="w-full justify-start text-gray-700 hover:bg-indigo-50 hover:text-indigo-600 h-12"
-                onClick={() => {
-                  navigate('/events');
-                  setMobileMenuOpen(false);
-                }}
-              >
-                <Calendar className="w-5 h-5 mr-3" />
-                Events
-              </Button>
-              
-              <Button 
-                variant="ghost" 
-                className="w-full justify-start text-gray-700 hover:bg-indigo-50 hover:text-indigo-600 h-12"
-                onClick={() => {
-                  navigate('/posts');
-                  setMobileMenuOpen(false);
-                }}
-              >
-                <Mail className="w-5 h-5 mr-3" />
-                Posts
-              </Button>
-              
-              <Button 
-                variant="ghost" 
-                className="w-full justify-start text-gray-700 hover:bg-indigo-50 hover:text-indigo-600 h-12"
-                onClick={() => {
-                  navigate('/chat');
-                  setMobileMenuOpen(false);
-                }}
-              >
-                <MessageSquare className="w-5 h-5 mr-3" />
-                Chat
-              </Button>
-
-              {/* Quick Actions in Mobile Menu */}
-              <div className="pt-4 border-t border-gray-200 mt-4">
-                <h3 className="text-sm font-medium text-gray-500 mb-3 px-3">Quick Actions</h3>
-                
+              {[
+                { icon: Users, label: 'Family Tree', path: '/family-tree' },
+                { icon: Calendar, label: 'Events', path: '/events' },
+                { icon: Mail, label: 'Posts', path: '/posts' },
+                { icon: MessageSquare, label: 'Chat', path: '/chat' }
+              ].map(({ icon: Icon, label, path }) => (
                 <Button 
+                  key={path}
                   variant="ghost" 
-                  className="w-full justify-start text-gray-700 hover:bg-green-50 hover:text-green-600 h-12"
+                  className="w-full justify-start text-slate-700 hover:bg-amber-50 hover:text-amber-600 h-12 font-serif"
                   onClick={() => {
-                    navigate('/add-member');
+                    navigate(path);
                     setMobileMenuOpen(false);
                   }}
                 >
-                  <UserPlus className="w-5 h-5 mr-3" />
-                  Add Family Member
+                  <Icon className="w-5 h-5 mr-3" />
+                  {label}
                 </Button>
-                
-                <Button 
-                  variant="ghost" 
-                  className="w-full justify-start text-gray-700 hover:bg-blue-50 hover:text-blue-600 h-12"
-                  onClick={() => {
-                    navigate('/invite');
-                    setMobileMenuOpen(false);
-                  }}
-                >
-                  <Mail className="w-5 h-5 mr-3" />
-                  Invite Members
-                </Button>
-              </div>
-
-              {/* Logout Button */}
-              <div className="pt-4 border-t border-gray-200 mt-4">
-                <Button 
-                  variant="outline" 
-                  className="w-full justify-start text-red-600 hover:bg-red-50 hover:text-red-700 border-red-200 h-12"
-                  onClick={() => {
-                    localStorage.removeItem('userData');
-                    localStorage.removeItem('userId');
-                    navigate('/');
-                    setMobileMenuOpen(false);
-                  }}
-                >
-                  <LogOut className="w-5 h-5 mr-3" />
-                  Logout
-                </Button>
-              </div>
+              ))}
             </div>
           </div>
         </>
       )}
 
       {/* Main Content */}
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        {/* Dashboard Statistics */}
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
-          <Card className="bg-gradient-to-br from-blue-50 to-blue-100 border-blue-200 shadow-lg hover:shadow-xl transition-shadow">
-            <CardContent className="flex items-center p-6">
-              <div className="flex items-center justify-center w-12 h-12 bg-blue-500 rounded-lg mr-4">
-                <Users className="w-6 h-6 text-white" />
-              </div>
-              <div>
-                <p className="text-sm font-medium text-blue-600">Family Members</p>
-                <p className="text-2xl font-bold text-blue-800">{activeMembers.length}</p>
-              </div>
-            </CardContent>
-          </Card>
+      <div className="flex relative">
+        {/* Left Stats Panel - Toggleable */}
+        {statsVisible && (
+          <div className="w-80 bg-white/80 backdrop-blur-sm shadow-xl border-r border-slate-200/50 p-6 space-y-6 sticky top-16 h-screen overflow-y-auto">
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-lg font-bold text-slate-800 font-serif">Family Stats</h3>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => setStatsVisible(false)}
+                className="text-slate-500 hover:text-slate-700"
+              >
+                <EyeOff className="w-4 h-4" />
+              </Button>
+            </div>
+            
+            <div className="space-y-4">
+              <Card className="bg-gradient-to-r from-blue-500 to-blue-600 text-white border-0 shadow-lg">
+                <CardContent className="p-4">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <p className="text-blue-100 text-sm font-medium">Family Members</p>
+                      <p className="text-2xl font-bold">{activeMembers.length}</p>
+                    </div>
+                    <Users className="w-8 h-8 text-blue-200" />
+                  </div>
+                </CardContent>
+              </Card>
 
-          <Card className="bg-gradient-to-br from-green-50 to-green-100 border-green-200 shadow-lg hover:shadow-xl transition-shadow">
-            <CardContent className="flex items-center p-6">
-              <div className="flex items-center justify-center w-12 h-12 bg-green-500 rounded-lg mr-4">
-                <Mail className="w-6 h-6 text-white" />
-              </div>
-              <div>
-                <p className="text-sm font-medium text-green-600">Pending Invites</p>
-                <p className="text-2xl font-bold text-green-800">{pendingInvites.length}</p>
-              </div>
-            </CardContent>
-          </Card>
+              <Card className="bg-gradient-to-r from-green-500 to-green-600 text-white border-0 shadow-lg">
+                <CardContent className="p-4">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <p className="text-green-100 text-sm font-medium">Pending Invites</p>
+                      <p className="text-2xl font-bold">{pendingInvites.length}</p>
+                    </div>
+                    <Mail className="w-8 h-8 text-green-200" />
+                  </div>
+                </CardContent>
+              </Card>
 
-          <Card className="bg-gradient-to-br from-purple-50 to-purple-100 border-purple-200 shadow-lg hover:shadow-xl transition-shadow">
-            <CardContent className="flex items-center p-6">
-              <div className="flex items-center justify-center w-12 h-12 bg-purple-500 rounded-lg mr-4">
-                <Calendar className="w-6 h-6 text-white" />
-              </div>
-              <div>
-                <p className="text-sm font-medium text-purple-600">Tree Created</p>
-                <p className="text-sm font-bold text-purple-800">{treeCreatedDate}</p>
-              </div>
-            </CardContent>
-          </Card>
+              <Card className="bg-gradient-to-r from-purple-500 to-purple-600 text-white border-0 shadow-lg">
+                <CardContent className="p-4">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <p className="text-purple-100 text-sm font-medium">Tree Created</p>
+                      <p className="text-lg font-bold">{treeCreatedDate}</p>
+                    </div>
+                    <Calendar className="w-8 h-8 text-purple-200" />
+                  </div>
+                </CardContent>
+              </Card>
 
-          <Card className="bg-gradient-to-br from-orange-50 to-orange-100 border-orange-200 shadow-lg hover:shadow-xl transition-shadow">
-            <CardContent className="flex items-center p-6">
-              <div className="flex items-center justify-center w-12 h-12 bg-orange-500 rounded-lg mr-4">
-                <Settings className="w-6 h-6 text-white" />
+              <Card className="bg-gradient-to-r from-orange-500 to-orange-600 text-white border-0 shadow-lg">
+                <CardContent className="p-4">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <p className="text-orange-100 text-sm font-medium">Your Role</p>
+                      <p className="text-lg font-bold">Family Admin</p>
+                    </div>
+                    <Settings className="w-8 h-8 text-orange-200" />
+                  </div>
+                </CardContent>
+              </Card>
+            </div>
+          </div>
+        )}
+
+        {/* Stats Toggle Button (when hidden) */}
+        {!statsVisible && (
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => setStatsVisible(true)}
+            className="fixed left-4 top-20 z-30 bg-white/90 backdrop-blur-sm shadow-lg"
+          >
+            <Eye className="w-4 h-4 mr-2" />
+            Stats
+          </Button>
+        )}
+
+        {/* Main Content Area */}
+        <div className="flex-1 p-6 space-y-8">
+          {/* Welcome Section with Background */}
+          <div 
+            className="relative bg-cover bg-center rounded-2xl overflow-hidden shadow-2xl"
+            style={{ backgroundImage: `url(${familyBackground})` }}
+          >
+            <div className="absolute inset-0 bg-black/30"></div>
+            <div className="relative p-12 text-center">
+              <h1 className="text-4xl md:text-6xl font-bold text-white mb-4 animate-bounce font-serif">
+                Welcome to Your Family
+              </h1>
+              <p className="text-xl text-white/90 font-medium animate-pulse">
+                Connect, share, and celebrate together
+              </p>
+              <div className="mt-6 flex justify-center space-x-4">
+                <div className="w-3 h-3 bg-white rounded-full animate-bounce [animation-delay:-0.3s]"></div>
+                <div className="w-3 h-3 bg-white rounded-full animate-bounce [animation-delay:-0.15s]"></div>
+                <div className="w-3 h-3 bg-white rounded-full animate-bounce"></div>
               </div>
-              <div>
-                <p className="text-sm font-medium text-orange-600">Your Role</p>
-                <p className="text-sm font-bold text-orange-800">Family Admin</p>
+            </div>
+          </div>
+
+          {/* Family Tree Section */}
+          <Card className="shadow-xl border-0 bg-white/90 backdrop-blur-sm rounded-2xl overflow-hidden">
+            <CardContent className="p-0">
+              <div className="bg-gradient-to-br from-indigo-500 via-purple-500 to-pink-500 p-8 min-h-[800px] relative overflow-hidden">
+                {/* Animated background elements */}
+                <div className="absolute inset-0 opacity-20">
+                  <div className="absolute top-10 left-10 w-20 h-20 bg-white rounded-full animate-pulse"></div>
+                  <div className="absolute top-40 right-20 w-16 h-16 bg-yellow-300 rounded-full animate-bounce"></div>
+                  <div className="absolute bottom-20 left-20 w-12 h-12 bg-pink-300 rounded-full animate-ping"></div>
+                  <div className="absolute bottom-40 right-10 w-24 h-24 bg-blue-300 rounded-full animate-pulse"></div>
+                </div>
+                
+                <FamilyTreeVisualization
+                  user={user}
+                  familyMembers={familyMembers}
+                  viewMode="all"
+                  minHeight="750px"
+                  showControls={true}
+                />
               </div>
             </CardContent>
           </Card>
         </div>
-
-        {/* Quick Actions */}
-        <Card className="mb-8 shadow-lg border-0 bg-gradient-to-r from-gray-50 to-gray-100">
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2 text-gray-800">
-              <Plus className="w-5 h-5" />
-              Quick Actions
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-              <Button 
-                className="h-20 bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-700 hover:to-purple-700 text-white"
-                onClick={() => navigate('/add-member')}
-              >
-                <div className="flex flex-col items-center gap-2">
-                  <UserPlus className="w-6 h-6" />
-                  <span>Add Family Member</span>
-                </div>
-              </Button>
-              <Button 
-                variant="outline" 
-                className="h-20 border-2 border-indigo-200 hover:bg-indigo-50"
-                onClick={() => navigate('/invite')}
-              >
-                <div className="flex flex-col items-center gap-2">
-                  <Mail className="w-6 h-6 text-indigo-600" />
-                  <span>Invite Members</span>
-                </div>
-              </Button>
-              <Button 
-                variant="outline" 
-                className="h-20 border-2 border-green-200 hover:bg-green-50"
-                onClick={() => navigate('/events')}
-              >
-                <div className="flex flex-col items-center gap-2">
-                  <Calendar className="w-6 h-6 text-green-600" />
-                  <span>Create Event</span>
-                </div>
-              </Button>
-            </div>
-          </CardContent>
-        </Card>
-
-        {/* Recent Family Posts Preview */}
-        <Card className="mb-8 shadow-lg border-0 bg-gradient-to-r from-pink-50 to-rose-100">
-          <CardHeader>
-            <div className="flex items-center justify-between">
-              <CardTitle className="flex items-center gap-2 text-gray-800">
-                <Mail className="w-5 h-5" />
-                Recent Family Posts
-              </CardTitle>
-              <Button 
-                variant="outline" 
-                size="sm"
-                onClick={() => navigate('/posts')}
-                className="border-pink-200 hover:bg-pink-50"
-              >
-                View All Posts
-              </Button>
-            </div>
-          </CardHeader>
-          <CardContent>
-            <div className="text-center py-8">
-              <div className="w-16 h-16 bg-gradient-to-br from-pink-500/20 to-rose-500/20 rounded-full flex items-center justify-center mx-auto mb-4">
-                <Mail className="w-8 h-8 text-pink-500" />
-              </div>
-              <h3 className="text-lg font-semibold text-gray-900 mb-2">Share Your Moments</h3>
-              <p className="text-gray-500 mb-4">Create and share posts with your family members</p>
-              <Button 
-                className="bg-gradient-to-r from-pink-500 to-rose-500 hover:from-pink-600 hover:to-rose-600 text-white"
-                onClick={() => navigate('/posts')}
-              >
-                <Plus className="w-4 h-4 mr-2" />
-                Create First Post
-              </Button>
-            </div>
-          </CardContent>
-        </Card>
-
-        {/* Family Tree Visualization */}
-        <Card className="shadow-2xl border-0 bg-gradient-to-br from-blue-50 via-indigo-50 to-purple-50">
-          <CardHeader className="bg-gradient-to-r from-indigo-600 to-purple-600 text-white rounded-t-lg">
-            <CardTitle className="flex items-center gap-3 text-2xl font-bold">
-              <Home className="w-8 h-8" />
-              Interactive Family Tree
-            </CardTitle>
-            <p className="text-indigo-100 text-sm">Explore your family connections • Click on relationships to learn more</p>
-          </CardHeader>
-          <CardContent className="p-0">
-            <div className="h-[600px] w-full rounded-b-lg overflow-hidden">
-              {familyMembers.length > 0 ? (
-                <FamilyTreeVisualization 
-                  user={user} 
-                  familyMembers={familyMembers}
-                  viewMode="all"
-                  minHeight="600px"
-                  showControls={true}
-                />
-              ) : (
-                <div className="h-full flex flex-col items-center justify-center bg-gradient-to-br from-blue-100 to-indigo-50 text-gray-600">
-                  <Users className="w-16 h-16 mb-4 text-indigo-400" />
-                  <h3 className="text-xl font-semibold mb-2">No Family Members Yet</h3>
-                  <p className="text-sm text-center px-4">Start building your family tree by inviting members</p>
-                  <Button 
-                    className="mt-4 bg-indigo-600 hover:bg-indigo-700"
-                    onClick={() => navigate('/family-tree-builder')}
-                  >
-                    <Plus className="w-4 h-4 mr-2" />
-                    Add First Member
-                  </Button>
-                </div>
-              )}
-            </div>
-          </CardContent>
-        </Card>
       </div>
 
-      {/* Enhanced Profile Modal */}
+      {/* Profile Modal */}
       {profileOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-50 backdrop-blur-sm">
-          <div className="bg-white rounded-3xl shadow-2xl w-full max-w-2xl mx-4 max-h-[90vh] overflow-hidden">
-            {/* Header */}
-            <div className="bg-gradient-to-r from-indigo-600 to-purple-600 px-8 py-6 text-white relative">
-              <button 
-                className="absolute top-4 right-4 text-white hover:text-gray-200 transition-colors" 
-                onClick={() => { 
-                  setProfileOpen(false); 
-                  setEditMode(false); 
-                }}
-              >
-                <X className="w-6 h-6" />
-              </button>
-              <div className="flex items-center gap-4">
-                <div className="relative">
-                  <Avatar className="h-16 w-16 ring-4 ring-white/30 shadow-lg">
-                    <AvatarImage src={profileDetails?.profilePicture ? getProfilePhotoUrl(profileDetails.profilePicture) : undefined} />
-                    <AvatarFallback className="bg-white/20 text-white text-2xl font-bold">
-                      {profileDetails?.name?.charAt(0)}
-                    </AvatarFallback>
-                  </Avatar>
-                  <Button
-                    size="sm"
-                    className="absolute -bottom-1 -right-1 h-8 w-8 rounded-full bg-white/20 hover:bg-white/30 p-0 shadow-lg backdrop-blur-sm"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      document.getElementById('modal-photo-upload')?.click();
-                    }}
-                    disabled={uploadingPhoto}
-                  >
-                    <Camera className="w-4 h-4 text-white" />
-                  </Button>
-                  <input
-                    id="modal-photo-upload"
-                    type="file"
-                    accept="image/*"
-                    className="hidden"
-                    onChange={handlePhotoUpload}
-                  />
-                </div>
-                <div>
-                  <h2 className="text-2xl font-bold">{profileDetails?.name}</h2>
-                  <p className="text-indigo-100">{profileDetails?.email}</p>
-                </div>
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-2xl shadow-2xl max-w-2xl w-full max-h-[90vh] overflow-y-auto">
+            <div className="bg-gradient-to-r from-amber-500 to-orange-600 px-6 py-4 text-white rounded-t-2xl">
+              <div className="flex items-center justify-between">
+                <h2 className="text-xl font-bold font-serif">Profile Settings</h2>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => {
+                    setProfileOpen(false);
+                    setEditMode(false);
+                  }}
+                  className="text-white hover:bg-white/20 p-2 rounded-lg"
+                >
+                  <X className="w-5 h-5" />
+                </Button>
               </div>
             </div>
 
-            {/* Content */}
-            <div className="p-8 overflow-y-auto max-h-[calc(90vh-120px)]">
-              {!editMode ? (
-                <div className="space-y-6">
-                  {/* Basic Information */}
-                  <div>
-                    <h3 className="text-lg font-semibold text-gray-900 mb-4 flex items-center gap-2">
-                      <User className="w-5 h-5 text-indigo-600" />
-                      Personal Information
-                    </h3>
+            <div className="p-6 space-y-6">
+              {/* Profile Photo Section */}
+              <div className="text-center">
+                <div className="relative inline-block">
+                  <Avatar className="h-24 w-24 ring-4 ring-amber-300 shadow-xl mx-auto">
+                    <AvatarImage src={profileDetails?.profilePicture} alt={profileDetails?.name} />
+                    <AvatarFallback className="bg-gradient-to-br from-amber-500 to-orange-600 text-white font-bold text-xl">
+                      {profileDetails?.name?.split(' ').map(n => n[0]).join('').toUpperCase() || 'U'}
+                    </AvatarFallback>
+                  </Avatar>
+                  {editMode && (
+                    <label className="absolute bottom-0 right-0 bg-amber-500 text-white p-2 rounded-full cursor-pointer hover:bg-amber-600 transition-colors shadow-lg">
+                      <Camera className="w-4 h-4" />
+                      <input
+                        type="file"
+                        accept="image/*"
+                        onChange={handlePhotoUpload}
+                        className="hidden"
+                        disabled={uploadingPhoto}
+                      />
+                    </label>
+                  )}
+                </div>
+                {uploadingPhoto && <p className="text-sm text-amber-600 mt-2 font-medium">Uploading...</p>}
+              </div>
+
+              {/* Profile Information */}
+              <div className="space-y-4">
+                {editMode ? (
+                  <>
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                      <div className="bg-gray-50 rounded-lg p-4">
-                        <Label className="text-sm font-medium text-gray-600">Full Name</Label>
-                        <p className="text-gray-900 font-medium">{profileDetails?.name || 'Not provided'}</p>
+                      <div>
+                        <Label htmlFor="name" className="text-sm font-medium text-slate-700 font-serif">Name</Label>
+                        <Input
+                          id="name"
+                          name="name"
+                          value={editData?.name || ''}
+                          onChange={handleEditChange}
+                          className="mt-1 border-slate-300 focus:border-amber-500 focus:ring-amber-500"
+                        />
                       </div>
-                      <div className="bg-gray-50 rounded-lg p-4">
-                        <Label className="text-sm font-medium text-gray-600">Email Address</Label>
-                        <p className="text-gray-900 font-medium">{profileDetails?.email}</p>
+                      
+                      <div>
+                        <Label htmlFor="phone" className="text-sm font-medium text-slate-700 font-serif">Phone Number</Label>
+                        <Input
+                          id="phone"
+                          name="phone"
+                          type="tel"
+                          value={editData?.phone || ''}
+                          onChange={handleEditChange}
+                          className="mt-1 border-slate-300 focus:border-amber-500 focus:ring-amber-500"
+                        />
                       </div>
-                      <div className="bg-gray-50 rounded-lg p-4">
-                        <Label className="text-sm font-medium text-gray-600">Phone Number</Label>
-                        <p className="text-gray-900 font-medium">{profileDetails?.phone || 'Not provided'}</p>
+
+                      <div>
+                        <Label htmlFor="email" className="text-sm font-medium text-slate-500 font-serif">Email (Read-only)</Label>
+                        <Input
+                          id="email"
+                          value={editData?.email || ''}
+                          disabled
+                          className="mt-1 bg-slate-100 border-slate-300 text-slate-500"
+                        />
                       </div>
-                      <div className="bg-gray-50 rounded-lg p-4">
-                        <Label className="text-sm font-medium text-gray-600">Gender</Label>
-                        <p className="text-gray-900 font-medium capitalize">{profileDetails?.gender || 'Not specified'}</p>
+
+                      <div>
+                        <Label htmlFor="gender" className="text-sm font-medium text-slate-500 font-serif">Gender (Read-only)</Label>
+                        <Input
+                          id="gender"
+                          value={editData?.gender || ''}
+                          disabled
+                          className="mt-1 bg-slate-100 border-slate-300 text-slate-500"
+                        />
                       </div>
-                      <div className="bg-gray-50 rounded-lg p-4">
-                        <Label className="text-sm font-medium text-gray-600">Date of Birth</Label>
-                        <p className="text-gray-900 font-medium">
-                          {profileDetails?.dateOfBirth ? format(new Date(profileDetails.dateOfBirth), 'PPP') : 'Not provided'}
-                        </p>
-                        {profileDetails?.dateOfBirth && (
-                          <p className="text-sm text-indigo-600 mt-1">Age: {calculateAge(profileDetails.dateOfBirth)} years</p>
+
+                      <div>
+                        <Label htmlFor="dateOfBirth" className="text-sm font-medium text-slate-700 font-serif">Date of Birth</Label>
+                        <Popover>
+                          <PopoverTrigger asChild>
+                            <Button
+                              variant="outline"
+                              className={cn(
+                                "w-full justify-start text-left font-normal mt-1 border-slate-300 focus:border-amber-500",
+                                !editData?.dateOfBirth && "text-slate-500"
+                              )}
+                            >
+                              <CalendarIcon className="mr-2 h-4 w-4" />
+                              {editData?.dateOfBirth ? format(new Date(editData.dateOfBirth), 'PPP') : "Pick a date"}
+                            </Button>
+                          </PopoverTrigger>
+                          <PopoverContent className="w-auto p-0" align="start">
+                            <CalendarComponent
+                              mode="single"
+                              selected={editData?.dateOfBirth ? new Date(editData.dateOfBirth) : undefined}
+                              onSelect={handleDateChange}
+                              disabled={(date) => date > new Date() || date < new Date("1900-01-01")}
+                              initialFocus
+                            />
+                          </PopoverContent>
+                        </Popover>
+                        {editData?.dateOfBirth && (
+                          <p className="text-sm text-amber-600 mt-1 font-medium">
+                            Age: {calculateAge(editData.dateOfBirth)} years
+                          </p>
                         )}
                       </div>
-                      <div className="bg-gray-50 rounded-lg p-4">
-                        <Label className="text-sm font-medium text-gray-600">Marital Status</Label>
-                        <p className="text-gray-900 font-medium capitalize">{profileDetails?.married || 'Not specified'}</p>
+
+                      <div>
+                        <Label htmlFor="married" className="text-sm font-medium text-slate-700 font-serif">Marital Status</Label>
+                        <Select value={editData?.married || ''} onValueChange={(value) => handleSelectChange('married', value)}>
+                          <SelectTrigger className="mt-1 border-slate-300 focus:border-amber-500">
+                            <SelectValue placeholder="Select status" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="single">Single</SelectItem>
+                            <SelectItem value="married">Married</SelectItem>
+                            <SelectItem value="divorced">Divorced</SelectItem>
+                            <SelectItem value="widowed">Widowed</SelectItem>
+                          </SelectContent>
+                        </Select>
+                      </div>
+
+                      <div>
+                        <Label htmlFor="password" className="text-sm font-medium text-slate-700 font-serif">New Password</Label>
+                        <Input
+                          id="password"
+                          name="password"
+                          type="password"
+                          value={editData?.password || ''}
+                          onChange={handleEditChange}
+                          placeholder="Leave blank to keep current"
+                          className="mt-1 border-slate-300 focus:border-amber-500 focus:ring-amber-500"
+                        />
+                      </div>
+
+                      <div className="md:col-span-2">
+                        <Label htmlFor="address" className="text-sm font-medium text-slate-700 font-serif">Address</Label>
+                        <Input
+                          id="address"
+                          name="address"
+                          value={editData?.address || ''}
+                          onChange={handleEditChange}
+                          placeholder="Enter your address"
+                          className="mt-1 border-slate-300 focus:border-amber-500 focus:ring-amber-500"
+                        />
                       </div>
                     </div>
-                  </div>
 
-                  {/* Contact Information */}
-                  <div>
-                    <h3 className="text-lg font-semibold text-gray-900 mb-4 flex items-center gap-2">
-                      <Mail className="w-5 h-5 text-indigo-600" />
-                      Contact Information
-                    </h3>
-                    <div className="bg-gray-50 rounded-lg p-4">
-                      <Label className="text-sm font-medium text-gray-600">Address</Label>
-                      <p className="text-gray-900 font-medium">{profileDetails?.address || 'Not provided'}</p>
+                    <div className="flex justify-end space-x-3 pt-4">
+                      <Button
+                        variant="outline"
+                        onClick={() => setEditMode(false)}
+                        className="border-slate-300 text-slate-700 hover:bg-slate-50 font-serif"
+                      >
+                        Cancel
+                      </Button>
+                      <Button
+                        onClick={handleSaveProfile}
+                        className="bg-gradient-to-r from-amber-500 to-orange-600 hover:from-amber-600 hover:to-orange-700 text-white font-serif"
+                      >
+                        Save Changes
+                      </Button>
                     </div>
-                  </div>
-
-                  {/* Family Information */}
-                  <div>
-                    <h3 className="text-lg font-semibold text-gray-900 mb-4 flex items-center gap-2">
-                      <Users className="w-5 h-5 text-indigo-600" />
-                      Family Information
-                    </h3>
-                    <div className="bg-gradient-to-r from-indigo-50 to-purple-50 rounded-lg p-4 border border-indigo-200">
-                      <Label className="text-sm font-medium text-indigo-700">Family Tree ID</Label>
-                      <p className="text-indigo-900 font-bold text-lg">{profileDetails?.familyTreeId}</p>
-                    </div>
-                  </div>
-
-                  {/* Action Buttons */}
-                  <div className="flex gap-3 pt-4">
-                    <Button 
-                      className="flex-1 bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-700 hover:to-purple-700 text-white font-medium py-3"
-                      onClick={() => setEditMode(true)}
-                    >
-                      <Settings className="w-4 h-4 mr-2" />
-                      Edit Profile
-                    </Button>
-                    <Button 
-                      variant="outline"
-                      className="px-6 border-gray-300 hover:bg-gray-50"
-                      onClick={() => setProfileOpen(false)}
-                    >
-                      Close
-                    </Button>
-                  </div>
-                </div>
-              ) : (
-                <div className="space-y-6">
-                  <h3 className="text-lg font-semibold text-gray-900 mb-6 flex items-center gap-2">
-                    <Settings className="w-5 h-5 text-indigo-600" />
-                    Edit Profile Information
-                  </h3>
-                  
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                    <div className="space-y-2">
-                      <Label htmlFor="name" className="text-sm font-medium text-gray-700">Full Name *</Label>
-                      <Input 
-                        id="name"
-                        name="name" 
-                        value={editData?.name || ''} 
-                        onChange={handleEditChange} 
-                        placeholder="Enter your full name"
-                        className="border-gray-300 focus:border-indigo-500 focus:ring-indigo-500"
-                      />
+                  </>
+                ) : (
+                  <>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
+                      <div>
+                        <span className="font-medium text-slate-600 font-serif">Name:</span>
+                        <p className="text-slate-900 font-serif">{profileDetails?.name}</p>
+                      </div>
+                      <div>
+                        <span className="font-medium text-slate-600 font-serif">Email:</span>
+                        <p className="text-slate-900">{profileDetails?.email}</p>
+                      </div>
+                      <div>
+                        <span className="font-medium text-slate-600 font-serif">Phone:</span>
+                        <p className="text-slate-900">{profileDetails?.phone || 'Not provided'}</p>
+                      </div>
+                      <div>
+                        <span className="font-medium text-slate-600 font-serif">Gender:</span>
+                        <p className="text-slate-900 capitalize">{profileDetails?.gender}</p>
+                      </div>
+                      <div>
+                        <span className="font-medium text-slate-600 font-serif">Date of Birth:</span>
+                        <p className="text-slate-900">
+                          {profileDetails?.dateOfBirth ? 
+                            `${format(new Date(profileDetails.dateOfBirth), 'PPP')} (Age: ${calculateAge(profileDetails.dateOfBirth)})` 
+                            : 'Not provided'
+                          }
+                        </p>
+                      </div>
+                      <div>
+                        <span className="font-medium text-slate-600 font-serif">Marital Status:</span>
+                        <p className="text-slate-900 capitalize">{profileDetails?.married || 'Not specified'}</p>
+                      </div>
+                      <div className="md:col-span-2">
+                        <span className="font-medium text-slate-600 font-serif">Address:</span>
+                        <p className="text-slate-900">{profileDetails?.address || 'Not provided'}</p>
+                      </div>
                     </div>
                     
-                    <div className="space-y-2">
-                      <Label htmlFor="email" className="text-sm font-medium text-gray-700">Email Address</Label>
-                      <Input 
-                        id="email"
-                        name="email" 
-                        value={editData?.email || ''} 
-                        className="bg-gray-100 border-gray-300"
-                        disabled
-                      />
-                      <p className="text-xs text-gray-500">Email cannot be changed</p>
-                    </div>
-
-                    <div className="space-y-2">
-                      <Label htmlFor="phone" className="text-sm font-medium text-gray-700">Phone Number</Label>
-                      <Input 
-                        id="phone"
-                        name="phone" 
-                        type="tel"
-                        value={editData?.phone || ''} 
-                        onChange={handleEditChange} 
-                        placeholder="Enter your phone number"
-                        className="border-gray-300 focus:border-indigo-500 focus:ring-indigo-500"
-                      />
-                    </div>
-
-                    <div className="space-y-2">
-                      <Label htmlFor="gender" className="text-sm font-medium text-gray-700">Gender</Label>
-                      <Select value={editData?.gender || ''} disabled>
-                        <SelectTrigger className="bg-gray-100 border-gray-300">
-                          <SelectValue placeholder="Select Gender" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="male">Male</SelectItem>
-                          <SelectItem value="female">Female</SelectItem>
-                          <SelectItem value="other">Other</SelectItem>
-                        </SelectContent>
-                      </Select>
-                      <p className="text-xs text-gray-500">Gender cannot be changed</p>
-                    </div>
-
-                    <div className="space-y-2">
-                      <Label htmlFor="dateOfBirth" className="text-sm font-medium text-gray-700">Date of Birth</Label>
-                      <Popover>
-                        <PopoverTrigger asChild>
-                          <Button
-                            variant="outline"
-                            className={cn(
-                              "w-full justify-start text-left font-normal border-gray-300 hover:bg-gray-50",
-                              !editData?.dateOfBirth && "text-muted-foreground"
-                            )}
-                          >
-                            <CalendarIcon className="mr-2 h-4 w-4" />
-                            {editData?.dateOfBirth ? format(new Date(editData.dateOfBirth), "PPP") : <span>Pick a date</span>}
-                          </Button>
-                        </PopoverTrigger>
-                        <PopoverContent className="w-auto p-0" align="start">
-                          <CalendarComponent
-                            mode="single"
-                            selected={editData?.dateOfBirth ? new Date(editData.dateOfBirth) : undefined}
-                            onSelect={(date) => setEditData(prev => prev ? {...prev, dateOfBirth: date?.toISOString().split('T')[0] || ''} : null)}
-                            disabled={(date) =>
-                              date > new Date() || date < new Date("1900-01-01")
-                            }
-                            initialFocus
-                            className="pointer-events-auto"
-                          />
-                        </PopoverContent>
-                      </Popover>
-                      {editData?.dateOfBirth && (
-                        <p className="text-sm text-indigo-600">Age: {calculateAge(editData.dateOfBirth)} years</p>
-                      )}
-                    </div>
-
-                    <div className="space-y-2">
-                      <Label htmlFor="married" className="text-sm font-medium text-gray-700">Marital Status</Label>
-                      <Select 
-                        value={editData?.married || ''} 
-                        onValueChange={(value) => setEditData(prev => prev ? {...prev, married: value} : null)}
+                    <div className="flex justify-end pt-4">
+                      <Button
+                        onClick={() => setEditMode(true)}
+                        className="bg-gradient-to-r from-amber-500 to-orange-600 hover:from-amber-600 hover:to-orange-700 text-white font-serif"
                       >
-                        <SelectTrigger className="border-gray-300 focus:border-indigo-500 focus:ring-indigo-500">
-                          <SelectValue placeholder="Select Marital Status" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="single">Single</SelectItem>
-                          <SelectItem value="married">Married</SelectItem>
-                          <SelectItem value="divorced">Divorced</SelectItem>
-                          <SelectItem value="widowed">Widowed</SelectItem>
-                        </SelectContent>
-                      </Select>
+                        Edit Profile
+                      </Button>
                     </div>
-                  </div>
-
-                  <div className="space-y-2">
-                    <Label htmlFor="address" className="text-sm font-medium text-gray-700">Address</Label>
-                    <Input 
-                      id="address"
-                      name="address" 
-                      value={editData?.address || ''} 
-                      onChange={handleEditChange} 
-                      placeholder="Enter your complete address"
-                      className="border-gray-300 focus:border-indigo-500 focus:ring-indigo-500"
-                    />
-                  </div>
-                  
-                  <div className="space-y-2">
-                    <Label htmlFor="password" className="text-sm font-medium text-gray-700">New Password (Optional)</Label>
-                    <Input 
-                      id="password"
-                      name="password" 
-                      type="password"
-                      value={editData?.password || ''} 
-                      onChange={handleEditChange} 
-                      placeholder="Leave blank to keep current password"
-                      className="border-gray-300 focus:border-indigo-500 focus:ring-indigo-500"
-                    />
-                    <p className="text-xs text-gray-500">Leave empty if you don't want to change your password</p>
-                  </div>
-                  
-                  <div className="space-y-2">
-                    <Label htmlFor="familyTreeId" className="text-sm font-medium text-gray-700">Family Tree ID</Label>
-                    <Input 
-                      id="familyTreeId"
-                      name="familyTreeId" 
-                      value={editData?.familyTreeId || ''} 
-                      className="bg-gray-100 border-gray-300"
-                      disabled
-                    />
-                    <p className="text-xs text-gray-500">Family Tree ID cannot be changed</p>
-                  </div>
-                  
-                  <div className="flex gap-3 pt-6 border-t border-gray-200">
-                    <Button 
-                      className="flex-1 bg-gradient-to-r from-green-600 to-green-700 hover:from-green-700 hover:to-green-800 text-white font-medium py-3" 
-                      onClick={handleSaveProfile}
-                    >
-                      <Download className="w-4 h-4 mr-2" />
-                      Save Changes
-                    </Button>
-                    <Button 
-                      variant="outline" 
-                      className="flex-1 border-gray-300 hover:bg-gray-50 py-3" 
-                      onClick={() => {
-                        setEditMode(false);
-                        setEditData({ ...user });
-                      }}
-                    >
-                      Cancel
-                    </Button>
-                  </div>
-                </div>
-              )}
+                  </>
+                )}
+              </div>
             </div>
           </div>
         </div>

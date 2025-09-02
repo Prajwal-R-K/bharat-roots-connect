@@ -259,7 +259,7 @@ const createCytoscapeElements = (
   });
 
   // Enhanced color scheme with better contrast and visual hierarchy
-  const safeColor = (member?: FamilyMember, isRoot = false, isCurrent = false) => {
+  const getSafeColor = (member?: FamilyMember, isRoot = false, isCurrent = false) => {
     if (isCurrent) return { 
       bgColor: "#fbbf24", 
       gradientColors: "#fbbf24 #f59e0b", 
@@ -313,7 +313,7 @@ const createCytoscapeElements = (
     [m1, m2].forEach((m) => {
       const isRoot = m.userId === createdByUserId;
       const isCurrent = m.userId === loggedInUserId;
-      const colors = safeColor(m, isRoot, isCurrent);
+      const colors = getSafeColor(m, isRoot, isCurrent);
       const displayName = m.name.length > 12 ? m.name.substring(0, 12) + "..." : m.name;
       elements.push({
         data: {
@@ -341,7 +341,7 @@ const createCytoscapeElements = (
     if (processed.has(m.userId)) return;
     const isRoot = m.userId === createdByUserId;
     const isCurrent = m.userId === loggedInUserId;
-    const colors = safeColor(m, isRoot, isCurrent);
+    const colors = getSafeColor(m, isRoot, isCurrent);
     let displayName = m.name.length > 15 ? m.name.substring(0, 15) + "..." : m.name;
     if (isCurrent) displayName = `👑 ${displayName}`;
     elements.push({
@@ -424,26 +424,17 @@ const createCytoscapeElements = (
   return elements;
 };
 
-// Enhanced ELK layout options for better hierarchy alignment
-const elkOptions: cytoscape.LayoutOptions = {
+// Enhanced layout options for better hierarchy alignment
+const elkOptions: any = {
   name: "elk",
   elk: {
-    algorithm: "org.eclipse.elk.layered",
-    "org.eclipse.elk.direction": "DOWN",
-    "org.eclipse.elk.spacing.nodeNode": 100, // Increased horizontal spacing
-    "org.eclipse.elk.layered.spacing.nodeNodeBetweenLayers": 150, // Increased vertical spacing between generations
-    "org.eclipse.elk.spacing.edgeNode": 50,
-    "org.eclipse.elk.spacing.edgeEdge": 30,
-    "org.eclipse.elk.layered.crossingMinimization.strategy": "LAYER_SWEEP",
-    "org.eclipse.elk.layered.nodePlacement.strategy": "NETWORK_SIMPLEX",
-    "org.eclipse.elk.layered.cycleBreaking.strategy": "GREEDY",
-    "org.eclipse.elk.insideSelfLoops.activate": true,
-    "org.eclipse.elk.separateConnectedComponents": true,
-    "org.eclipse.elk.spacing.componentComponent": 120,
-    // Additional options for better centering
-    "org.eclipse.elk.alignment": "CENTER",
-    "org.eclipse.elk.layered.unnecessaryBendpoints": false,
-    "org.eclipse.elk.layered.spacing.edgeNodeBetweenLayers": 40
+    "algorithm": "layered",
+    "elk.direction": "DOWN",
+    "elk.spacing.nodeNode": 100,
+    "elk.layered.spacing.nodeNodeBetweenLayers": 150,
+    "elk.spacing.edgeNode": 50,
+    "elk.spacing.edgeEdge": 30,
+    "elk.alignment": "CENTER"
   }
 };
 
@@ -1256,11 +1247,11 @@ const FamilyTreeVisualization: React.FC<FamilyTreeVisualizationProps> = ({
                   className="w-full h-full object-cover"
                   onError={(e) => {
                     const target = e.target as HTMLImageElement;
-                    const colors = safeColor(nodePopup.data);
+                    const defaultColors = { bgColor: "#8b5cf6", borderColor: "#7c3aed" };
                     const initials = nodePopup.data!.name.split(' ').map(n => n[0]).join('').substring(0, 2).toUpperCase();
                     const svg = `data:image/svg+xml;base64,${btoa(`
                       <svg width="48" height="48" viewBox="0 0 48 48" xmlns="http://www.w3.org/2000/svg">
-                        <circle cx="24" cy="24" r="22" fill="${colors.bgColor}" stroke="${colors.borderColor}" stroke-width="2"/>
+                        <circle cx="24" cy="24" r="22" fill="${defaultColors.bgColor}" stroke="${defaultColors.borderColor}" stroke-width="2"/>
                         <text x="24" y="30" font-family="Arial" font-size="14" font-weight="bold" fill="white" text-anchor="middle">${initials}</text>
                       </svg>
                     `)}`;
