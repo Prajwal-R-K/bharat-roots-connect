@@ -258,7 +258,7 @@ const createCytoscapeElements = (
     coupleMap.set(c.member2, id);
   });
 
-  // Enhanced color scheme with better contrast and visual hierarchy
+  // Enhanced color scheme with better contrast and visual hierarchy - MOVED UP
   const getSafeColor = (member?: FamilyMember, isRoot = false, isCurrent = false) => {
     if (isCurrent) return { 
       bgColor: "#fbbf24", 
