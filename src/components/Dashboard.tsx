@@ -1,5 +1,5 @@
 import * as React from 'react';
-import { User, Calendar, MessageSquare, Users, Settings, Home, Plus, Download, Mail, LogOut, X, CalendarIcon, UserPlus, Camera } from 'lucide-react';
+import { User, Calendar, MessageSquare, Users, Settings, Home, Plus, Download, Mail, LogOut, X, CalendarIcon, UserPlus, Camera, Menu } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -35,6 +35,9 @@ const Dashboard: React.FC<DashboardProps> = ({ user: initialUser, onUserUpdate }
   const [editMode, setEditMode] = React.useState(false);
   const [editData, setEditData] = React.useState<UserType | null>(null);
   const [uploadingPhoto, setUploadingPhoto] = React.useState(false);
+  
+  // State for mobile menu
+  const [mobileMenuOpen, setMobileMenuOpen] = React.useState(false);
 
   // Update user state when initialUser prop changes
   React.useEffect(() => {
@@ -248,7 +251,7 @@ const Dashboard: React.FC<DashboardProps> = ({ user: initialUser, onUserUpdate }
               </div>
             </div>
 
-            {/* Navigation Links */}
+            {/* Navigation Links - Desktop */}
             <div className="hidden md:block">
               <div className="ml-10 flex items-baseline space-x-1">
                 <Button 
@@ -286,12 +289,9 @@ const Dashboard: React.FC<DashboardProps> = ({ user: initialUser, onUserUpdate }
               </div>
             </div>
 
-            {/* Profile Section in Navbar */}
-            <div className="flex items-center gap-4">
-              <div className="text-right hidden sm:block">
-                <div className="text-sm font-semibold text-gray-900">{user.name}</div>
-                <div className="text-xs text-gray-500 font-medium">Family ID: {user.familyTreeId}</div>
-              </div>
+            {/* Profile Section & Mobile Toggle */}
+            <div className="flex items-center gap-3">
+              {/* Profile Avatar - Always Visible */}
               <div className="relative">
                 <Avatar 
                   className="h-10 w-10 ring-2 ring-indigo-300 shadow-lg cursor-pointer hover:ring-indigo-400 transition-all duration-200 hover:shadow-xl"
@@ -303,10 +303,18 @@ const Dashboard: React.FC<DashboardProps> = ({ user: initialUser, onUserUpdate }
                   </AvatarFallback>
                 </Avatar>
               </div>
+              
+              {/* User Info - Desktop Only */}
+              <div className="text-right hidden lg:block">
+                <div className="text-sm font-semibold text-gray-900">{user.name}</div>
+                <div className="text-xs text-gray-500 font-medium">Family ID: {user.familyTreeId}</div>
+              </div>
+              
+              {/* Desktop Logout Button */}
               <Button 
                 variant="outline" 
                 size="sm"
-                className="text-gray-600 hover:text-gray-800 border-gray-300 hover:bg-gray-50"
+                className="hidden md:flex text-gray-600 hover:text-gray-800 border-gray-300 hover:bg-gray-50"
                 onClick={() => {
                   localStorage.removeItem('userData');
                   localStorage.removeItem('userId');
@@ -314,50 +322,170 @@ const Dashboard: React.FC<DashboardProps> = ({ user: initialUser, onUserUpdate }
                 }}
               >
                 <LogOut className="w-4 h-4" />
-                <span className="hidden sm:inline font-medium">Logout</span>
+                <span className="hidden lg:inline font-medium">Logout</span>
+              </Button>
+              
+              {/* Mobile Menu Toggle - Improved Styling */}
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => setMobileMenuOpen(true)}
+                className="md:hidden p-2 h-10 w-10 rounded-lg bg-gradient-to-r from-indigo-50 to-purple-50 hover:from-indigo-100 hover:to-purple-100 border border-indigo-200 text-indigo-600 hover:text-indigo-700 shadow-sm transition-all duration-200"
+              >
+                <Menu className="w-5 h-5" />
               </Button>
             </div>
           </div>
         </div>
-        
-        {/* Mobile Navigation Menu */}
-        <div className="md:hidden bg-gray-50 border-t border-gray-200">
-          <div className="px-4 py-3 space-y-2">
-            <Button 
-              variant="ghost" 
-              className="w-full justify-start text-gray-700 hover:bg-indigo-50 hover:text-indigo-600"
-              onClick={() => navigate('/family-tree')}
-            >
-              <Users className="w-4 h-4 mr-3" />
-              Family Tree
-            </Button>
-            <Button 
-              variant="ghost" 
-              className="w-full justify-start text-gray-700 hover:bg-indigo-50 hover:text-indigo-600"
-              onClick={() => navigate('/events')}
-            >
-              <Calendar className="w-4 h-4 mr-3" />
-              Events
-            </Button>
-            <Button 
-              variant="ghost" 
-              className="w-full justify-start text-gray-700 hover:bg-indigo-50 hover:text-indigo-600"
-              onClick={() => navigate('/posts')}
-            >
-              <Mail className="w-4 h-4 mr-3" />
-              Posts
-            </Button>
-            <Button 
-              variant="ghost" 
-              className="w-full justify-start text-gray-700 hover:bg-indigo-50 hover:text-indigo-600"
-              onClick={() => navigate('/chat')}
-            >
-              <MessageSquare className="w-4 h-4 mr-3" />
-              Chat
-            </Button>
-          </div>
-        </div>
       </nav>
+
+      {/* Mobile Slide-in Menu */}
+      {mobileMenuOpen && (
+        <>
+          {/* Backdrop */}
+          <div 
+            className="fixed inset-0 bg-black bg-opacity-50 z-50 md:hidden"
+            onClick={() => setMobileMenuOpen(false)}
+          />
+          
+          {/* Slide-in Menu */}
+          <div className="fixed top-0 right-0 h-full w-80 bg-white shadow-2xl z-50 transform transition-transform duration-300 ease-in-out md:hidden">
+            {/* Menu Header */}
+            <div className="bg-gradient-to-r from-indigo-600 to-purple-600 px-6 py-4 text-white">
+              <div className="flex items-center justify-between">
+                <h2 className="text-lg font-semibold">Menu</h2>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => setMobileMenuOpen(false)}
+                  className="text-white hover:bg-white/20 p-2"
+                >
+                  <X className="w-5 h-5" />
+                </Button>
+              </div>
+            </div>
+
+            {/* User Profile Section */}
+            <div className="px-6 py-4 border-b border-gray-200">
+              <div className="flex items-center gap-3 mb-3">
+                <Avatar 
+                  className="h-12 w-12 ring-2 ring-indigo-300 shadow-lg cursor-pointer"
+                  onClick={() => {
+                    setProfileOpen(true);
+                    setMobileMenuOpen(false);
+                  }}
+                >
+                  <AvatarImage src={user.profilePicture} alt={user.name} />
+                  <AvatarFallback className="bg-gradient-to-br from-indigo-500 to-purple-600 text-white font-semibold">
+                    {user.name?.split(' ').map(n => n[0]).join('').toUpperCase() || 'U'}
+                  </AvatarFallback>
+                </Avatar>
+                <div>
+                  <div className="text-sm font-semibold text-gray-900">{user.name}</div>
+                  <div className="text-xs text-gray-500">Family ID: {user.familyTreeId}</div>
+                </div>
+              </div>
+            </div>
+
+            {/* Navigation Menu Items */}
+            <div className="px-4 py-4 space-y-2">
+              <Button 
+                variant="ghost" 
+                className="w-full justify-start text-gray-700 hover:bg-indigo-50 hover:text-indigo-600 h-12"
+                onClick={() => {
+                  navigate('/family-tree');
+                  setMobileMenuOpen(false);
+                }}
+              >
+                <Users className="w-5 h-5 mr-3" />
+                Family Tree
+              </Button>
+              
+              <Button 
+                variant="ghost" 
+                className="w-full justify-start text-gray-700 hover:bg-indigo-50 hover:text-indigo-600 h-12"
+                onClick={() => {
+                  navigate('/events');
+                  setMobileMenuOpen(false);
+                }}
+              >
+                <Calendar className="w-5 h-5 mr-3" />
+                Events
+              </Button>
+              
+              <Button 
+                variant="ghost" 
+                className="w-full justify-start text-gray-700 hover:bg-indigo-50 hover:text-indigo-600 h-12"
+                onClick={() => {
+                  navigate('/posts');
+                  setMobileMenuOpen(false);
+                }}
+              >
+                <Mail className="w-5 h-5 mr-3" />
+                Posts
+              </Button>
+              
+              <Button 
+                variant="ghost" 
+                className="w-full justify-start text-gray-700 hover:bg-indigo-50 hover:text-indigo-600 h-12"
+                onClick={() => {
+                  navigate('/chat');
+                  setMobileMenuOpen(false);
+                }}
+              >
+                <MessageSquare className="w-5 h-5 mr-3" />
+                Chat
+              </Button>
+
+              {/* Quick Actions in Mobile Menu */}
+              <div className="pt-4 border-t border-gray-200 mt-4">
+                <h3 className="text-sm font-medium text-gray-500 mb-3 px-3">Quick Actions</h3>
+                
+                <Button 
+                  variant="ghost" 
+                  className="w-full justify-start text-gray-700 hover:bg-green-50 hover:text-green-600 h-12"
+                  onClick={() => {
+                    navigate('/add-member');
+                    setMobileMenuOpen(false);
+                  }}
+                >
+                  <UserPlus className="w-5 h-5 mr-3" />
+                  Add Family Member
+                </Button>
+                
+                <Button 
+                  variant="ghost" 
+                  className="w-full justify-start text-gray-700 hover:bg-blue-50 hover:text-blue-600 h-12"
+                  onClick={() => {
+                    navigate('/invite');
+                    setMobileMenuOpen(false);
+                  }}
+                >
+                  <Mail className="w-5 h-5 mr-3" />
+                  Invite Members
+                </Button>
+              </div>
+
+              {/* Logout Button */}
+              <div className="pt-4 border-t border-gray-200 mt-4">
+                <Button 
+                  variant="outline" 
+                  className="w-full justify-start text-red-600 hover:bg-red-50 hover:text-red-700 border-red-200 h-12"
+                  onClick={() => {
+                    localStorage.removeItem('userData');
+                    localStorage.removeItem('userId');
+                    navigate('/');
+                    setMobileMenuOpen(false);
+                  }}
+                >
+                  <LogOut className="w-5 h-5 mr-3" />
+                  Logout
+                </Button>
+              </div>
+            </div>
+          </div>
+        </>
+      )}
 
       {/* Main Content */}
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
