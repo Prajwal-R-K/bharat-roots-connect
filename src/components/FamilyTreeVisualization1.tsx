@@ -2,6 +2,7 @@
 import React, { useEffect, useRef, useState, useCallback } from "react";
 import { User } from "@/types";
 import { getProfilePhotoUrl } from "@/lib/profile-api";
+import { getDefaultAvatar, getAvatarForMember } from "@/lib/avatar-utils";
 import { Badge } from "@/components/ui/badge";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { getFamilyRelationships } from "@/lib/neo4j/family-tree";
@@ -22,6 +23,8 @@ interface FamilyMember {
   createdBy?: string;
   profilePicture?: string;
   gender?: string;
+  age?: number;
+  dateOfBirth?: string;
 }
 
 interface CoreRelationship {
@@ -67,13 +70,12 @@ const getCytoscapeStyles = () => [
       "text-margin-y": 12,
       "font-size": "14px",
       "font-weight": "bold",
-      color: "#1f2937", // Darker font for better contrast
+      color: "#1f2937",
       "text-wrap": "wrap",
       "text-max-width": "120px",
       "overlay-opacity": 0,
       "transition-property": "border-width, background-color, width, height",
       "transition-duration": 300,
-      // Add subtle shadow for depth
     }
   },
   {
@@ -290,31 +292,6 @@ const createCytoscapeElements = (
     };
   };
 
-  // Create default avatar based on gender and initials
-  const createDefaultAvatar = (member: FamilyMember): string => {
-    if (member.profilePicture && member.profilePicture !== "/placeholder.svg") {
-      return getProfilePhotoUrl(member.profilePicture);
-    }
-    
-    // Create a simple SVG avatar with initials
-    const initials = member.name.split(' ').map(n => n[0]).join('').substring(0, 2).toUpperCase();
-    const colors = safeColor(member);
-    
-    const svg = `
-      <svg width="100" height="100" viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg">
-        <defs>
-          <linearGradient id="grad-${member.userId}" x1="0%" y1="0%" x2="100%" y2="100%">
-            <stop offset="0%" style="stop-color:${colors.bgColor};stop-opacity:1" />
-            <stop offset="100%" style="stop-color:${colors.borderColor};stop-opacity:1" />
-          </linearGradient>
-        </defs>
-        <circle cx="50" cy="50" r="48" fill="url(#grad-${member.userId})" stroke="${colors.borderColor}" stroke-width="2"/>
-        <text x="50" y="60" font-family="Arial, sans-serif" font-size="24" font-weight="bold" fill="white" text-anchor="middle">${initials}</text>
-      </svg>
-    `;
-    
-    return `data:image/svg+xml;base64,${btoa(svg)}`;
-  };
 
   const processed = new Set<string>();
 
@@ -353,7 +330,7 @@ const createCytoscapeElements = (
           isRoot,
           isCurrent,
           ...colors,
-          profileImage: createDefaultAvatar(m)
+          profileImage: getAvatarForMember(m, m.profilePicture)
         }
       });
       processed.add(m.userId);
@@ -380,7 +357,7 @@ const createCytoscapeElements = (
         isRoot,
         isCurrent,
         ...colors,
-        profileImage: createDefaultAvatar(m)
+        profileImage: getAvatarForMember(m, m.profilePicture)
       }
     });
   });
