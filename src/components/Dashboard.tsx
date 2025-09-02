@@ -1,5 +1,5 @@
 import * as React from 'react';
-import { User, Calendar, MessageSquare, Users, Settings, Home, Plus, Download, Mail, LogOut, X, CalendarIcon, UserPlus, Camera, Menu, Eye, EyeOff } from 'lucide-react';
+import { User, Calendar, MessageSquare, Users, Settings, Home, Plus, Download, Mail, LogOut, X, CalendarIcon, UserPlus, Camera, Menu } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -38,9 +38,8 @@ const Dashboard: React.FC<DashboardProps> = ({ user: initialUser, onUserUpdate }
   const [editData, setEditData] = React.useState<UserType | null>(null);
   const [uploadingPhoto, setUploadingPhoto] = React.useState(false);
   
-  // State for mobile menu and stats panel
+  // State for mobile menu
   const [mobileMenuOpen, setMobileMenuOpen] = React.useState(false);
-  const [statsVisible, setStatsVisible] = React.useState(true);
 
   // Update user state when initialUser prop changes
   React.useEffect(() => {
@@ -397,111 +396,74 @@ const Dashboard: React.FC<DashboardProps> = ({ user: initialUser, onUserUpdate }
       )}
 
       {/* Main Content */}
-      <div className="flex relative">
-        {/* Left Stats Panel - Toggleable */}
-        {statsVisible && (
-          <div className="w-80 bg-white/80 backdrop-blur-sm shadow-xl border-r border-slate-200/50 p-6 space-y-6 sticky top-16 h-screen overflow-y-auto">
-            <div className="flex items-center justify-between mb-4">
-              <h3 className="text-lg font-bold text-slate-800 font-serif">Family Stats</h3>
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={() => setStatsVisible(false)}
-                className="text-slate-500 hover:text-slate-700"
-              >
-                <EyeOff className="w-4 h-4" />
-              </Button>
+      <div className="min-h-screen">
+        {/* Enhanced Welcome Section - Full Window Size */}
+        <div 
+          className="relative bg-cover bg-center h-screen flex items-center justify-center overflow-hidden"
+          style={{ backgroundImage: `url(${familyBackground})` }}
+        >
+          <div className="absolute inset-0 bg-black/40"></div>
+          
+          {/* Floating animation particles */}
+          <div className="absolute inset-0 overflow-hidden">
+            <div className="absolute top-20 left-20 w-4 h-4 bg-white/20 rounded-full animate-bounce"></div>
+            <div className="absolute top-40 right-32 w-6 h-6 bg-yellow-300/30 rounded-full animate-pulse"></div>
+            <div className="absolute bottom-32 left-16 w-5 h-5 bg-pink-300/25 rounded-full animate-ping"></div>
+            <div className="absolute bottom-20 right-20 w-8 h-8 bg-blue-300/20 rounded-full animate-bounce"></div>
+            <div className="absolute top-1/3 left-1/3 w-3 h-3 bg-green-300/30 rounded-full animate-pulse"></div>
+            <div className="absolute top-2/3 right-1/4 w-4 h-4 bg-purple-300/25 rounded-full animate-ping"></div>
+          </div>
+          
+          <div className="relative text-center px-6 max-w-4xl mx-auto">
+            {/* Animated flowing color text */}
+            <h1 className="text-5xl md:text-7xl lg:text-8xl font-bold mb-8 font-serif">
+              <span className="relative inline-block">
+                <span className="absolute inset-0 bg-gradient-to-r from-red-500 via-yellow-500 via-green-500 via-blue-500 via-indigo-500 to-purple-500 bg-clip-text text-transparent animate-gradient-x bg-[length:400%_400%]">
+                  Welcome to Your Family
+                </span>
+                <span className="relative bg-gradient-to-r from-red-500 via-yellow-500 via-green-500 via-blue-500 via-indigo-500 to-purple-500 bg-clip-text text-transparent animate-gradient-x bg-[length:400%_400%]">
+                  Welcome to Your Family
+                </span>
+              </span>
+            </h1>
+            
+            <p className="text-xl md:text-2xl text-white/90 font-medium mb-12 animate-pulse">
+              Connect, share, and celebrate together
+            </p>
+            
+            {/* Animated moving dots */}
+            <div className="flex justify-center space-x-4 mb-12">
+              <div className="w-4 h-4 bg-white rounded-full animate-bounce [animation-delay:-0.3s]"></div>
+              <div className="w-4 h-4 bg-yellow-400 rounded-full animate-bounce [animation-delay:-0.15s]"></div>
+              <div className="w-4 h-4 bg-pink-400 rounded-full animate-bounce"></div>
+              <div className="w-4 h-4 bg-blue-400 rounded-full animate-bounce [animation-delay:0.15s]"></div>
+              <div className="w-4 h-4 bg-green-400 rounded-full animate-bounce [animation-delay:0.3s]"></div>
             </div>
             
-            <div className="space-y-4">
-              <Card className="bg-gradient-to-r from-blue-500 to-blue-600 text-white border-0 shadow-lg">
-                <CardContent className="p-4">
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <p className="text-blue-100 text-sm font-medium">Family Members</p>
-                      <p className="text-2xl font-bold">{activeMembers.length}</p>
-                    </div>
-                    <Users className="w-8 h-8 text-blue-200" />
-                  </div>
-                </CardContent>
-              </Card>
-
-              <Card className="bg-gradient-to-r from-green-500 to-green-600 text-white border-0 shadow-lg">
-                <CardContent className="p-4">
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <p className="text-green-100 text-sm font-medium">Pending Invites</p>
-                      <p className="text-2xl font-bold">{pendingInvites.length}</p>
-                    </div>
-                    <Mail className="w-8 h-8 text-green-200" />
-                  </div>
-                </CardContent>
-              </Card>
-
-              <Card className="bg-gradient-to-r from-purple-500 to-purple-600 text-white border-0 shadow-lg">
-                <CardContent className="p-4">
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <p className="text-purple-100 text-sm font-medium">Tree Created</p>
-                      <p className="text-lg font-bold">{treeCreatedDate}</p>
-                    </div>
-                    <Calendar className="w-8 h-8 text-purple-200" />
-                  </div>
-                </CardContent>
-              </Card>
-
-              <Card className="bg-gradient-to-r from-orange-500 to-orange-600 text-white border-0 shadow-lg">
-                <CardContent className="p-4">
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <p className="text-orange-100 text-sm font-medium">Your Role</p>
-                      <p className="text-lg font-bold">Family Admin</p>
-                    </div>
-                    <Settings className="w-8 h-8 text-orange-200" />
-                  </div>
-                </CardContent>
-              </Card>
-            </div>
+            {/* Animated Family Tree View Button */}
+            <button
+              onClick={() => {
+                const familyTreeSection = document.getElementById('family-tree-section');
+                familyTreeSection?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+              }}
+              className="group relative inline-flex items-center justify-center px-8 py-4 text-lg font-bold text-white transition-all duration-300 bg-gradient-to-r from-purple-600 to-pink-600 rounded-full shadow-2xl hover:shadow-purple-500/50 hover:scale-110 transform animate-pulse hover:animate-none"
+            >
+              <span className="absolute inset-0 w-full h-full bg-gradient-to-r from-purple-400 to-pink-400 rounded-full blur opacity-30 group-hover:opacity-50 transition-opacity duration-300"></span>
+              <span className="relative flex items-center gap-3">
+                <svg className="w-6 h-6 animate-spin group-hover:animate-none" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 14l-7 7m0 0l-7-7m7 7V3" />
+                </svg>
+                Family Tree View
+                <svg className="w-6 h-6 animate-bounce group-hover:animate-none" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 14l-7 7m0 0l-7-7m7 7V3" />
+                </svg>
+              </span>
+            </button>
           </div>
-        )}
+        </div>
 
-        {/* Stats Toggle Button (when hidden) */}
-        {!statsVisible && (
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => setStatsVisible(true)}
-            className="fixed left-4 top-20 z-30 bg-white/90 backdrop-blur-sm shadow-lg"
-          >
-            <Eye className="w-4 h-4 mr-2" />
-            Stats
-          </Button>
-        )}
-
-        {/* Main Content Area */}
-        <div className="flex-1 p-6 space-y-8">
-          {/* Welcome Section with Background */}
-          <div 
-            className="relative bg-cover bg-center rounded-2xl overflow-hidden shadow-2xl"
-            style={{ backgroundImage: `url(${familyBackground})` }}
-          >
-            <div className="absolute inset-0 bg-black/30"></div>
-            <div className="relative p-12 text-center">
-              <h1 className="text-4xl md:text-6xl font-bold text-white mb-4 animate-bounce font-serif">
-                Welcome to Your Family
-              </h1>
-              <p className="text-xl text-white/90 font-medium animate-pulse">
-                Connect, share, and celebrate together
-              </p>
-              <div className="mt-6 flex justify-center space-x-4">
-                <div className="w-3 h-3 bg-white rounded-full animate-bounce [animation-delay:-0.3s]"></div>
-                <div className="w-3 h-3 bg-white rounded-full animate-bounce [animation-delay:-0.15s]"></div>
-                <div className="w-3 h-3 bg-white rounded-full animate-bounce"></div>
-              </div>
-            </div>
-          </div>
-
-          {/* Family Tree Section */}
+        {/* Family Tree Section */}
+        <div id="family-tree-section" className="min-h-screen p-6">
           <Card className="shadow-xl border-0 bg-white/90 backdrop-blur-sm rounded-2xl overflow-hidden">
             <CardContent className="p-0">
               <div className="bg-gradient-to-br from-indigo-500 via-purple-500 to-pink-500 p-8 min-h-[800px] relative overflow-hidden">
