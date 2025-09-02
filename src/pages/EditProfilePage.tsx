@@ -5,6 +5,7 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import * as z from 'zod';
 import { User as UserType } from '@/types';
 import { updateUserProfile } from '@/lib/neo4j';
+import { uploadProfilePhoto, getProfilePhotoUrl } from '@/lib/profile-api';
 import { useToast } from '@/hooks/use-toast';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -35,6 +36,7 @@ const EditProfilePage: React.FC = () => {
   const { toast } = useToast();
   const [user, setUser] = useState<UserType | null>(null);
   const [isLoading, setIsLoading] = useState(false);
+  const [uploadingPhoto, setUploadingPhoto] = useState(false);
 
   const form = useForm<ProfileFormData>({
     resolver: zodResolver(profileSchema),
@@ -105,15 +107,60 @@ const EditProfilePage: React.FC = () => {
     }
   };
 
-  const handleImageUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
+  const handleImageUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
-    if (file) {
-      // In a real app, you would upload this to a storage service
-      // For now, we'll just show a message
+    if (!file) return;
+
+    // Validate file type
+    if (!file.type.startsWith('image/')) {
       toast({
-        title: "Image Upload",
-        description: "Image upload functionality will be implemented with storage service",
+        title: 'Invalid file type',
+        description: 'Please select an image file.',
+        variant: 'destructive'
       });
+      return;
+    }
+
+    // Validate file size (5MB max)
+    if (file.size > 5 * 1024 * 1024) {
+      toast({
+        title: 'File too large',
+        description: 'Please select an image smaller than 5MB.',
+        variant: 'destructive'
+      });
+      return;
+    }
+
+    setUploadingPhoto(true);
+    
+    try {
+      // Upload photo to backend
+      const result = await uploadProfilePhoto(user!.userId, user!.familyTreeId, file);
+      
+      // Update user profile with new photo URL
+      const fullPhotoUrl = getProfilePhotoUrl(result.photoUrl);
+      await updateUserProfile(user!.userId, { profilePicture: fullPhotoUrl });
+      
+      // Update local user state
+      const updatedUser = { ...user!, profilePicture: fullPhotoUrl };
+      setUser(updatedUser);
+      localStorage.setItem('currentUser', JSON.stringify(updatedUser));
+
+      toast({
+        title: 'Photo uploaded!',
+        description: 'Your profile photo has been updated successfully.',
+      });
+    } catch (error) {
+      console.error('Error uploading photo:', error);
+      toast({
+        title: 'Upload failed',
+        description: 'Failed to upload profile photo. Please try again.',
+        variant: 'destructive'
+      });
+    } finally {
+      setUploadingPhoto(false);
+      // Clear the input
+      event.target.value = '';
     }
   };
 
@@ -150,15 +197,16 @@ const EditProfilePage: React.FC = () => {
             <div className="flex flex-col items-center mb-8">
               <div className="relative">
                 <Avatar className="w-32 h-32 ring-4 ring-indigo-200">
-                  <AvatarImage src={user.profilePicture} />
+                  <AvatarImage src={user.profilePicture ? getProfilePhotoUrl(user.profilePicture) : undefined} />
                   <AvatarFallback className="bg-indigo-500 text-white text-4xl">
                     {user.name?.charAt(0)}
                   </AvatarFallback>
                 </Avatar>
                 <Button
                   size="sm"
-                  className="absolute bottom-0 right-0 rounded-full bg-indigo-600 hover:bg-indigo-700 p-2"
+                  className="absolute bottom-0 right-0 rounded-full bg-indigo-600 hover:bg-indigo-700 p-2 shadow-lg"
                   onClick={() => document.getElementById('profile-image')?.click()}
+                  disabled={uploadingPhoto}
                 >
                   <Camera className="w-4 h-4" />
                 </Button>
@@ -169,6 +217,11 @@ const EditProfilePage: React.FC = () => {
                   className="hidden"
                   onChange={handleImageUpload}
                 />
+                {uploadingPhoto && (
+                  <div className="absolute inset-0 bg-black/50 rounded-full flex items-center justify-center">
+                    <div className="animate-spin rounded-full h-8 w-8 border-2 border-white border-t-transparent"></div>
+                  </div>
+                )}
               </div>
               <p className="text-sm text-gray-500 mt-2">Click the camera icon to update your profile picture</p>
             </div>

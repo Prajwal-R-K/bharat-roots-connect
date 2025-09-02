@@ -964,6 +964,121 @@ app.get('/api/posts/image/:id', async (req, res) => {
   }
 });
 
+// Profile photo upload endpoint
+app.post('/api/profile/upload-photo', upload.single('photo'), async (req, res) => {
+  try {
+    if (!req.file) {
+      return res.status(400).json({ error: 'No file uploaded' });
+    }
+
+    const { userId, familyId } = req.body;
+    if (!userId || !familyId) {
+      return res.status(400).json({ error: 'Missing required fields: userId, familyId' });
+    }
+
+    // Check if database and GridFS are initialized
+    if (!db || !gridFSBucket) {
+      console.error('Database or GridFS bucket not initialized');
+      return res.status(500).json({ error: 'Database not ready' });
+    }
+
+    console.log('Uploading profile photo for user:', userId, 'file:', req.file.originalname);
+
+    // Stream the file buffer to GridFS
+    const uploadStream = gridFSBucket.openUploadStream(req.file.originalname, {
+      contentType: req.file.mimetype,
+      metadata: {
+        uploadedAt: new Date(),
+        userId,
+        familyId,
+        size: req.file.size,
+        type: 'profile_photo'
+      }
+    });
+
+    uploadStream.end(req.file.buffer);
+
+    uploadStream.on('error', (err) => {
+      console.error('GridFS upload error:', err);
+      if (!res.headersSent) {
+        res.status(500).json({ error: 'Failed to upload profile photo' });
+      }
+    });
+
+    uploadStream.on('finish', async () => {
+      try {
+        const photoId = uploadStream.id.toString();
+        const photoUrl = `/api/profile/photo/${photoId}`;
+
+        console.log('Profile photo uploaded successfully:', photoId);
+
+        if (!res.headersSent) {
+          res.json({ 
+            success: true, 
+            photoId,
+            photoUrl,
+            message: 'Profile photo uploaded successfully'
+          });
+        }
+      } catch (finishError) {
+        console.error('Error in upload finish handler:', finishError);
+        if (!res.headersSent) {
+          res.status(500).json({ error: 'Failed to complete upload' });
+        }
+      }
+    });
+  } catch (error) {
+    console.error('Error uploading profile photo:', error);
+    res.status(500).json({ error: 'Failed to upload profile photo' });
+  }
+});
+
+// Get profile photo by ID
+app.get('/api/profile/photo/:id', async (req, res) => {
+  try {
+    const { id } = req.params;
+    
+    // Check if database and GridFS are initialized
+    if (!db || !gridFSBucket) {
+      console.error('Database or GridFS bucket not initialized');
+      return res.status(500).json({ error: 'Database not ready' });
+    }
+
+    const _id = new ObjectId(id);
+    
+    console.log('Retrieving profile photo:', id);
+    
+    // Find file metadata to set headers
+    const fileDoc = await db.collection('chat_images.files').findOne({ _id });
+    if (!fileDoc) {
+      console.log('Profile photo not found in database:', id);
+      return res.status(404).json({ error: 'Profile photo not found' });
+    }
+    
+    console.log('Found profile photo metadata:', fileDoc.filename, fileDoc.contentType);
+    
+    const contentType = fileDoc.contentType || fileDoc.metadata?.contentType;
+    if (contentType) {
+      res.setHeader('Content-Type', contentType);
+    }
+    res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
+    
+    const readStream = gridFSBucket.openDownloadStream(_id);
+    readStream.on('error', (err) => {
+      console.error('GridFS read error:', err);
+      if (!res.headersSent) {
+        res.status(500).end();
+      }
+    });
+    readStream.pipe(res);
+  } catch (error) {
+    console.error('Error retrieving profile photo:', error);
+    if (!res.headersSent) {
+      res.status(500).json({ error: 'Failed to retrieve profile photo' });
+    }
+  }
+});
+
 // Health check endpoint
 app.get('/api/health', (req, res) => {
   res.json({

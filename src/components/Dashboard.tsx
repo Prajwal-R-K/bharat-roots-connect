@@ -1,5 +1,5 @@
 import * as React from 'react';
-import { User, Calendar, MessageSquare, Users, Settings, Home, Plus, Download, Mail, LogOut, X, CalendarIcon, UserPlus } from 'lucide-react';
+import { User, Calendar, MessageSquare, Users, Settings, Home, Plus, Download, Mail, LogOut, X, CalendarIcon, UserPlus, Camera } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -12,6 +12,7 @@ import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover
 import { Calendar as CalendarComponent } from '@/components/ui/calendar';
 import { useToast } from '@/hooks/use-toast';
 import { updateUserProfile, getFamilyMembers, getUserByEmailOrId } from '@/lib/neo4j';
+import { uploadProfilePhoto, getProfilePhotoUrl } from '@/lib/profile-api';
 import { User as UserType } from '@/types';
 import FamilyTreeVisualization from './FamilyTreeVisualization1';
 import { format } from 'date-fns';
@@ -33,6 +34,7 @@ const Dashboard: React.FC<DashboardProps> = ({ user: initialUser, onUserUpdate }
   const [profileDetails, setProfileDetails] = React.useState<UserType | null>(null);
   const [editMode, setEditMode] = React.useState(false);
   const [editData, setEditData] = React.useState<UserType | null>(null);
+  const [uploadingPhoto, setUploadingPhoto] = React.useState(false);
 
   // Update user state when initialUser prop changes
   React.useEffect(() => {
@@ -147,6 +149,67 @@ const Dashboard: React.FC<DashboardProps> = ({ user: initialUser, onUserUpdate }
     }
   };
 
+  // Handle profile photo upload
+  const handlePhotoUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+
+    // Validate file type
+    if (!file.type.startsWith('image/')) {
+      toast({
+        title: 'Invalid file type',
+        description: 'Please select an image file.',
+        variant: 'destructive'
+      });
+      return;
+    }
+
+    // Validate file size (5MB max)
+    if (file.size > 5 * 1024 * 1024) {
+      toast({
+        title: 'File too large',
+        description: 'Please select an image smaller than 5MB.',
+        variant: 'destructive'
+      });
+      return;
+    }
+
+    setUploadingPhoto(true);
+    
+    try {
+      // Upload photo to backend
+      const result = await uploadProfilePhoto(user.userId, user.familyTreeId, file);
+      
+      // Update user profile with new photo URL
+      const fullPhotoUrl = getProfilePhotoUrl(result.photoUrl);
+      await updateUserProfile(user.userId, { profilePicture: fullPhotoUrl });
+      
+      // Fetch fresh user data
+      const freshUserData = await getUserByEmailOrId(user.userId);
+      if (freshUserData) {
+        setUser(freshUserData);
+        setProfileDetails(freshUserData);
+        onUserUpdate(freshUserData);
+      }
+
+      toast({
+        title: 'Photo uploaded!',
+        description: 'Your profile photo has been updated successfully.',
+      });
+    } catch (error) {
+      console.error('Error uploading photo:', error);
+      toast({
+        title: 'Upload failed',
+        description: 'Failed to upload profile photo. Please try again.',
+        variant: 'destructive'
+      });
+    } finally {
+      setUploadingPhoto(false);
+      // Clear the input
+      event.target.value = '';
+    }
+  };
+
   React.useEffect(() => {
     const loadFamilyMembers = async () => {
       try {
@@ -234,16 +297,16 @@ const Dashboard: React.FC<DashboardProps> = ({ user: initialUser, onUserUpdate }
                   className="h-10 w-10 ring-2 ring-indigo-300 shadow-lg cursor-pointer hover:ring-indigo-400 transition-all duration-200 hover:shadow-xl"
                   onClick={() => setProfileOpen(true)}
                 >
-                  <AvatarImage src={user.profilePicture} />
-                  <AvatarFallback className="bg-gradient-to-br from-indigo-500 to-purple-600 text-white text-sm font-bold">
-                    {user.name?.charAt(0)}
+                  <AvatarImage src={user.profilePicture} alt={user.name} />
+                  <AvatarFallback className="bg-gradient-to-br from-indigo-500 to-purple-600 text-white font-semibold text-sm">
+                    {user.name?.split(' ').map(n => n[0]).join('').toUpperCase() || 'U'}
                   </AvatarFallback>
                 </Avatar>
               </div>
               <Button 
-                variant="ghost" 
-                size="sm" 
-                className="text-red-500 hover:bg-red-50 hover:text-red-600 flex items-center gap-2 px-3 py-2 rounded-md transition-all duration-200"
+                variant="outline" 
+                size="sm"
+                className="text-gray-600 hover:text-gray-800 border-gray-300 hover:bg-gray-50"
                 onClick={() => {
                   localStorage.removeItem('userData');
                   localStorage.removeItem('userId');
@@ -482,12 +545,32 @@ const Dashboard: React.FC<DashboardProps> = ({ user: initialUser, onUserUpdate }
                 <X className="w-6 h-6" />
               </button>
               <div className="flex items-center gap-4">
-                <Avatar className="h-16 w-16 ring-4 ring-white/30 shadow-lg">
-                  <AvatarImage src={profileDetails?.profilePicture} />
-                  <AvatarFallback className="bg-white/20 text-white text-2xl font-bold">
-                    {profileDetails?.name?.charAt(0)}
-                  </AvatarFallback>
-                </Avatar>
+                <div className="relative">
+                  <Avatar className="h-16 w-16 ring-4 ring-white/30 shadow-lg">
+                    <AvatarImage src={profileDetails?.profilePicture ? getProfilePhotoUrl(profileDetails.profilePicture) : undefined} />
+                    <AvatarFallback className="bg-white/20 text-white text-2xl font-bold">
+                      {profileDetails?.name?.charAt(0)}
+                    </AvatarFallback>
+                  </Avatar>
+                  <Button
+                    size="sm"
+                    className="absolute -bottom-1 -right-1 h-8 w-8 rounded-full bg-white/20 hover:bg-white/30 p-0 shadow-lg backdrop-blur-sm"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      document.getElementById('modal-photo-upload')?.click();
+                    }}
+                    disabled={uploadingPhoto}
+                  >
+                    <Camera className="w-4 h-4 text-white" />
+                  </Button>
+                  <input
+                    id="modal-photo-upload"
+                    type="file"
+                    accept="image/*"
+                    className="hidden"
+                    onChange={handlePhotoUpload}
+                  />
+                </div>
                 <div>
                   <h2 className="text-2xl font-bold">{profileDetails?.name}</h2>
                   <p className="text-indigo-100">{profileDetails?.email}</p>

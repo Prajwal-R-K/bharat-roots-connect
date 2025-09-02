@@ -1,6 +1,7 @@
 // src/components/FamilyTreeVisualization1.tsx
 import React, { useEffect, useRef, useState, useCallback } from "react";
 import { User } from "@/types";
+import { getProfilePhotoUrl } from "@/lib/profile-api";
 import { Badge } from "@/components/ui/badge";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { getFamilyRelationships } from "@/lib/neo4j/family-tree";
@@ -292,7 +293,7 @@ const createCytoscapeElements = (
   // Create default avatar based on gender and initials
   const createDefaultAvatar = (member: FamilyMember): string => {
     if (member.profilePicture && member.profilePicture !== "/placeholder.svg") {
-      return member.profilePicture;
+      return getProfilePhotoUrl(member.profilePicture);
     }
     
     // Create a simple SVG avatar with initials
