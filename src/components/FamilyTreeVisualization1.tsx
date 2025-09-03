@@ -339,12 +339,7 @@ const createCytoscapeElements = (
           isRoot,
           isCurrent,
           ...colors,
-          profileImage: getAvatarForMember({
-            gender: m.gender,
-            age: m.age,
-            dateOfBirth: m.dateOfBirth,
-            married: m.married || m.marriageStatus || 'single'
-          }, m.profilePicture)
+          profileImage: getAvatarForMember(m, m.profilePicture)
         }
       });
       processed.add(m.userId);
@@ -371,12 +366,7 @@ const createCytoscapeElements = (
         isRoot,
         isCurrent,
         ...colors,
-        profileImage: getAvatarForMember({
-          gender: m.gender,
-          age: m.age,
-          dateOfBirth: m.dateOfBirth,
-          married: m.married || m.marriageStatus || 'single'
-        }, m.profilePicture)
+        profileImage: getAvatarForMember(m, m.profilePicture)
       }
     });
   });

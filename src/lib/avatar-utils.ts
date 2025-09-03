@@ -25,19 +25,39 @@ const calculateAge = (dateOfBirth: string): number => {
 };
 
 /**
- * Get default avatar based on gender, age, and marital status
+ * Get default avatar based on member data
  */
-export const getDefaultAvatar = (gender?: string, age?: number, dateOfBirth?: string, married?: string): string => {
-  console.log('🎨 Avatar Selection Debug:', { gender, age, dateOfBirth, married });
+export const getDefaultAvatar = (member: any): string => {
+  console.log('🎨 Avatar Selection Debug - Member Data:', member);
+  
+  // Extract values safely, handling both direct values and Neo4j property objects
+  const extractValue = (value: any) => {
+    if (value === null || value === undefined) return undefined;
+    if (typeof value === 'object' && value.hasOwnProperty('value')) {
+      return value.value;
+    }
+    return value;
+  };
+  
+  const gender = extractValue(member.gender);
+  const age = extractValue(member.age);
+  const dateOfBirth = extractValue(member.dateOfBirth);
+  const married = extractValue(member.married) || extractValue(member.marriageStatus);
+  
+  console.log('🎨 Extracted values:', { gender, age, dateOfBirth, married });
   
   // Calculate age if not provided but dateOfBirth is available
-  const actualAge = age || (dateOfBirth ? calculateAge(dateOfBirth) : 25);
+  let actualAge = age;
+  if (!actualAge && dateOfBirth) {
+    actualAge = calculateAge(dateOfBirth);
+  }
+  if (!actualAge) actualAge = 25; // Default age
   
   // Normalize gender - handle various gender formats
-  const normalizedGender = gender?.toLowerCase()?.trim() || 'male';
+  const normalizedGender = gender?.toString()?.toLowerCase()?.trim() || 'male';
   
   // Normalize marital status - handle various formats
-  const marriageStatus = married?.toLowerCase()?.trim() || 'single';
+  const marriageStatus = married?.toString()?.toLowerCase()?.trim() || 'single';
   const isMarried = marriageStatus === 'married' || marriageStatus === 'yes' || marriageStatus === 'true';
   
   console.log('🎨 Processed values:', { actualAge, normalizedGender, isMarried, marriageStatus });
@@ -69,12 +89,12 @@ export const getDefaultAvatar = (gender?: string, age?: number, dateOfBirth?: st
 /**
  * Get avatar for family member with fallback to profile picture
  */
-export const getAvatarForMember = (member: AvatarSelection & { married?: string }, profilePictureUrl?: string): string => {
+export const getAvatarForMember = (member: any, profilePictureUrl?: string): string => {
   // If user has uploaded a profile picture, use that
   if (profilePictureUrl) {
     return profilePictureUrl;
   }
   
-  // Otherwise use default avatar based on age, gender, and marital status
-  return getDefaultAvatar(member.gender, member.age, member.dateOfBirth, member.married);
+  // Otherwise use default avatar based on member data
+  return getDefaultAvatar(member);
 };
