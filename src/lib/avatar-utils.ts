@@ -40,45 +40,35 @@ export const getDefaultAvatar = (member: any): string => {
   };
   
   const gender = extractValue(member.gender);
-  const age = extractValue(member.age);
-  const dateOfBirth = extractValue(member.dateOfBirth);
-  const married = extractValue(member.married) || extractValue(member.marriageStatus);
+  const myRelationship = extractValue(member.myRelationship);
   
-  console.log('🎨 Extracted values:', { gender, age, dateOfBirth, married });
-  
-  // Calculate age if not provided but dateOfBirth is available
-  let actualAge = age;
-  if (!actualAge && dateOfBirth) {
-    actualAge = calculateAge(dateOfBirth);
-  }
-  if (!actualAge) actualAge = 25; // Default age
+  console.log('🎨 Extracted values:', { gender, myRelationship });
   
   // Normalize gender - handle various gender formats
   const normalizedGender = gender?.toString()?.toLowerCase()?.trim() || 'male';
   
-  // Normalize marital status - handle various formats
-  const marriageStatus = married?.toString()?.toLowerCase()?.trim() || 'single';
-  const isMarried = marriageStatus === 'married' || marriageStatus === 'yes' || marriageStatus === 'true';
+  // Normalize relationship
+  const relationship = myRelationship?.toString()?.toLowerCase()?.trim() || '';
   
-  console.log('🎨 Processed values:', { actualAge, normalizedGender, isMarried, marriageStatus });
+  console.log('🎨 Processed values:', { normalizedGender, relationship });
   
   let selectedAvatar = '';
   
-  // Age-based avatar selection with exact constraints
-  if (actualAge < 12) {
-    // Children under 12
+  // Avatar selection based on relationship and gender
+  if (relationship === 'daughter' || relationship === 'son') {
+    // Children
     selectedAvatar = normalizedGender === 'female' ? '/avatars/childdaughter.png' : '/avatars/chiledson.png';
-  } else if (actualAge >= 12 && actualAge < 30) {
-    // Young adults 12-29
-    selectedAvatar = normalizedGender === 'female' ? '/avatars/women.png' : '/avatars/man.png';
-  } else if (isMarried && actualAge >= 30 && actualAge < 50) {
-    // Married adults 30-49 (parents)
+  } else if (relationship === 'mother' || relationship === 'father') {
+    // Parents
     selectedAvatar = normalizedGender === 'female' ? '/avatars/mother.png' : '/avatars/father.png';
-  } else if (isMarried && actualAge >= 50) {
-    // Married seniors 50+ (grandparents)
+  } else if (relationship === 'grandmother' || relationship === 'grandfather') {
+    // Grandparents
     selectedAvatar = normalizedGender === 'female' ? '/avatars/grandmother.png' : '/avatars/grandfather.png';
+  } else if (relationship === 'wife' || relationship === 'husband') {
+    // Spouses - assume married adults
+    selectedAvatar = normalizedGender === 'female' ? '/avatars/mother.png' : '/avatars/father.png';
   } else {
-    // Default for unmarried adults or edge cases
+    // Default for other relationships (sister, brother, etc.) - young adults
     selectedAvatar = normalizedGender === 'female' ? '/avatars/women.png' : '/avatars/man.png';
   }
   

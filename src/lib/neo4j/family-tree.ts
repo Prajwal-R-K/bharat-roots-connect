@@ -40,8 +40,7 @@ export const getFamilyMembers = async (familyTreeId: string) => {
       MATCH (u:User {familyTreeId: $familyTreeId})
       RETURN DISTINCT u.userId AS userId, u.name AS name, u.email AS email, u.status AS status,
       u.myRelationship AS myRelationship, u.createdBy AS createdBy,
-      u.profilePicture AS profilePicture, u.gender AS gender,
-      u.dateOfBirth AS dateOfBirth, u.age AS age, u.marriageStatus AS marriageStatus
+      u.profilePicture AS profilePicture, u.gender AS gender
     `;
 
     const result = await runQuery(cypher, { familyTreeId });
@@ -55,10 +54,7 @@ export const getFamilyMembers = async (familyTreeId: string) => {
       myRelationship: record.myRelationship,
       createdBy: record.createdBy,
       profilePicture: record.profilePicture,
-      gender: record.gender || '',
-      dateOfBirth: record.dateOfBirth,
-      age: record.age,
-      marriageStatus: record.marriageStatus
+      gender: record.gender || ''
     }));
   } catch (error) {
     console.error("Error fetching family members:", error);
@@ -333,9 +329,7 @@ export const getTraversableFamilyTreeData = async (
          profilePicture: u.profilePicture, 
          gender: u.gender, 
          createdBy: u.createdBy,
-         dateOfBirth: u.dateOfBirth,
-         age: u.age,
-         marriageStatus: u.marriageStatus
+         myRelationship: u.myRelationship
        }) AS nodes, relationships
     `;
 
