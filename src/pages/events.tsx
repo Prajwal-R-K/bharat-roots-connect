@@ -262,18 +262,29 @@ const EventsPage: React.FC = () => {
         title: eventForm.title,
         description: eventForm.description,
         eventType: eventForm.eventType || 'other',
-        date: new Date(eventForm.date).toISOString(),
+        date: new Date(eventForm.date),
         time: eventForm.time,
         location: eventForm.location,
-        updatedAt: new Date().toISOString(),
+        updatedAt: new Date(),
         attendees: Object.fromEntries(
           Object.entries(editingEvent.attendees).map(([uid, att]) => [uid, {
+            ...att,
+            votedAt: new Date(att.votedAt)
+          }])
+        )
+      };
+      const updatedRaw = await updateFamilyEvent({
+        ...updatedEvent,
+        date: updatedEvent.date instanceof Date ? updatedEvent.date.toISOString() : updatedEvent.date,
+        createdAt: updatedEvent.createdAt instanceof Date ? updatedEvent.createdAt.toISOString() : updatedEvent.createdAt,
+        updatedAt: updatedEvent.updatedAt instanceof Date ? updatedEvent.updatedAt.toISOString() : updatedEvent.updatedAt,
+        attendees: Object.fromEntries(
+          Object.entries(updatedEvent.attendees).map(([uid, att]) => [uid, {
             ...att,
             votedAt: att.votedAt instanceof Date ? att.votedAt.toISOString() : att.votedAt
           }])
         )
-      };
-      const updatedRaw = await updateFamilyEvent(updatedEvent);
+      });
       const updated = {
         ...updatedRaw,
         date: new Date(updatedRaw.date),
@@ -313,7 +324,10 @@ const EventsPage: React.FC = () => {
         description: "The event has been removed successfully."
       });
     } catch (error) {
-      toast("Failed to delete event. Please try again.");
+      toast({
+        title: "Error",
+        description: "Failed to delete event. Please try again."
+      });
     }
   };
 
@@ -341,10 +355,15 @@ const EventsPage: React.FC = () => {
             votedAt: att.votedAt instanceof Date ? att.votedAt.toISOString() : att.votedAt
           }])
         ),
-        updatedAt: new Date().toISOString(),
-        date: eventToUpdate.date instanceof Date ? eventToUpdate.date.toISOString() : eventToUpdate.date
+        updatedAt: new Date(),
+        date: eventToUpdate.date
       };
-      const updatedRaw = await updateFamilyEvent(updatedEvent);
+      const updatedRaw = await updateFamilyEvent({
+        ...updatedEvent,
+        date: typeof updatedEvent.date === 'string' ? updatedEvent.date : updatedEvent.date.toISOString(),
+        createdAt: typeof updatedEvent.createdAt === 'string' ? updatedEvent.createdAt : updatedEvent.createdAt.toISOString(),
+        updatedAt: typeof updatedEvent.updatedAt === 'string' ? updatedEvent.updatedAt : updatedEvent.updatedAt.toISOString()
+      });
       const updated = {
         ...updatedRaw,
         date: new Date(updatedRaw.date),
@@ -358,9 +377,15 @@ const EventsPage: React.FC = () => {
         )
       };
       setEvents(prev => prev.map(event => event.id === updated.id ? updated : event));
-      toast(`You've marked yourself as ${status.replace('_', ' ')}.`);
+      toast({
+        title: "RSVP Updated",
+        description: `You've marked yourself as ${status.replace('_', ' ')}.`
+      });
     } catch (error) {
-      toast("Failed to update RSVP. Please try again.");
+      toast({
+        title: "Error", 
+        description: "Failed to update RSVP. Please try again."
+      });
     }
   };
 

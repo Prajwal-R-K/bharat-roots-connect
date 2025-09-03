@@ -170,7 +170,7 @@ const FamilyTreeViewPage = () => {
                     <FamilyTreeVisualization 
                       user={currentUser} 
                       familyMembers={familyMembers}
-                      viewMode={viewType}
+                      viewMode={viewType === "hyper" ? "all" : viewType}
                       minHeight="400px"
                       showControls={true}
                     />

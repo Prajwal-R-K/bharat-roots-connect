@@ -50,9 +50,9 @@ export const createFamilyEvent = async (event: FamilyEvent): Promise<FamilyEvent
   // Serialize attendees and dates
   const eventToSave = {
     ...event,
-    date: event.date instanceof Date ? event.date.toISOString() : event.date,
-    createdAt: event.createdAt instanceof Date ? event.createdAt.toISOString() : event.createdAt,
-    updatedAt: event.updatedAt instanceof Date ? event.updatedAt.toISOString() : event.updatedAt,
+    date: event.date || '',
+    createdAt: event.createdAt || '',
+    updatedAt: event.updatedAt || '',
     attendees: JSON.stringify(event.attendees || {})
   };
   const result = await runQuery(cypher, { event: eventToSave });
@@ -74,9 +74,9 @@ export const updateFamilyEvent = async (event: FamilyEvent): Promise<FamilyEvent
   `;
   const eventToSave = {
     ...event,
-    date: event.date instanceof Date ? event.date.toISOString() : event.date,
-    createdAt: event.createdAt instanceof Date ? event.createdAt.toISOString() : event.createdAt,
-    updatedAt: event.updatedAt instanceof Date ? event.updatedAt.toISOString() : event.updatedAt,
+    date: event.date || '',
+    createdAt: event.createdAt || '',
+    updatedAt: event.updatedAt || '',
     attendees: JSON.stringify(event.attendees || {})
   };
   const result = await runQuery(cypher, { id: event.id, event: eventToSave });

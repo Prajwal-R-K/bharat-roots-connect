@@ -148,11 +148,11 @@ export async function updateFamilyEvent(eventId: string, updates: Partial<Family
     { returnDocument: 'after' }
   );
   
-  if (!result.value) return null;
+  if (!result) return null;
   
   return {
-    ...result.value,
-    _id: result.value._id?.toString()
+    ...result,
+    _id: result._id?.toString()
   };
 }
 

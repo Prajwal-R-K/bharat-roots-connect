@@ -139,12 +139,15 @@ const ChatPage: React.FC = () => {
           // Create welcome message
           const welcomeMessage: ChatMessage = {
             id: "1",
+            familyId: currentUser.familyTreeId,
             senderId: "system",
             senderName: "Family Chat",
             content: `Welcome to your family chat, ${currentUser.name}! 👋 This is where all family members can communicate. Start by saying hello!`,
             timestamp: new Date(),
             status: 'read',
-            messageType: 'text'
+            messageType: 'text',
+            readBy: [],
+            isDeleted: false
           };
           setMessages([welcomeMessage]);
         }
@@ -169,13 +172,16 @@ const ChatPage: React.FC = () => {
     
     const newMsg: ChatMessage = {
       id: Date.now().toString(),
+      familyId: user.familyTreeId,
       senderId: user.userId,
       senderName: user.name,
       content: newMessage.trim(),
       timestamp: new Date(),
       senderProfilePicture: user.profilePicture,
       status: 'sent',
-      messageType: 'text'
+      messageType: 'text',
+      readBy: [],
+      isDeleted: false
     };
 
     const updatedMessages = [...messages, newMsg];

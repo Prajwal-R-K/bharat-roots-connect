@@ -111,7 +111,10 @@ const ChatPage: React.FC = () => {
 
         // Get family members
         const members = await getFamilyMembers(currentUser.familyTreeId);
-        setFamilyMembers(members);
+        setFamilyMembers(members.map(member => ({
+          ...member,
+          familyTreeId: currentUser.familyTreeId
+        })));
 
         // Create or update family chat room in MongoDB
         await createOrUpdateFamilyRoom(
