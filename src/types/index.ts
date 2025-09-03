@@ -37,6 +37,7 @@ export interface FamilyMember {
   age?: number;
   dateOfBirth?: string;
   married?: string;
+  marriageStatus?: string;
   profilePicture?: string;
 }
 

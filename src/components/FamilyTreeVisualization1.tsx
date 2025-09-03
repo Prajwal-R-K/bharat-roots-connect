@@ -25,6 +25,8 @@ interface FamilyMember {
   gender?: string;
   age?: number;
   dateOfBirth?: string;
+  married?: string;
+  marriageStatus?: string;
 }
 
 interface CoreRelationship {
@@ -341,7 +343,7 @@ const createCytoscapeElements = (
             gender: m.gender,
             age: m.age,
             dateOfBirth: m.dateOfBirth,
-            married: m.married
+            married: m.married || m.marriageStatus || 'single'
           }, m.profilePicture)
         }
       });
@@ -369,7 +371,12 @@ const createCytoscapeElements = (
         isRoot,
         isCurrent,
         ...colors,
-        profileImage: getAvatarForMember(m, m.profilePicture)
+        profileImage: getAvatarForMember({
+          gender: m.gender,
+          age: m.age,
+          dateOfBirth: m.dateOfBirth,
+          married: m.married || m.marriageStatus || 'single'
+        }, m.profilePicture)
       }
     });
   });

@@ -28,30 +28,42 @@ const calculateAge = (dateOfBirth: string): number => {
  * Get default avatar based on gender, age, and marital status
  */
 export const getDefaultAvatar = (gender?: string, age?: number, dateOfBirth?: string, married?: string): string => {
+  console.log('🎨 Avatar Selection Debug:', { gender, age, dateOfBirth, married });
+  
   // Calculate age if not provided but dateOfBirth is available
   const actualAge = age || (dateOfBirth ? calculateAge(dateOfBirth) : 25);
   
-  // Normalize gender
-  const normalizedGender = gender?.toLowerCase() || 'male';
-  const isMarried = married?.toLowerCase() === 'married';
+  // Normalize gender - handle various gender formats
+  const normalizedGender = gender?.toLowerCase()?.trim() || 'male';
+  
+  // Normalize marital status - handle various formats
+  const marriageStatus = married?.toLowerCase()?.trim() || 'single';
+  const isMarried = marriageStatus === 'married' || marriageStatus === 'yes' || marriageStatus === 'true';
+  
+  console.log('🎨 Processed values:', { actualAge, normalizedGender, isMarried, marriageStatus });
+  
+  let selectedAvatar = '';
   
   // Age-based avatar selection with exact constraints
   if (actualAge < 12) {
     // Children under 12
-    return normalizedGender === 'female' ? '/avatars/childdaughter.png' : '/avatars/chiledson.png';
+    selectedAvatar = normalizedGender === 'female' ? '/avatars/childdaughter.png' : '/avatars/chiledson.png';
   } else if (actualAge >= 12 && actualAge < 30) {
     // Young adults 12-29
-    return normalizedGender === 'female' ? '/avatars/women.png' : '/avatars/man.png';
+    selectedAvatar = normalizedGender === 'female' ? '/avatars/women.png' : '/avatars/man.png';
   } else if (isMarried && actualAge >= 30 && actualAge < 50) {
     // Married adults 30-49 (parents)
-    return normalizedGender === 'female' ? '/avatars/mother.png' : '/avatars/father.png';
-  } else if (isMarried && actualAge >= 50 && actualAge < 100) {
-    // Married seniors 50-99 (grandparents)
-    return normalizedGender === 'female' ? '/avatars/grandmother.png' : '/avatars/grandfather.png';
+    selectedAvatar = normalizedGender === 'female' ? '/avatars/mother.png' : '/avatars/father.png';
+  } else if (isMarried && actualAge >= 50) {
+    // Married seniors 50+ (grandparents)
+    selectedAvatar = normalizedGender === 'female' ? '/avatars/grandmother.png' : '/avatars/grandfather.png';
   } else {
     // Default for unmarried adults or edge cases
-    return normalizedGender === 'female' ? '/avatars/women.png' : '/avatars/man.png';
+    selectedAvatar = normalizedGender === 'female' ? '/avatars/women.png' : '/avatars/man.png';
   }
+  
+  console.log('🎨 Selected avatar:', selectedAvatar);
+  return selectedAvatar;
 };
 
 /**
