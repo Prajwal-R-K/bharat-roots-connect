@@ -425,9 +425,16 @@ export const FamilyTreeVisualization: React.FC<FamilyTreeVisualizationProps> = (
     fetchRelationships();
   }, [user?.familyTreeId, user?.userId, viewMode, propFamilyMembers]);
 
+  // Update family members when prop changes
+  useEffect(() => {
+    if (propFamilyMembers.length > 0) {
+      setFamilyMembers(propFamilyMembers);
+    }
+  }, [propFamilyMembers]);
+
   // Initialize and update Cytoscape when data changes
   useEffect(() => {
-    if (!cyRef.current || loading) return;
+    if (!cyRef.current || loading || familyMembers.length === 0) return;
 
     const elements = createCytoscapeElements(
       familyMembers,
@@ -451,6 +458,14 @@ export const FamilyTreeVisualization: React.FC<FamilyTreeVisualizationProps> = (
     });
 
     cyInstance.current = cy;
+
+    // Force layout recalculation and render
+    setTimeout(() => {
+      if (cy) {
+        cy.layout(elkOptions).run();
+        cy.fit();
+      }
+    }, 100);
 
     // Event handlers for interactions
     cy.on('tap', 'node', (evt) => {
@@ -554,7 +569,7 @@ export const FamilyTreeVisualization: React.FC<FamilyTreeVisualizationProps> = (
         cyInstance.current = null;
       }
     };
-  }, [familyMembers, relationships, loading, user]);
+  }, [familyMembers, relationships, loading, user, propFamilyMembers]);
 
   // Update node selection highlighting
   useEffect(() => {
