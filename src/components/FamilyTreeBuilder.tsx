@@ -1,23 +1,15 @@
 // src/components/FamilyTreeBuilder.tsx
 import React, { useState, useCallback, useEffect, useRef } from 'react';
-import {
-  ReactFlow,
-  Controls,
-  Background,
-  useNodesState,
-  useEdgesState,
-  addEdge,
-  Connection,
-  Edge,
-  Node,
-} from '@xyflow/react';
-import '@xyflow/react/dist/style.css';
+import cytoscape from 'cytoscape';
+import elk from 'cytoscape-elk';
+
+cytoscape.use(elk);
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
-import { Plus, User, Save, ArrowLeft } from 'lucide-react';
+import { Plus, User, Save, ArrowLeft, Maximize } from 'lucide-react';
 import { toast } from '@/hooks/use-toast';
 import { generateId, getCurrentDateTime } from '@/lib/utils';
 import { useNavigate } from 'react-router-dom';
@@ -28,13 +20,12 @@ import {
   validateRelationshipAddition, 
   checkEmailExists 
 } from './FamilyTreeStore';
-import { nodeTypes, edgeTypes } from '@/features/family-tree';
-import type { FamilyMemberNode } from '@/features/family-tree';
 import { 
   relationshipCategories,
   addFamilyMemberWithRelationships,
   validateSiblingRelationship
 } from './FamilyTreeLogic';
+import { getAvatarForMember } from '@/lib/avatar-utils';
 
 interface FamilyTreeBuilderProps {
   onComplete: (familyData: any) => void;
@@ -44,8 +35,9 @@ interface FamilyTreeBuilderProps {
 
 const FamilyTreeBuilder: React.FC<FamilyTreeBuilderProps> = ({ onComplete, onBack, registrationData }) => {
   const navigate = useNavigate();
-  const [nodes, setNodes, onNodesChange] = useNodesState([]);
-  const [edges, setEdges, onEdgesChange] = useEdgesState([]);
+  const containerRef = useRef<HTMLDivElement>(null);
+  const cyRef = useRef<cytoscape.Core | null>(null);
+  const [cytoscapeElements, setCytoscapeElements] = useState<cytoscape.ElementDefinition[]>([]);
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
   const [showAddDialog, setShowAddDialog] = useState(false);
   const [showRelationshipChoice, setShowRelationshipChoice] = useState(false);
@@ -64,31 +56,20 @@ const FamilyTreeBuilder: React.FC<FamilyTreeBuilderProps> = ({ onComplete, onBac
   const [selectedNode, setSelectedNode] = useState<any>(null);
   const [familyTreeId, setFamilyTreeId] = useState<string | null>(null);
   const [rootUser, setRootUser] = useState<any>(null);
-  const [draggingNodeId, setDraggingNodeId] = useState<string | null>(null);
-  const [draggingNodeInitialPos, setDraggingNodeInitialPos] = useState<{ x: number; y: number } | null>(null);
-
-  const nodesRef = useRef(nodes);
-  const edgesRef = useRef(edges);
-  
-  useEffect(() => {
-    nodesRef.current = nodes;
-  }, [nodes]);
-
-  useEffect(() => {
-    edgesRef.current = edges;
-  }, [edges]);
+  const [familyMembers, setFamilyMembers] = useState<any[]>([]);
+  const [relationships, setRelationships] = useState<any[]>([]);
 
   const handleAddRelation = useCallback((nodeId: string) => {
     console.log('handleAddRelation called with nodeId:', nodeId);
-    const node = nodesRef.current.find(n => n.id === nodeId);
-    console.log('Found node:', node);
-    if (!node) {
-      console.log('Node not found!');
+    const member = familyMembers.find(m => m.userId === nodeId);
+    console.log('Found member:', member);
+    if (!member) {
+      console.log('Member not found!');
       return;
     }
     
     setSelectedNodeId(nodeId);
-    setSelectedNode(node);
+    setSelectedNode(member);
     setShowRelationshipChoice(true);
     setNewMember({
       name: '',
@@ -100,41 +81,254 @@ const FamilyTreeBuilder: React.FC<FamilyTreeBuilderProps> = ({ onComplete, onBac
       marriageDate: '',
       marriageStatus: 'married'
     });
-  }, []);
+  }, [familyMembers]);
 
   // Initialize family tree, root user, and root node
   useEffect(() => {
     const initialize = async () => {
-      if (registrationData && !familyTreeId && nodes.length === 0) {
+      if (registrationData && !familyTreeId && familyMembers.length === 0) {
         const { familyTreeId: ftId, rootUser: ru } = await initializeFamilyTree(registrationData);
         setFamilyTreeId(ftId);
         setRootUser(ru);
-
-        const rootNode: FamilyMemberNode = {
-          id: 'root',
-          type: 'familyMember',
-          position: { x: window.innerWidth / 2 - 100, y: window.innerHeight / 2 - 100 },
-          data: {
-            label: ru.name,
-            name: ru.name,
-            email: ru.email,
-            generation: 0,
-            isRoot: true,
-            onAddRelation: handleAddRelation,
-            gender: ru.gender,
-            userId: ru.userId,
-          }
-        };
-        setNodes([rootNode]);
+        setFamilyMembers([ru]);
       }
     };
     initialize();
-  }, [registrationData, handleAddRelation, setNodes, familyTreeId, nodes.length]);
+  }, [registrationData, familyTreeId, familyMembers.length]);
 
-  const onConnect = useCallback(
-    (params: Connection) => setEdges((eds) => addEdge(params, eds)),
-    [setEdges],
-  );
+  // Cytoscape styles similar to FamilyTreeVisualization1
+  const getCytoscapeStyles = useCallback((): any => [
+    {
+      selector: 'node[type="individual"]',
+      style: {
+        width: 100,
+        height: 100,
+        shape: "ellipse" as any,
+        "background-image": "data(profileImage)" as any,
+        "background-fit": "cover cover" as any,
+        "background-opacity": 1,
+        "border-width": 4,
+        "border-color": "data(borderColor)" as any,
+        "border-opacity": 1,
+        label: "data(displayName)" as any,
+        "text-valign": "bottom" as any,
+        "text-halign": "center" as any,
+        "text-margin-y": 12,
+        "font-size": "14px" as any,
+        "font-weight": "bold" as any,
+        color: "#1f2937",
+        "text-wrap": "wrap" as any,
+        "text-max-width": "120px" as any,
+        "overlay-opacity": 0,
+      }
+    },
+    {
+      selector: 'edge[type="marriage"]',
+      style: {
+        width: 4,
+        "line-color": "#dc2626",
+        "curve-style": "straight" as any,
+        "line-style": "solid" as any,
+        opacity: 0.8
+      }
+    },
+    {
+      selector: 'edge[type="parentChild"]',
+      style: {
+        width: 3,
+        "line-color": "#20b2aa",
+        "curve-style": "unbundled-bezier" as any,
+        "target-arrow-shape": "triangle" as any,
+        "target-arrow-color": "#20b2aa",
+        opacity: 0.9
+      }
+    },
+    {
+      selector: 'edge[type="sibling"]',
+      style: {
+        width: 3,
+        "line-color": "#2563eb",
+        "curve-style": "straight" as any,
+        "line-style": "dashed" as any,
+        opacity: 0.7
+      }
+    }
+  ], []);
+
+  // Convert family members to Cytoscape elements
+  const createCytoscapeElements = useCallback((members: any[], rels: any[]) => {
+    const elements: cytoscape.ElementDefinition[] = [];
+    
+    // Add nodes
+    members.forEach((member) => {
+      const isRoot = member.userId === rootUser?.userId;
+      const getSafeColor = (gender?: string, isRoot = false) => {
+        if (isRoot) return { 
+          bgColor: "#f59e0b", 
+          borderColor: "#ea580c" 
+        };
+        if (gender === "male") return { 
+          bgColor: "#3b82f6", 
+          borderColor: "#1e40af" 
+        };
+        if (gender === "female") return { 
+          bgColor: "#ec4899", 
+          borderColor: "#be185d" 
+        };
+        return { 
+          bgColor: "#8b5cf6", 
+          borderColor: "#6d28d9" 
+        };
+      };
+
+      const colors = getSafeColor(member.gender, isRoot);
+      const displayName = member.name.length > 15 ? member.name.substring(0, 15) + "..." : member.name;
+      
+      elements.push({
+        data: {
+          id: member.userId,
+          type: "individual",
+          displayName: isRoot ? `👑 ${displayName}` : displayName,
+          fullName: member.name,
+          email: member.email || "",
+          gender: member.gender || "",
+          isRoot,
+          ...colors,
+          profileImage: getAvatarForMember(member, member.profilePicture)
+        }
+      });
+    });
+
+    // Add edges for relationships
+    rels.forEach((rel) => {
+      if (rel.type === "MARRIED_TO") {
+        elements.push({
+          data: {
+            id: `marriage_${rel.source}_${rel.target}`,
+            source: rel.source,
+            target: rel.target,
+            type: "marriage"
+          }
+        });
+      } else if (rel.type === "PARENTS_OF") {
+        elements.push({
+          data: {
+            id: `parent_${rel.source}_${rel.target}`,
+            source: rel.source,
+            target: rel.target,
+            type: "parentChild"
+          }
+        });
+      } else if (rel.type === "SIBLING") {
+        elements.push({
+          data: {
+            id: `sibling_${rel.source}_${rel.target}`,
+            source: rel.source,
+            target: rel.target,
+            type: "sibling"
+          }
+        });
+      }
+    });
+
+    return elements;
+  }, [rootUser]);
+
+  // Initialize Cytoscape
+  useEffect(() => {
+    if (!containerRef.current || familyMembers.length === 0) return;
+
+    const elements = createCytoscapeElements(familyMembers, relationships);
+    setCytoscapeElements(elements);
+
+    if (cyRef.current) {
+      cyRef.current.destroy();
+    }
+
+    cyRef.current = cytoscape({
+      container: containerRef.current,
+      elements,
+      style: getCytoscapeStyles(),
+      layout: {
+        name: "elk",
+        elk: {
+          "algorithm": "layered",
+          "elk.direction": "DOWN",
+          "elk.spacing.nodeNode": 100,
+          "elk.layered.spacing.nodeNodeBetweenLayers": 150,
+          "elk.spacing.edgeNode": 50,
+          "elk.spacing.edgeEdge": 30,
+          "elk.alignment": "CENTER"
+        }
+      } as any,
+      zoomingEnabled: true,
+      userZoomingEnabled: true,
+      panningEnabled: true,
+      userPanningEnabled: true,
+      boxSelectionEnabled: false,
+      selectionType: 'single',
+      wheelSensitivity: 0.1,
+      minZoom: 0.1,
+      maxZoom: 3
+    });
+
+    return () => {
+      if (cyRef.current) {
+        cyRef.current.destroy();
+        cyRef.current = null;
+      }
+    };
+  }, [familyMembers, relationships, getCytoscapeStyles, createCytoscapeElements]);
+
+  // Add overlay buttons for adding relations
+  useEffect(() => {
+    if (!cyRef.current) return;
+
+    const cy = cyRef.current;
+    
+    const addOverlayButtons = () => {
+      cy.nodes('[type="individual"]').forEach((node) => {
+        const renderedPosition = node.renderedPosition();
+        const nodeId = node.id();
+        
+        // Create + button overlay
+        const button = document.createElement('button');
+        button.className = 'absolute bg-blue-600 hover:bg-blue-700 text-white rounded-full w-8 h-8 flex items-center justify-center text-lg font-bold shadow-lg transition-all duration-200 hover:scale-110 z-50';
+        button.innerHTML = '+';
+        button.style.left = `${renderedPosition.x + 35}px`;
+        button.style.top = `${renderedPosition.y - 35}px`;
+        button.style.pointerEvents = 'auto';
+        
+        button.onclick = (e) => {
+          e.stopPropagation();
+          handleAddRelation(nodeId);
+        };
+
+        if (containerRef.current) {
+          containerRef.current.appendChild(button);
+        }
+      });
+    };
+
+    // Add buttons after layout
+    const layoutHandler = () => {
+      setTimeout(addOverlayButtons, 100);
+    };
+
+    cy.on('layoutstop', layoutHandler);
+    
+    // Initial button placement
+    setTimeout(addOverlayButtons, 500);
+
+    return () => {
+      cy.off('layoutstop', layoutHandler);
+      // Clean up overlay buttons
+      if (containerRef.current) {
+        const buttons = containerRef.current.querySelectorAll('button');
+        buttons.forEach(btn => btn.remove());
+      }
+    };
+  }, [familyMembers, handleAddRelation]);
 
   const handleRelationshipCategorySelect = async (category: string) => {
     if (category === 'sibling') {
@@ -182,7 +376,7 @@ const FamilyTreeBuilder: React.FC<FamilyTreeBuilderProps> = ({ onComplete, onBac
       }
     }
 
-    const emailExists = await checkEmailExists(newMember.email, nodes);
+    const emailExists = await checkEmailExists(newMember.email, familyMembers);
     if (emailExists) {
       toast({
         title: "Email already exists",
@@ -193,16 +387,16 @@ const FamilyTreeBuilder: React.FC<FamilyTreeBuilderProps> = ({ onComplete, onBac
     }
 
     try {
-      await addFamilyMemberWithRelationships(
+      const result = await addFamilyMemberWithRelationships(
         newMember,
         selectedNodeId,
         selectedRelationshipCategory,
         familyTreeId,
         rootUser,
-        nodes,
-        edges,
-        setNodes,
-        setEdges,
+        familyMembers,
+        relationships,
+        setFamilyMembers,
+        setRelationships,
         selectedNode,
         handleAddRelation
       );
@@ -235,7 +429,7 @@ const FamilyTreeBuilder: React.FC<FamilyTreeBuilderProps> = ({ onComplete, onBac
   };
 
   const handleComplete = async () => {
-    if (nodes.length <= 1) {
+    if (familyMembers.length <= 1) {
       toast({
         title: "Add family members",
         description: "Please add at least one family member before creating the tree.",
@@ -285,7 +479,7 @@ const FamilyTreeBuilder: React.FC<FamilyTreeBuilderProps> = ({ onComplete, onBac
           </Button>
           <Button
             onClick={handleComplete}
-            disabled={nodes.length <= 1 || isLoading}
+            disabled={familyMembers.length <= 1 || isLoading}
             className="flex items-center gap-2 bg-blue-600 hover:bg-blue-700"
           >
             <Save className="w-4 h-4" />
@@ -295,61 +489,36 @@ const FamilyTreeBuilder: React.FC<FamilyTreeBuilderProps> = ({ onComplete, onBac
       </div>
 
       <div className="flex-1 relative overflow-hidden">
-        <ReactFlow
-          nodes={nodes}
-          edges={edges}
-          onNodesChange={onNodesChange}
-          onEdgesChange={onEdgesChange}
-          onConnect={onConnect}
-          nodeTypes={nodeTypes}
-          edgeTypes={edgeTypes}
-          fitView
-          className="bg-transparent"
-          defaultViewport={{ x: 0, y: 0, zoom: 0.8 }}
-          minZoom={0.1}
-          maxZoom={2}
-          panOnScroll={true}
-          panOnScrollSpeed={0.5}
-          zoomOnScroll={true}
-          zoomOnPinch={true}
-          panOnDrag={true}
-          selectNodesOnDrag={false}
-          onNodeDragStart={(event, node) => {
-            setDraggingNodeId(node.id);
-            setDraggingNodeInitialPos(node.position);
-          }}
-          onNodeDrag={(event, node) => {
-            if (node.id === draggingNodeId) {
-              const marriageEdge = edges.find(e => e.type === 'marriage' && (e.source === node.id || e.target === node.id));
-              if (marriageEdge) {
-                const spouseId = marriageEdge.source === node.id ? marriageEdge.target : marriageEdge.source;
-                const deltaX = node.position.x - draggingNodeInitialPos!.x;
-                const deltaY = node.position.y - draggingNodeInitialPos!.y;
-                setNodes((nds) => nds.map(n => {
-                  if (n.id === spouseId) {
-                    return {
-                      ...n,
-                      position: {
-                        x: n.position.x + deltaX,
-                        y: n.position.y + deltaY
-                      }
-                    };
-                  }
-                  return n;
-                }));
-                // Update initial for next increment
-                setDraggingNodeInitialPos(node.position);
-              }
-            }
-          }}
-          onNodeDragStop={() => {
-            setDraggingNodeId(null);
-            setDraggingNodeInitialPos(null);
-          }}
-        >
-          <Controls className="bg-white shadow-lg border border-slate-200" />
-          <Background color="#e2e8f0" gap={30} size={2} />
-        </ReactFlow>
+        <div 
+          ref={containerRef}
+          className="w-full h-full bg-gradient-to-br from-slate-50 to-blue-50 relative"
+          style={{ minHeight: '600px' }}
+        />
+        
+        {/* Controls */}
+        <div className="absolute top-4 right-4 z-40 flex flex-col gap-2">
+          <button
+            onClick={() => cyRef.current?.fit()}
+            className="bg-white hover:bg-gray-50 border border-gray-200 rounded-lg p-2 shadow-lg transition-all duration-200"
+            title="Fit to view"
+          >
+            <Maximize className="w-4 h-4" />
+          </button>
+          <button
+            onClick={() => cyRef.current?.zoom(cyRef.current.zoom() * 1.2)}
+            className="bg-white hover:bg-gray-50 border border-gray-200 rounded-lg p-2 shadow-lg transition-all duration-200"
+            title="Zoom in"
+          >
+            <Plus className="w-4 h-4" />
+          </button>
+          <button
+            onClick={() => cyRef.current?.zoom(cyRef.current.zoom() * 0.8)}
+            className="bg-white hover:bg-gray-50 border border-gray-200 rounded-lg p-2 shadow-lg transition-all duration-200"
+            title="Zoom out"
+          >
+            <User className="w-4 h-4" />
+          </button>
+        </div>
       </div>
 
       <Dialog open={showAddDialog} onOpenChange={setShowAddDialog}>
@@ -489,7 +658,7 @@ const FamilyTreeBuilder: React.FC<FamilyTreeBuilderProps> = ({ onComplete, onBac
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
             <DialogTitle className="text-xl">
-              Add Relation to {selectedNode?.data?.name}
+              Add Relation to {selectedNode?.name}
             </DialogTitle>
             <p className="text-sm text-slate-600 mt-2">
               What relation do you want to add?
