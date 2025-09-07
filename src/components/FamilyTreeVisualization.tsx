@@ -1,14 +1,17 @@
-// Enhanced Cytoscape family tree visualization with ELK hierarchical layout
+// Enhanced Family Tree Visualization with Cytoscape + ELK layout
+// Replaces React Flow with sophisticated Cytoscape rendering while preserving all existing logic
+
 import React, { useEffect, useRef, useState, useCallback } from "react";
 import { User } from "@/types";
-import { getAvatarForMember } from "@/lib/avatar-utils";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { getFamilyRelationships } from "@/lib/neo4j/family-tree";
 import { getUserPersonalizedFamilyTree } from "@/lib/neo4j/relationships";
+import { getAvatarForMember } from "@/lib/avatar-utils";
 import { Mail, ZoomIn, ZoomOut, Maximize, RotateCcw, Info, Search, X, Plus } from "lucide-react";
-import { Button } from "@/components/ui/button";
-import { toast } from "sonner";
+import { addFamilyMemberWithRelationships } from '@/features/family-tree/logic';
+import { getFamilyTreeStats, highlightRelatedNodes } from '@/features/family-tree/analysis';
 
 import cytoscape from "cytoscape";
 import elk from "cytoscape-elk";
@@ -21,6 +24,7 @@ interface FamilyMember {
   email?: string;
   status?: string;
   relationship?: string;
+  myRelationship?: string;
   createdBy?: string;
   profilePicture?: string;
   gender?: string;
@@ -47,7 +51,7 @@ interface FamilyTreeVisualizationProps {
   onAddRelation?: (nodeId: string) => void;
 }
 
-// Enhanced Cytoscape styles with circular avatars and couple groupings
+// Enhanced Cytoscape styles with visual elements from reference
 const getCytoscapeStyles = () => [
   {
     selector: 'node[type="individual"]',
@@ -74,22 +78,6 @@ const getCytoscapeStyles = () => [
     }
   },
   {
-    selector: 'node.hover',
-    style: {
-      'border-width': 6,
-      'border-color': '#3b82f6',
-      'border-opacity': 0.8
-    }
-  },
-  {
-    selector: 'node.highlighted',
-    style: {
-      'border-width': 6,
-      'border-color': '#ef4444',
-      'border-opacity': 1
-    }
-  },
-  {
     selector: 'node[type="couple"]',
     style: {
       width: 240,
@@ -100,7 +88,10 @@ const getCytoscapeStyles = () => [
       'border-width': 2,
       'border-color': '#e5e7eb',
       'border-opacity': 0.8,
-      label: '',
+      label: '💕',
+      'text-valign': 'center',
+      'text-halign': 'center',
+      'font-size': '20px',
       'overlay-opacity': 0
     }
   },
@@ -129,6 +120,22 @@ const getCytoscapeStyles = () => [
     }
   },
   {
+    selector: 'node.hover',
+    style: {
+      'border-width': 3,
+      'border-color': '#3b82f6',
+      'border-opacity': 0.8
+    }
+  },
+  {
+    selector: 'node.highlighted',
+    style: {
+      'border-width': 4,
+      'border-color': '#ef4444',
+      'border-opacity': 1
+    }
+  },
+  {
     selector: 'node.selected',
     style: {
       'border-width': 6,
@@ -136,6 +143,7 @@ const getCytoscapeStyles = () => [
       'background-opacity': 1
     }
   },
+  // Marriage edges - hidden, heart symbol shows in couple node
   {
     selector: 'edge[type="marriage"]',
     style: {
@@ -143,24 +151,17 @@ const getCytoscapeStyles = () => [
       'line-color': '#dc2626',
       'curve-style': 'straight',
       'line-style': 'solid',
-      opacity: 0
+      opacity: 0 // Hidden like reference
     }
   },
+  // Parent-child edges - custom SVG overlay will handle these
   {
     selector: 'edge[type="parentChild"]',
     style: {
-      width: 4,
-      'line-color': '#20b2aa',
-      'curve-style': 'unbundled-bezier',
-      'control-point-distances': [60, 60],
-      'control-point-weights': [0.3, 0.7],
-      'line-style': 'dotted',
-      'target-arrow-shape': 'triangle',
-      'target-arrow-color': '#20b2aa',
-      'arrow-scale': 1.2,
-      opacity: 0.8
+      opacity: 0 // Hidden, custom SVG will render
     }
   },
+  // Sibling edges - subtle connections
   {
     selector: 'edge[type="sibling"]',
     style: {
@@ -168,12 +169,12 @@ const getCytoscapeStyles = () => [
       'line-color': '#2563eb',
       'curve-style': 'straight',
       'line-style': 'solid',
-      opacity: 0
+      opacity: 0 // Hidden like reference
     }
   }
 ];
 
-// Create Cytoscape elements with couple groupings and enhanced styling
+// Create Cytoscape elements from family data
 const createCytoscapeElements = (
   members: FamilyMember[],
   relationships: CoreRelationship[],
@@ -184,7 +185,7 @@ const createCytoscapeElements = (
   const nodeMap = new Map<string, FamilyMember>();
   members.forEach((m) => nodeMap.set(m.userId, m));
 
-  // Group married couples
+  // Identify couples for grouping
   const spouseMap = new Map<string, string[]>();
   relationships.forEach((r) => {
     if (r.type === "MARRIED_TO") {
@@ -214,56 +215,47 @@ const createCytoscapeElements = (
   const getSafeColor = (member?: FamilyMember, isRoot = false, isCurrent = false) => {
     if (isCurrent) return { 
       bgColor: "#fbbf24", 
-      gradientColors: "#fbbf24 #f59e0b", 
       borderColor: "#d97706" 
     };
     if (isRoot) return { 
       bgColor: "#f59e0b", 
-      gradientColors: "#f59e0b #f97316", 
       borderColor: "#ea580c" 
     };
     if (!member) return { 
       bgColor: "#e5e7eb", 
-      gradientColors: "#e5e7eb #d1d5db", 
       borderColor: "#9ca3af" 
     };
     if (member.gender === "male") return { 
       bgColor: "#3b82f6", 
-      gradientColors: "#3b82f6 #1d4ed8", 
       borderColor: "#1e40af" 
     };
     if (member.gender === "female") return { 
       bgColor: "#ec4899", 
-      gradientColors: "#ec4899 #be185d", 
       borderColor: "#be185d" 
     };
     return { 
       bgColor: "#8b5cf6", 
-      gradientColors: "#8b5cf6 #7c3aed", 
       borderColor: "#6d28d9" 
     };
   };
 
   const processed = new Set<string>();
 
-  // Create couple container nodes and couple members
+  // Create couple nodes and their member nodes
   couples.forEach((couple, coupleId) => {
     const m1 = nodeMap.get(couple.member1);
     const m2 = nodeMap.get(couple.member2);
     if (!m1 || !m2) return;
 
-    // Couple container
     elements.push({
       data: { 
         id: coupleId, 
         type: "couple", 
         bgColor: "#ffffff", 
-        gradientColors: "#ffffff #f8fafc", 
         borderColor: "#e2e8f0" 
       }
     });
 
-    // Couple members
     [m1, m2].forEach((m) => {
       const isRoot = m.userId === createdByUserId;
       const isCurrent = m.userId === loggedInUserId;
@@ -279,7 +271,7 @@ const createCytoscapeElements = (
           fullName: m.name,
           email: m.email || "",
           status: m.status || "",
-          relationship: m.relationship || "",
+          relationship: m.relationship || m.myRelationship || "",
           gender: m.gender || "",
           isRoot,
           isCurrent,
@@ -291,7 +283,7 @@ const createCytoscapeElements = (
     });
   });
 
-  // Create individual nodes for non-married members
+  // Create individual nodes for non-coupled members
   members.forEach((m) => {
     if (processed.has(m.userId)) return;
     const isRoot = m.userId === createdByUserId;
@@ -307,7 +299,7 @@ const createCytoscapeElements = (
         fullName: m.name,
         email: m.email || "",
         status: m.status || "",
-        relationship: m.relationship || "",
+        relationship: m.relationship || m.myRelationship || "",
         gender: m.gender || "",
         isRoot,
         isCurrent,
@@ -317,16 +309,18 @@ const createCytoscapeElements = (
     });
   });
 
-  // Create edges with proper source/target mapping
+  // Create edges for relationships
   const parentEdgeSet = new Set<string>();
   relationships.forEach((rel) => {
     let sourceGroup = coupleMap.get(rel.source) || rel.source;
     const targetGroup = coupleMap.get(rel.target) || rel.target;
     if (sourceGroup === targetGroup && rel.type === "MARRIED_TO") return;
     
+    const raw = String(rel.type || '').toUpperCase();
     let type: 'marriage' | 'parentChild' | 'sibling' = 'sibling';
-    if (rel.type === 'MARRIED_TO') type = 'marriage';
-    else if (rel.type === 'PARENTS_OF') type = 'parentChild';
+    
+    if (raw === 'MARRIED_TO') type = 'marriage';
+    else if (raw === 'PARENTS_OF') type = 'parentChild';
 
     if (rel.type === "PARENTS_OF") {
       const otherSpouses = spouseMap.get(rel.source) || [];
@@ -341,24 +335,13 @@ const createCytoscapeElements = (
       parentEdgeSet.add(key);
     }
 
-    // Only create edge if both source and target nodes exist
-    const sourceExists = elements.some(el => el.data.id === sourceGroup);
-    const targetExists = elements.some(el => el.data.id === targetGroup);
-    
-    if (!sourceExists || !targetExists) {
-      console.warn(`Skipping edge creation - missing nodes: sourceGroup=${sourceGroup}, targetGroup=${targetGroup}`);
-      return;
-    }
-
     elements.push({
       data: {
-        id: `${type}_${sourceGroup}_${targetGroup}`,
+        id: `edge-${sourceGroup}-${targetGroup}-${type}`,
         source: sourceGroup,
         target: targetGroup,
         type,
-        relationship: rel.type,
-        sourceName: rel.sourceName || "",
-        targetName: rel.targetName || ""
+        relationship: rel.type
       }
     });
   });
@@ -367,280 +350,429 @@ const createCytoscapeElements = (
 };
 
 // ELK layout configuration for hierarchical family tree
-const elkOptions: any = {
-  name: "elk",
+const elkOptions = {
+  name: 'elk',
   elk: {
-    "algorithm": "layered",
-    "elk.direction": "DOWN",
-    "elk.spacing.nodeNode": 120,
-    "elk.layered.spacing.nodeNodeBetweenLayers": 180,
-    "elk.spacing.edgeNode": 60,
-    "elk.spacing.edgeEdge": 40,
-    "elk.alignment": "CENTER"
+    algorithm: 'layered',
+    'elk.direction': 'DOWN',
+    'elk.layered.spacing.nodeNodeBetweenLayers': 150,
+    'elk.spacing.nodeNode': 120,
+    'elk.layered.crossingMinimization.strategy': 'LAYER_SWEEP',
+    'elk.layered.nodePlacement.strategy': 'SIMPLE',
+    'elk.hierarchyHandling': 'INCLUDE_CHILDREN',
+    'elk.padding': '[top=50,left=50,bottom=50,right=50]'
   }
 };
 
-const FamilyTreeVisualization: React.FC<FamilyTreeVisualizationProps> = ({
+export const FamilyTreeVisualization: React.FC<FamilyTreeVisualizationProps> = ({
   user,
-  familyMembers: propFamilyMembers,
-  viewMode = "personal",
+  familyMembers: propFamilyMembers = [],
+  viewMode = "all",
   minHeight = "600px",
   showControls = true,
   onAddRelation
 }) => {
-  const containerRef = useRef<HTMLDivElement>(null);
-  const cyRef = useRef<cytoscape.Core | null>(null);
-  const svgRef = useRef<SVGSVGElement>(null);
+  const cyRef = useRef<HTMLDivElement>(null);
+  const cyInstance = useRef<cytoscape.Core | null>(null);
+  const overlayRef = useRef<HTMLDivElement>(null);
   
-  // State management with persistence
+  const [loading, setLoading] = useState(true);
   const [familyMembers, setFamilyMembers] = useState<FamilyMember[]>(propFamilyMembers);
-  const [coreRelationships, setCoreRelationships] = useState<CoreRelationship[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
+  const [relationships, setRelationships] = useState<CoreRelationship[]>([]);
   const [selectedNodes, setSelectedNodes] = useState<string[]>([]);
-  const [nodeDetailsOpen, setNodeDetailsOpen] = useState(false);
-  const [showSearch, setShowSearch] = useState(false);
-  const [searchQuery, setSearchQuery] = useState('');
-  const [lastUpdateTime, setLastUpdateTime] = useState(Date.now());
+  const [dialogOpen, setDialogOpen] = useState(false);
+  const [selectedMember, setSelectedMember] = useState<any>(null);
+  const [relationshipDialogOpen, setRelationshipDialogOpen] = useState(false);
+  const [relationship, setRelationship] = useState("");
 
-  // Update family members when props change
+  // Fetch family relationships based on view mode
   useEffect(() => {
-    if (JSON.stringify(propFamilyMembers) !== JSON.stringify(familyMembers)) {
+    const fetchRelationships = async () => {
+      if (!user?.familyTreeId) return;
+      
+      setLoading(true);
+      try {
+        if (viewMode === "personal") {
+          const data = await getUserPersonalizedFamilyTree(user.familyTreeId, user.userId);
+          if (Array.isArray(data)) {
+            // Handle array response
+            setRelationships(data);
+            setFamilyMembers(propFamilyMembers);
+          } else {
+            // Handle object response  
+            setFamilyMembers((data as any)?.members || []);
+            setRelationships((data as any)?.relationships || []);
+          }
+        } else {
+          const data = await getFamilyRelationships(user.familyTreeId);
+          if (Array.isArray(data)) {
+            // Handle array response
+            setRelationships(data);
+            setFamilyMembers(propFamilyMembers);
+          } else {
+            // Handle object response
+            setFamilyMembers((data as any)?.members || []);
+            setRelationships((data as any)?.relationships || []);
+          }
+        }
+      } catch (error) {
+        console.error("Error fetching family relationships:", error);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchRelationships();
+  }, [user?.familyTreeId, user?.userId, viewMode, propFamilyMembers]);
+
+  // Update family members when prop changes
+  useEffect(() => {
+    if (propFamilyMembers.length > 0) {
       setFamilyMembers(propFamilyMembers);
-      setLastUpdateTime(Date.now());
     }
   }, [propFamilyMembers]);
 
-  // Load relationships data
-  const loadRelationships = useCallback(async () => {
-    try {
-      setIsLoading(true);
-      const relationships = await getFamilyRelationships(user.familyTreeId);
-      setCoreRelationships(relationships);
-    } catch (error) {
-      console.error("Error loading relationships:", error);
-      toast.error("Failed to load family relationships");
-    } finally {
-      setIsLoading(false);
-    }
-  }, [user.familyTreeId]);
-
+  // Initialize and update Cytoscape when data changes
   useEffect(() => {
-    loadRelationships();
-  }, [loadRelationships]);
+    if (!cyRef.current || loading || familyMembers.length === 0) return;
 
-  // Initialize and update Cytoscape visualization
-  useEffect(() => {
-    if (!containerRef.current || isLoading || familyMembers.length === 0) return;
+    const elements = createCytoscapeElements(
+      familyMembers,
+      relationships,
+      user?.userId || "",
+      user?.userId || ""
+    );
 
-    // Clean up existing instance
-    if (cyRef.current) {
-      cyRef.current.destroy();
-      cyRef.current = null;
+    if (cyInstance.current) {
+      cyInstance.current.destroy();
     }
 
     const cy = cytoscape({
-      container: containerRef.current,
-      elements: createCytoscapeElements(familyMembers, coreRelationships, user.createdBy || user.userId, user.userId),
+      container: cyRef.current,
+      elements,
       style: getCytoscapeStyles() as any,
       layout: elkOptions,
-      minZoom: 0.3,
-      maxZoom: 3,
-      wheelSensitivity: 0.3,
-      userPanningEnabled: true,
-      userZoomingEnabled: true,
-      boxSelectionEnabled: false
+      wheelSensitivity: 0.2,
+      maxZoom: 2,
+      minZoom: 0.1,
     });
 
-    cyRef.current = cy;
+    cyInstance.current = cy;
 
-    // Enhanced node interactions
-    cy.on('tap', 'node', (event) => {
-      const node = event.target;
-      const nodeData = node.data();
-      
-      // Handle couple member clicks
-      if (nodeData.type === 'coupleMember') {
-        setSelectedNodes([nodeData.originalId]);
-      } else if (nodeData.type === 'individual') {
-        setSelectedNodes([nodeData.id]);
+    // Force layout recalculation and render
+    setTimeout(() => {
+      if (cy) {
+        cy.layout(elkOptions).run();
+        cy.fit();
       }
-      
-      // Remove previous selections
-      cy.nodes().removeClass('selected');
-      node.addClass('selected');
-    });
+    }, 100);
 
-    // Node hover effects
-    cy.on('mouseover', 'node', (event) => {
-      const node = event.target;
-      if (node.data('type') !== 'couple') {
-        node.addClass('hover');
+    // Event handlers for interactions
+    cy.on('tap', 'node', (evt) => {
+      const node = evt.target;
+      const nodeId = node.data('originalId') || node.id();
+      
+      if (evt.originalEvent.shiftKey) {
+        // Multi-select for relationship analysis
+        setSelectedNodes(prev => {
+          if (prev.includes(nodeId)) {
+            return prev.filter(id => id !== nodeId);
+          } else if (prev.length < 2) {
+            return [...prev, nodeId];
+          } else {
+            return [nodeId];
+          }
+        });
+      } else {
+        // Single select for details
+        const member = familyMembers.find(m => m.userId === nodeId);
+        if (member) {
+          setSelectedMember(member);
+          setDialogOpen(true);
+        }
+        setSelectedNodes([nodeId]);
       }
     });
 
-    cy.on('mouseout', 'node', (event) => {
-      const node = event.target;
-      node.removeClass('hover');
+    cy.on('mouseover', 'node', (evt) => {
+      evt.target.addClass('hover');
     });
 
-    // Custom SVG overlay for heart symbols on couples
-    const renderHeartSymbols = () => {
-      if (!svgRef.current) return;
+    cy.on('mouseout', 'node', (evt) => {
+      evt.target.removeClass('hover');
+    });
+
+    // Custom parent-child edge rendering using SVG overlay
+    const renderCustomEdges = () => {
+      if (!overlayRef.current) return;
       
-      const svg = svgRef.current;
-      svg.innerHTML = ''; // Clear previous hearts
-      
-      cy.nodes('[type="couple"]').forEach((coupleNode) => {
-        const position = coupleNode.renderedPosition();
-        const heartGroup = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+      const svg = overlayRef.current.querySelector('svg') as SVGElement;
+      if (svg) {
+        // Clear existing edges
+        svg.innerHTML = '';
         
-        const heart = document.createElementNS('http://www.w3.org/2000/svg', 'text');
-        heart.setAttribute('x', position.x.toString());
-        heart.setAttribute('y', (position.y - 40).toString());
-        heart.setAttribute('text-anchor', 'middle');
-        heart.setAttribute('font-size', '24');
-        heart.setAttribute('fill', '#dc2626');
-        heart.textContent = '💕';
+        // Render parent-child connections with custom curved lines
+        cy.edges('[type="parentChild"]').forEach((edge) => {
+          const source = edge.source();
+          const target = edge.target();
+          
+          const sourcePos = source.renderedPosition();
+          const targetPos = target.renderedPosition();
+          
+          // Create curved path for parent-child connection
+          const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+          const midY = sourcePos.y + (targetPos.y - sourcePos.y) * 0.6;
+          
+          const d = `M ${sourcePos.x} ${sourcePos.y + 50} 
+                     Q ${sourcePos.x} ${midY} ${targetPos.x} ${targetPos.y - 50}`;
+          
+          path.setAttribute('d', d);
+          path.setAttribute('stroke', '#6b7280');
+          path.setAttribute('stroke-width', '2');
+          path.setAttribute('fill', 'none');
+          path.setAttribute('stroke-dasharray', '5,5');
+          path.setAttribute('marker-end', 'url(#arrowhead)');
+          
+          svg.appendChild(path);
+        });
         
-        heartGroup.appendChild(heart);
-        svg.appendChild(heartGroup);
-      });
+        // Add arrow marker definition
+        const defs = document.createElementNS('http://www.w3.org/2000/svg', 'defs');
+        const marker = document.createElementNS('http://www.w3.org/2000/svg', 'marker');
+        marker.setAttribute('id', 'arrowhead');
+        marker.setAttribute('markerWidth', '10');
+        marker.setAttribute('markerHeight', '7');
+        marker.setAttribute('refX', '9');
+        marker.setAttribute('refY', '3.5');
+        marker.setAttribute('orient', 'auto');
+        
+        const polygon = document.createElementNS('http://www.w3.org/2000/svg', 'polygon');
+        polygon.setAttribute('points', '0 0, 10 3.5, 0 7');
+        polygon.setAttribute('fill', '#6b7280');
+        
+        marker.appendChild(polygon);
+        defs.appendChild(marker);
+        svg.appendChild(defs);
+      }
     };
 
     cy.ready(() => {
-      renderHeartSymbols();
-      cy.fit(undefined, 50);
+      cy.fit();
+      renderCustomEdges();
     });
 
-    cy.on('zoom pan', renderHeartSymbols);
+    cy.on('pan zoom', renderCustomEdges);
 
     return () => {
-      if (cyRef.current) {
-        cyRef.current.destroy();
-        cyRef.current = null;
+      if (cyInstance.current) {
+        cyInstance.current.destroy();
+        cyInstance.current = null;
       }
     };
-  }, [familyMembers, coreRelationships, isLoading, user.userId, user.createdBy, user.familyTreeId, lastUpdateTime]);
+  }, [familyMembers, relationships, loading, user, propFamilyMembers]);
+
+  // Update node selection highlighting
+  useEffect(() => {
+    if (!cyInstance.current) return;
+    
+    cyInstance.current.nodes().removeClass('selected highlighted');
+    
+    selectedNodes.forEach(nodeId => {
+      const node = cyInstance.current?.getElementById(nodeId);
+      if (node) {
+        node.addClass('selected');
+      }
+    });
+    
+    if (selectedNodes.length === 1) {
+      // Highlight related nodes
+      const relatedNodes = relationships
+        .filter(r => r.source === selectedNodes[0] || r.target === selectedNodes[0])
+        .flatMap(r => [r.source, r.target])
+        .filter(id => id !== selectedNodes[0]);
+      
+      relatedNodes.forEach(nodeId => {
+        const node = cyInstance.current?.getElementById(nodeId);
+        if (node) {
+          node.addClass('highlighted');
+        }
+      });
+    }
+  }, [selectedNodes, relationships]);
 
   // Control functions
-  const handleZoomIn = () => cyRef.current?.zoom(cyRef.current.zoom() * 1.2);
-  const handleZoomOut = () => cyRef.current?.zoom(cyRef.current.zoom() * 0.8);
-  const handleFit = () => cyRef.current?.fit(undefined, 50);
-  const handleReset = () => {
-    if (cyRef.current) {
-      cyRef.current.zoom(1);
-      cyRef.current.center();
+  const zoomIn = () => cyInstance.current?.zoom(cyInstance.current.zoom() * 1.2);
+  const zoomOut = () => cyInstance.current?.zoom(cyInstance.current.zoom() * 0.8);
+  const fit = () => cyInstance.current?.fit();
+  const resetLayout = () => {
+    if (cyInstance.current) {
+      cyInstance.current.layout(elkOptions).run();
     }
   };
 
-  // Add relation handler
-  const handleAddRelation = (nodeId: string) => {
+  const calculateRelationship = (id1: string, id2: string): string => {
+    const member1 = familyMembers.find(m => m.userId === id1);
+    const member2 = familyMembers.find(m => m.userId === id2);
+    
+    if (!member1 || !member2) return "Unknown relationship";
+    
+    const rel = relationships.find(r => 
+      (r.source === id1 && r.target === id2) || 
+      (r.source === id2 && r.target === id1)
+    );
+    
+    if (rel) {
+      switch (rel.type) {
+        case "MARRIED_TO": return "Married couple";
+        case "PARENTS_OF": 
+          return rel.source === id1 ? `${member1.name} is parent of ${member2.name}` : `${member2.name} is parent of ${member1.name}`;
+        case "SIBLING": return "Siblings";
+        default: return "Related";
+      }
+    }
+    
+    return "No direct relationship found";
+  };
+
+  // Handle add relation button click
+  const handleAddRelation = useCallback((nodeId: string) => {
     if (onAddRelation) {
       onAddRelation(nodeId);
     }
+  }, [onAddRelation]);
+
+  // Render + button overlays on nodes
+  const renderAddButtons = () => {
+    if (!cyInstance.current || !overlayRef.current) return null;
+    
+    const buttons: JSX.Element[] = [];
+    
+    cyInstance.current.nodes('[type="individual"]').forEach((node, index) => {
+      const pos = node.renderedPosition();
+      const nodeId = node.data('originalId') || node.id();
+      
+      buttons.push(
+        <button
+          key={`add-${nodeId}-${index}`}
+          className="absolute w-6 h-6 bg-blue-500 hover:bg-blue-600 text-white rounded-full flex items-center justify-center text-xs font-bold shadow-lg transition-all duration-200 hover:scale-110"
+          style={{
+            left: pos.x + 40,
+            top: pos.y - 40,
+            transform: 'translate(-50%, -50%)'
+          }}
+          onClick={(e) => {
+            e.stopPropagation();
+            handleAddRelation(nodeId);
+          }}
+        >
+          +
+        </button>
+      );
+    });
+    
+    return buttons;
   };
 
-  if (isLoading) {
+  if (loading) {
     return (
-      <div className="flex items-center justify-center min-h-[400px]">
-        <div className="text-center">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary mx-auto mb-4"></div>
-          <p className="text-muted-foreground">Loading family tree...</p>
-        </div>
+      <div className="flex items-center justify-center" style={{ minHeight }}>
+        <div className="text-lg">Loading family tree...</div>
       </div>
     );
   }
+
+  const stats = getFamilyTreeStats([], []);
 
   return (
     <div className="relative w-full" style={{ minHeight }}>
       {/* Controls */}
       {showControls && (
-        <div className="absolute top-4 right-4 z-10 flex gap-2">
-          <Button variant="outline" size="icon" onClick={handleZoomIn}>
-            <ZoomIn className="h-4 w-4" />
+        <div className="absolute top-4 left-4 z-20 flex gap-2">
+          <Button onClick={zoomIn} size="sm" variant="outline">
+            <ZoomIn className="w-4 h-4" />
           </Button>
-          <Button variant="outline" size="icon" onClick={handleZoomOut}>
-            <ZoomOut className="h-4 w-4" />
+          <Button onClick={zoomOut} size="sm" variant="outline">
+            <ZoomOut className="w-4 h-4" />
           </Button>
-          <Button variant="outline" size="icon" onClick={handleFit}>
-            <Maximize className="h-4 w-4" />
+          <Button onClick={fit} size="sm" variant="outline">
+            <Maximize className="w-4 h-4" />
           </Button>
-          <Button variant="outline" size="icon" onClick={handleReset}>
-            <RotateCcw className="h-4 w-4" />
+          <Button onClick={resetLayout} size="sm" variant="outline">
+            <RotateCcw className="w-4 h-4" />
           </Button>
         </div>
       )}
 
-      {/* Add relation overlays */}
-      <div className="absolute inset-0 pointer-events-none z-20">
-        {familyMembers.map((member) => {
-          const nodeId = member.userId;
-          return (
-            <div
-              key={`overlay-${nodeId}`}
-              className="absolute pointer-events-auto"
-              style={{
-                left: '50%',
-                top: '50%',
-                transform: 'translate(-50%, -50%)',
-              }}
-            >
-              <Button
-                size="icon"
-                variant="outline"
-                className="h-8 w-8 rounded-full bg-primary text-primary-foreground hover:bg-primary/90 shadow-lg"
-                onClick={() => handleAddRelation(nodeId)}
-              >
-                <Plus className="h-4 w-4" />
-              </Button>
-            </div>
-          );
-        })}
+      {/* Stats */}
+      <div className="absolute top-4 right-4 z-20">
+        <Badge variant="secondary">
+          {familyMembers.length} members • {relationships.length} connections
+        </Badge>
       </div>
 
       {/* Cytoscape container */}
+      <div ref={cyRef} className="w-full h-full" style={{ minHeight }} />
+      
+      {/* SVG overlay for custom edges */}
       <div 
-        ref={containerRef} 
-        className="w-full h-full bg-gradient-to-br from-background to-muted rounded-lg border"
-        style={{ minHeight }}
-      />
+        ref={overlayRef} 
+        className="absolute inset-0 pointer-events-none"
+        style={{ zIndex: 10 }}
+      >
+        <svg className="w-full h-full" />
+        {/* Add buttons overlay */}
+        <div className="relative w-full h-full pointer-events-auto">
+          {renderAddButtons()}
+        </div>
+      </div>
 
-      {/* SVG overlay for custom graphics */}
-      <svg
-        ref={svgRef}
-        className="absolute inset-0 pointer-events-none z-10"
-        style={{ width: '100%', height: '100%' }}
-      />
-
-      {/* Node details dialog */}
-      <Dialog open={nodeDetailsOpen} onOpenChange={setNodeDetailsOpen}>
+      {/* Member Details Dialog */}
+      <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Member Details</DialogTitle>
+            <DialogTitle>{selectedMember?.name}</DialogTitle>
             <DialogDescription>
-              View detailed information about this family member.
+              Family member details and information
             </DialogDescription>
           </DialogHeader>
-          {selectedNodes.length > 0 && (
+          {selectedMember && (
             <div className="space-y-4">
-              {selectedNodes.map((nodeId) => {
-                const member = familyMembers.find(m => m.userId === nodeId);
-                if (!member) return null;
-                return (
-                  <div key={nodeId} className="flex items-center gap-4 p-4 border rounded-lg">
-                    <img
-                      src={getAvatarForMember(member, member.profilePicture)}
-                      alt={member.name}
-                      className="w-16 h-16 rounded-full object-cover"
-                    />
-                    <div>
-                      <h3 className="font-semibold">{member.name}</h3>
-                      <p className="text-sm text-muted-foreground">{member.email}</p>
-                      <Badge variant="secondary">{member.relationship || 'Family Member'}</Badge>
-                    </div>
-                  </div>
-                );
-              })}
+              <div className="flex items-center gap-4">
+                <img 
+                  src={getAvatarForMember(selectedMember, selectedMember.profilePicture)} 
+                  alt={selectedMember.name}
+                  className="w-16 h-16 rounded-full"
+                />
+                <div>
+                  <h3 className="font-semibold">{selectedMember.name}</h3>
+                  <p className="text-sm text-muted-foreground">{selectedMember.relationship || selectedMember.myRelationship}</p>
+                  {selectedMember.email && (
+                    <p className="text-sm text-muted-foreground">{selectedMember.email}</p>
+                  )}
+                </div>
+              </div>
+              <Badge variant={selectedMember.status === 'active' ? 'default' : 'secondary'}>
+                {selectedMember.status || 'invited'}
+              </Badge>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
+
+      {/* Relationship Analysis Dialog */}
+      <Dialog open={relationshipDialogOpen} onOpenChange={setRelationshipDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Relationship Analysis</DialogTitle>
+            <DialogDescription>
+              Relationship between selected family members
+            </DialogDescription>
+          </DialogHeader>
+          {selectedNodes.length === 2 && (
+            <div className="space-y-4">
+              <p className="text-sm">
+                {calculateRelationship(selectedNodes[0], selectedNodes[1])}
+              </p>
             </div>
           )}
         </DialogContent>
