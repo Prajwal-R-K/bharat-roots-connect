@@ -4,6 +4,7 @@ export * from './connection';
 export * from './users';
 export * from './family-tree';
 export * from './relationships';
+export * from './relationship-analysis';
 export * from './auth';
 export * from './invitations';
 

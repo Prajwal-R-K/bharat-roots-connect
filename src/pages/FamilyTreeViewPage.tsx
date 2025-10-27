@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import Layout from '@/components/Layout';
 import FamilyTreeVisualization from '@/components/FamilyTreeVisualization1';
+import RelationshipAnalyzer from '@/components/RelationshipAnalyzer';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
@@ -178,6 +179,14 @@ const FamilyTreeViewPage = () => {
                 </div>
               </CardContent>
             </Card>
+
+            {/* Relationship Analyzer Component */}
+            {currentUser && familyMembers.length > 1 && (
+              <RelationshipAnalyzer 
+                familyId={currentUser.familyTreeId} 
+                currentUserId={currentUser.userId} 
+              />
+            )}
 
             {familyMembers.length > 0 && (
               <Card>

@@ -1,3 +1,4 @@
+import 'dotenv/config';
 import express from 'express';
 import { MongoClient, ObjectId, GridFSBucket } from 'mongodb';
 import cors from 'cors';
@@ -1098,10 +1099,107 @@ app.get('/status', (req, res) => {
   });
 });
 
+// Debug endpoint to check Gemini status
+app.get('/api/relationship/status', async (req, res) => {
+  try {
+    const geminiService = await import('./services/gemini-service.js');
+    res.json({
+      geminiAvailable: geminiService.isGeminiAvailable(),
+      apiKeySet: !!process.env.GEMINI_API_KEY,
+      apiKeyLength: process.env.GEMINI_API_KEY ? process.env.GEMINI_API_KEY.length : 0
+    });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
 // Start server
-connectDB().then(() => {
+connectDB().then(async () => {
+  // Initialize Gemini API
+  const geminiService = await import('./services/gemini-service.js');
+  const geminiApiKey = process.env.GEMINI_API_KEY;
+  geminiService.initializeGemini(geminiApiKey);
+  
   server.listen(PORT, () => {
     console.log(`🚀 Socket.IO server running on port ${PORT}`);
     console.log(`📊 Status available at: http://localhost:${PORT}/status`);
   });
+});
+
+
+// Relationship analysis endpoint
+app.post('/api/relationship/analyze', async (req, res) => {
+  try {
+    const { personAId, personBId, familyId } = req.body;
+    
+    // Validate request parameters
+    if (!personAId || !personBId || !familyId) {
+      return res.status(400).json({
+        success: false,
+        error: 'Missing required parameters: personAId, personBId, familyId'
+      });
+    }
+    
+    if (personAId === personBId) {
+      return res.status(400).json({
+        success: false,
+        error: 'Cannot analyze relationship between the same person'
+      });
+    }
+    
+    // Check if Gemini is available
+    const geminiService = await import('./services/gemini-service.js');
+    
+    if (!geminiService.isGeminiAvailable()) {
+      return res.status(503).json({
+        success: false,
+        error: 'Relationship analysis service is not configured. Please set GEMINI_API_KEY environment variable.'
+      });
+    }
+    
+    // Import Neo4j functions
+    const neo4jService = await import('./services/neo4j-relationship-service.js');
+    
+    // Get person details
+    const [personA, personB] = await Promise.all([
+      neo4jService.getPersonDetails(personAId, familyId),
+      neo4jService.getPersonDetails(personBId, familyId)
+    ]);
+    
+    if (!personA || !personB) {
+      return res.status(404).json({
+        success: false,
+        error: 'One or both persons not found in the family tree'
+      });
+    }
+    
+    // Get relationship path from Neo4j
+    const path = await neo4jService.getRelationshipPath(personAId, personBId, familyId);
+    
+    if (!path) {
+      return res.json({
+        success: true,
+        analysis: `No direct relationship path found between ${personA.name} and ${personB.name} in the family tree.`,
+        path: null
+      });
+    }
+    
+    // Analyze relationship with Gemini
+    const analysis = await geminiService.analyzeRelationship(path, personA, personB);
+    
+    res.json({
+      success: true,
+      analysis,
+      path
+    });
+    
+  } catch (error) {
+    console.error('❌ Error analyzing relationship:', error);
+    console.error('Error stack:', error.stack);
+    res.status(500).json({
+      success: false,
+      error: 'Failed to analyze relationship. Please try again later.',
+      details: process.env.NODE_ENV === 'development' ? error.message : undefined
+    });
+  }
 });

@@ -17,6 +17,7 @@
   "dependencies": {
     "@emoji-mart/data": "^1.2.1",
     "@emoji-mart/react": "^1.1.1",
+    "@google/generative-ai": "^0.24.1",
     "@heroicons/react": "^2.2.0",
     "@hookform/resolvers": "^3.9.0",
     "@radix-ui/react-accordion": "^1.2.0",
@@ -58,6 +59,7 @@
     "cytoscape": "^3.33.1",
     "cytoscape-elk": "^2.3.0",
     "date-fns": "^3.6.0",
+    "dotenv": "^17.2.3",
     "elkjs": "^0.10.0",
     "embla-carousel-react": "^8.3.0",
     "emoji-mart": "^5.6.0",

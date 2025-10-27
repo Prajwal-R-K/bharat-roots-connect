@@ -71,3 +71,13 @@ Yes, you can!
 To connect a domain, navigate to Project > Settings > Domains and click Connect Domain.
 
 Read more here: [Setting up a custom domain](https://docs.lovable.dev/tips-tricks/custom-domain#step-by-step-guide)
+
+
+
+
+export const neo4jConfig = {
+  uri: "neo4j+s://26968e7c.databases.neo4j.io ",
+  username: "neo4j",
+  password: "Ua95yPmaGZAeAeFyQ48iZ67rNQi07gR3eCMtoFvaOIA",
+  database: "neo4j"
+};

@@ -15,6 +15,7 @@ import { updateUserProfile, getFamilyMembers, getUserByEmailOrId } from '@/lib/n
 import { uploadProfilePhoto, getProfilePhotoUrl } from '@/lib/profile-api';
 import { User as UserType } from '@/types';
 import FamilyTreeVisualization from './FamilyTreeVisualization1';
+import RelationshipAnalyzer from './RelationshipAnalyzer';
 import { format } from 'date-fns';
 import { cn } from '@/lib/utils';
 
@@ -472,6 +473,16 @@ const Dashboard: React.FC<DashboardProps> = ({ user: initialUser, onUserUpdate }
               showControls={true}
             />
           </div>
+          
+          {/* AI Relationship Analyzer Section */}
+          {familyMembers.length > 1 && (
+            <div className="mt-12 max-w-6xl mx-auto">
+              <RelationshipAnalyzer 
+                familyId={user.familyTreeId} 
+                currentUserId={user.userId} 
+              />
+            </div>
+          )}
         </div>
       </div>
 
