@@ -9,7 +9,6 @@ export const neo4jConfig = {
   password: "KEe88uaBykmunolXkfvx5DkHI2P_UAFHys1RhsSgD5U",
   database: "neo4j"
 };
-
 // Create Neo4j driver instance with optimized connection pool config
 const driver = neo4j.driver(
   neo4jConfig.uri, 
