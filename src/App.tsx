@@ -13,6 +13,7 @@ import ChatPage from "@/pages/ChatPage";
 import GroupViewPage from "@/pages/GroupViewPage";
 import EventsPage from "@/pages/events";
 import PostsPageWrapper from "@/pages/PostsPageWrapper";
+import "./styles/animations.css";
 
 const queryClient = new QueryClient();
 

@@ -48,7 +48,26 @@ export const addFamilyMemberWithRelationships = async (
   selectedNode: any,
   handleAddRelation: (nodeId: string) => void
 ) => {
-  const selectedNodeData = nodes.find(n => n.id === selectedNodeId);
+  // Find the selected node - could be individual or within a couple node
+  let selectedNodeData = nodes.find(n => n.id === selectedNodeId);
+  
+  // If not found as individual node, check if it's within a couple node
+  if (!selectedNodeData) {
+    // Check if selectedNode was passed and has coupleNodeId
+    if (selectedNode?.data?.coupleNodeId) {
+      // Find the couple node
+      const coupleNode = nodes.find(n => n.id === selectedNode.data.coupleNodeId);
+      if (coupleNode) {
+        // Use the couple node but with the specific person's data
+        selectedNodeData = {
+          ...coupleNode,
+          id: selectedNodeId,
+          data: selectedNode.data
+        };
+      }
+    }
+  }
+  
   if (!selectedNodeData) {
     throw new Error("Selected node not found.");
   }
@@ -246,35 +265,96 @@ const handleParentRelationship = async (
           }
         }
 
-        // Update node positions for perfect visual hierarchy
-        const nodeWidth = 240;
-        const coupleSpacing = 280;
-        setNodes((nds: Node[]) => nds.map(node => {
-          if (node.id === existingParentNode.id) {
-            return {
-              ...node,
-              position: { 
-                x: marriageCenter.x - (coupleSpacing / 2) - (nodeWidth / 2), 
-                y: newNodePosition.y 
-              }
+        // Create a combined couple node for parents
+        setTimeout(() => {
+          setNodes((nds: Node[]) => {
+            // Find both parent nodes
+            const parentNode1 = nds.find(n => n.id === existingParentNode.id);
+            const parentNode2 = nds.find(n => n.id === newNodeId);
+            
+            if (!parentNode1 || !parentNode2) return nds;
+            
+            // Create couple node ID
+            const coupleNodeId = `couple-${existingParentNode.id}-${newNodeId}`;
+            
+            // Create the combined couple node for parents
+            const coupleNode: Node = {
+              id: coupleNodeId,
+              type: 'couple',
+              position: {
+                x: marriageCenter.x - 270, // Center the wider couple node
+                y: newNodePosition.y
+              },
+              data: {
+                person1: {
+                  id: existingParentNode.id,
+                  name: parentNode1.data.name,
+                  email: parentNode1.data.email,
+                  gender: parentNode1.data.gender,
+                  relationship: parentNode1.data.relationship,
+                  userId: parentNode1.data.userId,
+                  onAddRelation: parentNode1.data.onAddRelation
+                },
+                person2: {
+                  id: newNodeId,
+                  name: parentNode2.data.name,
+                  email: parentNode2.data.email,
+                  gender: parentNode2.data.gender,
+                  relationship: parentNode2.data.relationship,
+                  userId: parentNode2.data.userId,
+                  onAddRelation: parentNode2.data.onAddRelation
+                },
+                generation: parentNode1.data.generation,
+                marriageDate: '',
+                onAddRelation: parentNode1.data.onAddRelation
+              },
+              style: { transition: 'all 0.5s ease-in-out' }
             };
-          }
-          if (node.id === newNodeId) {
-            return {
-              ...node,
-              position: { 
-                x: marriageCenter.x + (coupleSpacing / 2) - (nodeWidth / 2), 
-                y: newNodePosition.y 
+            
+            // Remove individual parent nodes and add couple node
+            return nds
+              .filter(n => n.id !== existingParentNode.id && n.id !== newNodeId)
+              .concat(coupleNode);
+          });
+          
+          // Update edges to point to couple node
+          setEdges((eds: Edge[]) => {
+            const coupleNodeId = `couple-${existingParentNode.id}-${newNodeId}`;
+            return eds.map(edge => {
+              // Update edges that connected to either parent node
+              if (edge.source === existingParentNode.id || edge.source === newNodeId) {
+                return { ...edge, source: coupleNodeId };
               }
-            };
-          }
-          return node;
-        }));
+              if (edge.target === existingParentNode.id || edge.target === newNodeId) {
+                return { ...edge, target: coupleNodeId };
+              }
+              return edge;
+            });
+          });
+        }, 100);
       }
     }
   } else {
-    // Single parent - create direct parent-child edge with enhanced styling
-    const parentChildEdge = createParentChildEdge(newNodeId, selectedNodeId);
+    // Single parent - create direct parent-child edge
+    // If the selected child is part of a couple node, attach to the correct spouse-side handle
+    let targetId = selectedNodeId;
+    let targetHandle: string | undefined = undefined;
+
+    const coupleNode = nodes.find(
+      (n) => n.type === 'couple' && (n.data?.person1?.id === selectedNodeId || n.data?.person2?.id === selectedNodeId)
+    );
+
+    if (coupleNode) {
+      targetId = coupleNode.id;
+      targetHandle = coupleNode.data?.person1?.id === selectedNodeId ? 'spouse-left' : 'spouse-right';
+    }
+
+    const parentChildEdge = createParentChildEdge(
+      newNodeId,
+      targetId,
+      false,
+      targetHandle ? { targetHandle } : undefined
+    );
     additionalUiEdges.push(parentChildEdge);
   }
 
@@ -302,11 +382,11 @@ const handleSpouseRelationship = async (
   marriageEdge.animated = true;
   additionalUiEdges.push(marriageEdge);
 
-  // Calculate optimal marriage center for perfect couple alignment
+  // Calculate optimal marriage center for perfect couple alignment - CLOSER SPACING
   const nodeWidth = 240;
-  const coupleSpacing = 280;
+  const coupleSpacing = 260; // Reduced from 280 to make couples closer
   const marriageCenter = {
-    x: (selectedNodeData.position.x + position.x) / 2 + (nodeWidth / 2),
+    x: (selectedNodeData.position.x + position.x) / 2,
     y: selectedNodeData.position.y
   };
 
@@ -364,28 +444,73 @@ const handleSpouseRelationship = async (
     }
   }
 
-  // Adjust spouse positions for perfect visual alignment
-  setNodes((nds: Node[]) => nds.map(node => {
-    if (node.id === selectedNodeId) {
-      return { 
-        ...node, 
-        position: { 
-          x: marriageCenter.x - (coupleSpacing / 2) - (nodeWidth / 2), 
-          y: selectedNodeData.position.y 
-        } 
+  // Create a combined couple node instead of two separate nodes
+  setTimeout(() => {
+    setNodes((nds: Node[]) => {
+      // Find both nodes
+      const node1 = nds.find(n => n.id === selectedNodeId);
+      const node2 = nds.find(n => n.id === newNodeId);
+      
+      if (!node1 || !node2) return nds;
+      
+      // Create couple node ID
+      const coupleNodeId = `couple-${selectedNodeId}-${newNodeId}`;
+      
+      // Create the combined couple node
+      const coupleNode: Node = {
+        id: coupleNodeId,
+        type: 'couple',
+        position: {
+          x: marriageCenter.x - 270, // Center the wider couple node
+          y: selectedNodeData.position.y
+        },
+        data: {
+          person1: {
+            id: selectedNodeId,
+            name: node1.data.name,
+            email: node1.data.email,
+            gender: node1.data.gender,
+            relationship: node1.data.relationship,
+            userId: node1.data.userId,
+            onAddRelation: node1.data.onAddRelation
+          },
+          person2: {
+            id: newNodeId,
+            name: node2.data.name,
+            email: node2.data.email,
+            gender: node2.data.gender,
+            relationship: node2.data.relationship,
+            userId: node2.data.userId,
+            onAddRelation: node2.data.onAddRelation
+          },
+          generation: node1.data.generation,
+          marriageDate: newMember.marriageDate,
+          onAddRelation: node1.data.onAddRelation
+        },
+        style: { transition: 'all 0.5s ease-in-out' }
       };
-    }
-    if (node.id === newNodeId) {
-      return { 
-        ...node, 
-        position: { 
-          x: marriageCenter.x + (coupleSpacing / 2) - (nodeWidth / 2), 
-          y: selectedNodeData.position.y 
-        } 
-      };
-    }
-    return node;
-  }));
+      
+      // Remove individual nodes and add couple node
+      return nds
+        .filter(n => n.id !== selectedNodeId && n.id !== newNodeId)
+        .concat(coupleNode);
+    });
+    
+    // Update edges to point to couple node
+    setEdges((eds: Edge[]) => {
+      const coupleNodeId = `couple-${selectedNodeId}-${newNodeId}`;
+      return eds.map(edge => {
+        // Update edges that connected to either individual node
+        if (edge.source === selectedNodeId || edge.source === newNodeId) {
+          return { ...edge, source: coupleNodeId };
+        }
+        if (edge.target === selectedNodeId || edge.target === newNodeId) {
+          return { ...edge, target: coupleNodeId };
+        }
+        return edge;
+      });
+    });
+  }, 100);
 
   return additionalUiEdges;
 };
@@ -413,17 +538,30 @@ const handleChildRelationship = async (
   // Enhanced marriage center detection with better positioning
   const marriageCenter = findMarriageCenter(selectedNodeId, edges, nodes);
   
+  // Determine if selected node is inside a couple container
+  const coupleNode = nodes.find(
+    (n) => n.type === 'couple' && (n.data?.person1?.id === selectedNodeId || n.data?.person2?.id === selectedNodeId)
+  );
+
   if (marriageCenter && spouses.length > 0) {
-    // Create marriage-based child edge with enhanced routing
+    // Parents are married - if selected is from a couple, route from couple bottom handle
+    const sourceId = coupleNode ? coupleNode.id : selectedNodeId;
     const childEdge = createParentChildEdge(
-      selectedNodeId,
+      sourceId,
       newNodeId,
-      true
+      true,
+      coupleNode ? { sourceHandle: 'couple-bottom' } : undefined
     );
     additionalUiEdges.push(childEdge);
   } else {
-    // Create direct parent-child edge with enhanced styling
-    const parentChildEdge = createParentChildEdge(selectedNodeId, newNodeId);
+    // Single parent - if selected is inside a couple, use bottom handle; else connect directly
+    const sourceId = coupleNode ? coupleNode.id : selectedNodeId;
+    const parentChildEdge = createParentChildEdge(
+      sourceId,
+      newNodeId,
+      false,
+      coupleNode ? { sourceHandle: 'couple-bottom' } : undefined
+    );
     additionalUiEdges.push(parentChildEdge);
   }
 

@@ -83,7 +83,47 @@ const FamilyTreeBuilder: React.FC<FamilyTreeBuilderProps> = ({ onComplete, onBac
 
   const handleAddRelation = useCallback((nodeId: string) => {
     console.log('handleAddRelation called with nodeId:', nodeId);
-    const node = nodesRef.current.find(n => n.id === nodeId);
+    
+    // First try to find as a regular node
+    let node = nodesRef.current.find(n => n.id === nodeId);
+    
+    // If not found, check if it's a person within a couple node
+    if (!node) {
+      // Search within couple nodes
+      for (const n of nodesRef.current) {
+        if (n.type === 'couple') {
+          // Check if this nodeId belongs to person1 or person2
+          if (n.data.person1?.id === nodeId) {
+            // Create a virtual node for person1
+            node = {
+              id: nodeId,
+              type: 'familyMember',
+              position: n.position,
+              data: {
+                ...n.data.person1,
+                generation: n.data.generation,
+                coupleNodeId: n.id // Store reference to parent couple node
+              }
+            };
+            break;
+          } else if (n.data.person2?.id === nodeId) {
+            // Create a virtual node for person2
+            node = {
+              id: nodeId,
+              type: 'familyMember',
+              position: n.position,
+              data: {
+                ...n.data.person2,
+                generation: n.data.generation,
+                coupleNodeId: n.id // Store reference to parent couple node
+              }
+            };
+            break;
+          }
+        }
+      }
+    }
+    
     console.log('Found node:', node);
     if (!node) {
       console.log('Node not found!');
@@ -271,94 +311,94 @@ const FamilyTreeBuilder: React.FC<FamilyTreeBuilderProps> = ({ onComplete, onBac
   };
 
   return (
-    <div className="h-screen w-screen bg-gradient-to-br from-slate-50 to-blue-50 flex flex-col overflow-hidden">
-      <div className="bg-white border-b border-slate-200 px-8 py-4 flex justify-between items-center shadow-sm z-10">
-        <div>
-          <h1 className="text-2xl font-bold text-slate-800">Build Your Family Tree</h1>
-          <p className="text-slate-600 text-sm mt-1">Click the + button on any node to add family members</p>
+    <div className="fixed inset-0 w-full h-full bg-gradient-to-br from-slate-50 to-blue-50 flex flex-col overflow-hidden">
+      <div className="bg-white border-b border-slate-200 px-4 md:px-8 py-3 md:py-4 flex flex-col md:flex-row justify-between items-start md:items-center gap-3 shadow-sm z-10">
+        <div className="flex-1">
+          <h1 className="text-xl md:text-2xl font-bold text-slate-800">Build Your Family Tree</h1>
+          <p className="text-slate-600 text-xs md:text-sm mt-1">Click the + button on any node to add family members</p>
         </div>
-        <div className="flex gap-3">
-          <Button
-            onClick={onBack}
-            variant="outline"
-            className="flex items-center gap-2"
-          >
-            <ArrowLeft className="w-4 h-4" />
-            Back
-          </Button>
-          <Button
-            onClick={handleComplete}
-            disabled={nodes.length <= 1 || isLoading}
-            className="flex items-center gap-2 bg-blue-600 hover:bg-blue-700"
-          >
-            <Save className="w-4 h-4" />
-            {isLoading ? 'Creating...' : 'Create Family Tree'}
-          </Button>
-        </div>
+        <div className="flex gap-2 md:gap-3 w-full md:w-auto">
+        <Button
+          onClick={onBack}
+          variant="outline"
+          className="flex items-center gap-2"
+        >
+          <ArrowLeft className="w-4 h-4" />
+          Back
+        </Button>
+        <Button
+          onClick={handleComplete}
+          disabled={nodes.length <= 1 || isLoading}
+          className="flex items-center gap-2 bg-blue-600 hover:bg-blue-700"
+        >
+          <Save className="w-4 h-4" />
+          {isLoading ? 'Creating...' : 'Create Family Tree'}
+        </Button>
       </div>
+    </div>
 
-      <div className="flex-1 relative overflow-hidden">
-        <ReactFlow
-          nodes={nodes}
-          edges={edges}
-          onNodesChange={onNodesChange}
-          onEdgesChange={onEdgesChange}
-          onConnect={onConnect}
-          nodeTypes={nodeTypes}
-          edgeTypes={edgeTypes}
-          fitView
-          fitViewOptions={{
-            padding: 0.3,
-            minZoom: 0.5,
-            maxZoom: 1.2,
-            duration: 800
-          }}
-          className="bg-transparent"
-          defaultViewport={{ x: 0, y: 0, zoom: 0.75 }}
-          minZoom={0.2}
-          maxZoom={1.5}
-          panOnScroll={true}
-          panOnScrollSpeed={0.5}
-          zoomOnScroll={true}
-          zoomOnPinch={true}
-          panOnDrag={true}
-          selectNodesOnDrag={false}
-          proOptions={{ hideAttribution: true }}
-          onNodeDragStart={(event, node) => {
-            setDraggingNodeId(node.id);
-            setDraggingNodeInitialPos(node.position);
-          }}
-          onNodeDrag={(event, node) => {
-            if (node.id === draggingNodeId && draggingNodeInitialPos) {
-              const marriageEdge = edges.find(e => e.type === 'marriage' && (e.source === node.id || e.target === node.id));
-              if (marriageEdge) {
-                const spouseId = marriageEdge.source === node.id ? marriageEdge.target : marriageEdge.source;
-                const deltaX = node.position.x - draggingNodeInitialPos.x;
-                const deltaY = node.position.y - draggingNodeInitialPos.y;
-                setNodes((nds) => nds.map(n => {
-                  if (n.id === spouseId) {
-                    const currentSpouseNode = nds.find(sn => sn.id === spouseId);
-                    if (currentSpouseNode) {
-                      return {
-                        ...n,
-                        position: {
-                          x: currentSpouseNode.position.x + deltaX,
-                          y: currentSpouseNode.position.y + deltaY
-                        }
-                      };
-                    }
+    <div className="flex-1 relative overflow-hidden w-full h-full">
+      <ReactFlow
+        nodes={nodes}
+        edges={edges}
+        onNodesChange={onNodesChange}
+        onEdgesChange={onEdgesChange}
+        onConnect={onConnect}
+        nodeTypes={nodeTypes}
+        edgeTypes={edgeTypes}
+        fitView
+        fitViewOptions={{
+          padding: 0.2,
+          minZoom: 0.3,
+          maxZoom: 1.0,
+          duration: 800
+        }}
+        className="w-full h-full bg-transparent"
+        defaultViewport={{ x: 0, y: 0, zoom: 0.6 }}
+        minZoom={0.1}
+        maxZoom={2.0}
+        panOnScroll={true}
+        panOnScrollSpeed={0.5}
+        zoomOnScroll={true}
+        zoomOnPinch={true}
+        panOnDrag={true}
+        selectNodesOnDrag={false}
+        proOptions={{ hideAttribution: true }}
+        onNodeDragStart={(event, node) => {
+          setDraggingNodeId(node.id);
+          setDraggingNodeInitialPos(node.position);
+        }}
+        onNodeDrag={(event, node) => {
+          if (node.id === draggingNodeId && draggingNodeInitialPos) {
+            const marriageEdge = edges.find(e => e.type === 'marriage' && (e.source === node.id || e.target === node.id));
+            if (marriageEdge) {
+              const spouseId = marriageEdge.source === node.id ? marriageEdge.target : marriageEdge.source;
+              const deltaX = node.position.x - draggingNodeInitialPos.x;
+              const deltaY = node.position.y - draggingNodeInitialPos.y;
+              setNodes((nds) => nds.map(n => {
+                if (n.id === spouseId) {
+                  const currentSpouseNode = nds.find(sn => sn.id === spouseId);
+                  if (currentSpouseNode) {
+                    return {
+                      ...n,
+                      position: {
+                        x: currentSpouseNode.position.x + deltaX,
+                        y: currentSpouseNode.position.y + deltaY
+                      }
+                    };
                   }
-                  return n;
-                }));
-                // Update initial for next increment
-                setDraggingNodeInitialPos(node.position);
-              }
+                }
+                return n;
+              }));
+              // Update initial for next increment
+              setDraggingNodeInitialPos(node.position);
             }
-          }}
-          onNodeDragStop={() => {
-            setDraggingNodeId(null);
-            setDraggingNodeInitialPos(null);
-          }}
+          }
+        }}
+        onNodeDragStop={() => {
+          setDraggingNodeId(null);
+          setDraggingNodeInitialPos(null);
+        }}
         >
           <Controls className="bg-white shadow-lg border border-slate-200" />
           <Background color="#e2e8f0" gap={30} size={2} />
