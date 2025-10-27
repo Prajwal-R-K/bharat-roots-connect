@@ -79,7 +79,7 @@ export const analyzeRelationship = async (path, personA, personB) => {
   
   const formattedPath = formatPathForPrompt(path);
   
-  const prompt = `You are a family relationship expert. Analyze the following family tree path and provide a clear, human-readable explanation of how two people are related.
+  const prompt = `You are a family relationship expert. Analyze the following family tree path and explain the relationship between two people in BOTH directions.
 
 Person A: ${personA.name} (Gender: ${personA.gender || 'unknown'})
 Person B: ${personB.name} (Gender: ${personB.gender || 'unknown'})
@@ -87,15 +87,21 @@ Person B: ${personB.name} (Gender: ${personB.gender || 'unknown'})
 Relationship Path:
 ${formattedPath}
 
-Instructions:
-1. Identify the most direct relationship between Person A and Person B
-2. Provide a simple, clear description (e.g., "PersonA is the father of PersonB")
-3. If the relationship is complex (e.g., cousins, in-laws), explain the intermediate connections
-4. Use proper relationship terminology (father, mother, sibling, spouse, etc.)
-5. Keep the explanation concise but complete
-6. If there are multiple paths, focus on the shortest/most direct one
+IMPORTANT Instructions:
+1. You MUST use the actual names (${personA.name} and ${personB.name}) in your explanation
+2. Explain the relationship in BOTH directions:
+   - First: How ${personA.name} is related to ${personB.name}
+   - Second: How ${personB.name} is related to ${personA.name}
+3. Use proper relationship terminology (father, mother, son, daughter, sibling, spouse, etc.)
+4. Format your response like this:
+   "${personA.name} is the [relationship] of ${personB.name}."
+   "${personB.name} is the [relationship] of ${personA.name}."
 
-Provide your analysis in 2-3 sentences maximum.`;
+Example format:
+"John is the father of Mary."
+"Mary is the daughter of John."
+
+Provide BOTH directions using the actual names. Keep it clear and concise.`;
 
   try {
     const result = await model.generateContent(prompt);

@@ -84,6 +84,20 @@ const FamilyTreeViewPage = () => {
   return (
     <Layout>
       <div className="container mx-auto py-8 px-4">
+        {/* Back Button */}
+        <div className="mb-6">
+          <Button
+            onClick={() => navigate('/dashboard')}
+            variant="outline"
+            className="flex items-center gap-2 border-isn-primary/30 hover:bg-isn-primary/5 hover:border-isn-primary"
+          >
+            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 19l-7-7m0 0l7-7m-7 7h18" />
+            </svg>
+            Back to Dashboard
+          </Button>
+        </div>
+
         <div className="mb-8">
           <h1 className="text-3xl font-bold text-isn-primary mb-4">Family Tree</h1>
           
@@ -109,13 +123,6 @@ const FamilyTreeViewPage = () => {
                     <SelectItem value="hyper">Connected Trees</SelectItem>
                   </SelectContent>
                 </Select>
-                
-                <Button 
-                  onClick={() => navigate('/relationships')}
-                  className="bg-isn-secondary hover:bg-isn-secondary/90"
-                >
-                  Manage Relationships
-                </Button>
               </div>
             </div>
           )}
