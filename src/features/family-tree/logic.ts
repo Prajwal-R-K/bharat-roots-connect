@@ -246,18 +246,26 @@ const handleParentRelationship = async (
           }
         }
 
-        // Update node positions for better visual hierarchy
+        // Update node positions for perfect visual hierarchy
+        const nodeWidth = 240;
+        const coupleSpacing = 280;
         setNodes((nds: Node[]) => nds.map(node => {
           if (node.id === existingParentNode.id) {
             return {
               ...node,
-              position: { ...node.position, x: marriageCenter.x - 200 }
+              position: { 
+                x: marriageCenter.x - (coupleSpacing / 2) - (nodeWidth / 2), 
+                y: newNodePosition.y 
+              }
             };
           }
           if (node.id === newNodeId) {
             return {
               ...node,
-              position: { ...node.position, x: marriageCenter.x + 200 }
+              position: { 
+                x: marriageCenter.x + (coupleSpacing / 2) - (nodeWidth / 2), 
+                y: newNodePosition.y 
+              }
             };
           }
           return node;
@@ -294,10 +302,12 @@ const handleSpouseRelationship = async (
   marriageEdge.animated = true;
   additionalUiEdges.push(marriageEdge);
 
-  // Calculate optimal marriage center
+  // Calculate optimal marriage center for perfect couple alignment
+  const nodeWidth = 240;
+  const coupleSpacing = 280;
   const marriageCenter = {
-    x: (selectedNodeData.position.x + position.x) / 2 + 120,
-    y: (selectedNodeData.position.y + position.y) / 2 + 75
+    x: (selectedNodeData.position.x + position.x) / 2 + (nodeWidth / 2),
+    y: selectedNodeData.position.y
   };
 
   // Enhanced child relationship handling
@@ -354,13 +364,25 @@ const handleSpouseRelationship = async (
     }
   }
 
-  // Adjust spouse positions for better visual alignment
+  // Adjust spouse positions for perfect visual alignment
   setNodes((nds: Node[]) => nds.map(node => {
     if (node.id === selectedNodeId) {
-      return { ...node, position: { ...node.position, x: marriageCenter.x - 200 } };
+      return { 
+        ...node, 
+        position: { 
+          x: marriageCenter.x - (coupleSpacing / 2) - (nodeWidth / 2), 
+          y: selectedNodeData.position.y 
+        } 
+      };
     }
     if (node.id === newNodeId) {
-      return { ...node, position: { x: marriageCenter.x + 200, y: selectedNodeData.position.y } };
+      return { 
+        ...node, 
+        position: { 
+          x: marriageCenter.x + (coupleSpacing / 2) - (nodeWidth / 2), 
+          y: selectedNodeData.position.y 
+        } 
+      };
     }
     return node;
   }));

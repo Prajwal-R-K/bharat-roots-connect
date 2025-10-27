@@ -79,44 +79,44 @@ export const FamilyNode: React.FC<FamilyNodeProps> = ({ data, id, selected }) =>
 
 	return (
 		<div
-			className={`relative bg-white ${getBorderStyle()} rounded-2xl p-5 w-[240px] h-[320px] flex flex-col justify-between transition-all duration-300 hover:scale-105 cursor-pointer`}
+			className={`relative bg-gradient-to-br from-white to-slate-50 ${getBorderStyle()} rounded-2xl p-5 w-[240px] h-[320px] flex flex-col justify-between transition-all duration-300 hover:scale-105 hover:-translate-y-1 cursor-pointer backdrop-blur-sm`}
 			onMouseEnter={() => setIsHovered(true)}
 			onMouseLeave={() => setIsHovered(false)}
 		>
 			{/* Connection Handles */}
-			<Handle type="target" position={Position.Top} className="w-4 h-4 bg-gradient-to-r from-blue-500 to-purple-500 border-3 border-white shadow-lg" />
-			<Handle type="source" position={Position.Bottom} className="w-4 h-4 bg-gradient-to-r from-green-500 to-blue-500 border-3 border-white shadow-lg" />
-			<Handle type="target" position={Position.Left} className="w-4 h-4 bg-gradient-to-r from-red-500 to-pink-500 border-3 border-white shadow-lg" />
-			<Handle type="source" position={Position.Right} className="w-4 h-4 bg-gradient-to-r from-red-500 to-pink-500 border-3 border-white shadow-lg" />
+			<Handle type="target" position={Position.Top} className="w-3 h-3 bg-gradient-to-r from-blue-500 to-purple-500 border-2 border-white shadow-md opacity-0 hover:opacity-100 transition-opacity" />
+			<Handle type="source" position={Position.Bottom} className="w-3 h-3 bg-gradient-to-r from-green-500 to-blue-500 border-2 border-white shadow-md opacity-0 hover:opacity-100 transition-opacity" />
+			<Handle type="target" position={Position.Left} className="w-3 h-3 bg-gradient-to-r from-red-500 to-pink-500 border-2 border-white shadow-md opacity-0 hover:opacity-100 transition-opacity" />
+			<Handle type="source" position={Position.Right} className="w-3 h-3 bg-gradient-to-r from-red-500 to-pink-500 border-2 border-white shadow-md opacity-0 hover:opacity-100 transition-opacity" />
 
 			{getStatusBadge()}
 
-			<div className="flex flex-col items-center space-y-4">
+			<div className="flex flex-col items-center space-y-3">
 				{/* Avatar */}
-				<div className={`w-20 h-20 bg-gradient-to-br ${getNodeColor(data.relationship, data.isRoot, data.gender)} rounded-full flex items-center justify-center shadow-xl ring-4 ring-white`}>
+				<div className={`w-20 h-20 bg-gradient-to-br ${getNodeColor(data.relationship, data.isRoot, data.gender)} rounded-full flex items-center justify-center shadow-2xl ring-4 ring-white transform transition-transform ${isHovered ? 'scale-110' : 'scale-100'}`}>
 					{getRelationshipIcon(data.relationship, data.isRoot)}
 				</div>
 
 				{/* Main Info */}
-				<div className="text-center space-y-2">
-					<div className="font-bold text-slate-800 text-lg">{data.name}</div>
+				<div className="text-center space-y-2 w-full">
+					<div className="font-bold text-slate-800 text-base leading-tight px-2">{data.name}</div>
 					{/* Contact Info */}
-					<div className="space-y-1">
+					<div className="space-y-1 px-2">
 						{data.email && (
-							<div className="flex items-center justify-center text-xs text-slate-600 space-x-1">
-								<Mail className="w-3 h-3" />
-								<span className="truncate max-w-[160px]">{data.email}</span>
+							<div className="flex items-center justify-center text-xs text-slate-500 space-x-1 bg-slate-50 rounded-full px-2 py-1">
+								<Mail className="w-3 h-3 flex-shrink-0" />
+								<span className="truncate max-w-[140px]">{data.email}</span>
 							</div>
 						)}
 						{data.phone && (
-							<div className="flex items-center justify-center text-xs text-slate-600 space-x-1">
-								<Phone className="w-3 h-3" />
+							<div className="flex items-center justify-center text-xs text-slate-500 space-x-1 bg-slate-50 rounded-full px-2 py-1">
+								<Phone className="w-3 h-3 flex-shrink-0" />
 								<span>{data.phone}</span>
 							</div>
 						)}
 						{data.dateOfBirth && (
-							<div className="flex items-center justify-center text-xs text-slate-600 space-x-1">
-								<Calendar className="w-3 h-3" />
+							<div className="flex items-center justify-center text-xs text-slate-500 space-x-1 bg-slate-50 rounded-full px-2 py-1">
+								<Calendar className="w-3 h-3 flex-shrink-0" />
 								<span>{data.dateOfBirth}</span>
 							</div>
 						)}
@@ -149,7 +149,7 @@ export const FamilyNode: React.FC<FamilyNodeProps> = ({ data, id, selected }) =>
 			<Button
 				size="sm"
 				variant="outline"
-				className="w-10 h-10 rounded-full p-0 hover:bg-gradient-to-r hover:from-blue-500 hover:to-purple-500 hover:text-white border-2 border-blue-300 transition-all duration-300 shadow-md hover:shadow-lg self-center"
+				className="w-10 h-10 rounded-full p-0 bg-gradient-to-r from-blue-500 to-purple-500 text-white border-0 hover:from-blue-600 hover:to-purple-600 transition-all duration-300 shadow-lg hover:shadow-xl hover:scale-110 self-center"
 				onClick={() => {
 					data.onAddRelation && data.onAddRelation(id);
 				}}
@@ -158,8 +158,8 @@ export const FamilyNode: React.FC<FamilyNodeProps> = ({ data, id, selected }) =>
 			</Button>
 
 			{/* Generation Indicator */}
-			<div className="absolute top-2 left-2 text-xs font-bold text-slate-400 bg-slate-100 px-2 py-1 rounded-full">
-				G{data.generation}
+			<div className="absolute top-2 left-2 text-xs font-bold text-slate-500 bg-white/80 backdrop-blur-sm px-2 py-1 rounded-full shadow-sm border border-slate-200">
+				Gen {data.generation}
 			</div>
 		</div>
 	);

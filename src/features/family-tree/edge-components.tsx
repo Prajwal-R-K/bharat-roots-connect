@@ -29,11 +29,10 @@ export const MarriageEdge = ({ id, sourceX, sourceY, targetX, targetY, style = {
 					</feMerge>
 				</filter>
 			</defs>
-			<path id={id} style={{ ...style, strokeWidth: 8, stroke: `url(#marriage-gradient-${id})`, filter: `url(#marriage-glow-${id})` }} className="react-flow__edge-path animate-pulse" d={edgePath} />
+			<path id={id} style={{ ...style, strokeWidth: 6, stroke: `url(#marriage-gradient-${id})`, filter: `url(#marriage-glow-${id})` }} className="react-flow__edge-path" d={edgePath} />
 			<g>
-				<text x={centerX - 20} y={controlPointY - 5} textAnchor="middle" style={{ fontSize: '18px', fill: '#ef4444', fontWeight: 'bold' }}>💕</text>
-				<text x={centerX} y={controlPointY - 8} textAnchor="middle" style={{ fontSize: '24px', fill: '#ef4444', fontWeight: 'bold' }}>💍</text>
-				<text x={centerX + 20} y={controlPointY - 5} textAnchor="middle" style={{ fontSize: '18px', fill: '#ef4444', fontWeight: 'bold' }}>💕</text>
+				<circle cx={centerX} cy={controlPointY - 10} r="20" fill="white" opacity="0.9" />
+				<text x={centerX} y={controlPointY - 5} textAnchor="middle" style={{ fontSize: '22px', fill: '#ef4444', fontWeight: 'bold' }}>💍</text>
 			</g>
 		</>
 	);
@@ -74,7 +73,14 @@ export const ParentChildEdge = ({ id, sourceX, sourceY, targetX, targetY, data, 
 		const dropDistance = 120;
 		const horizontalDistance = 60;
 		const intermediateY = marriageCenterY + dropDistance;
-		const edgePath = `\n      M ${marriageCenterX},${marriageCenterY}\n      L ${marriageCenterX},${intermediateY - horizontalDistance}\n      Q ${marriageCenterX},${intermediateY} ${marriageCenterX + (targetX > marriageCenterX ? horizontalDistance : -horizontalDistance)},${intermediateY}\n      L ${targetX - (targetX > marriageCenterX ? horizontalDistance : -horizontalDistance)},${intermediateY}\n      Q ${targetX},${intermediateY} ${targetX},${intermediateY + horizontalDistance}\n      L ${targetX},${targetY}\n    `;
+		const edgePath = `
+      M ${marriageCenterX},${marriageCenterY}
+      L ${marriageCenterX},${intermediateY - horizontalDistance}
+      Q ${marriageCenterX},${intermediateY} ${marriageCenterX + (targetX > marriageCenterX ? horizontalDistance : -horizontalDistance)},${intermediateY}
+      L ${targetX - (targetX > marriageCenterX ? horizontalDistance : -horizontalDistance)},${intermediateY}
+      Q ${targetX},${intermediateY} ${targetX},${intermediateY + horizontalDistance}
+      L ${targetX},${targetY}
+    `;
 
 		return (
 			<>
@@ -88,9 +94,9 @@ export const ParentChildEdge = ({ id, sourceX, sourceY, targetX, targetY, data, 
 						<polygon points="0,0 0,12 12,6" fill="#22c55e" />
 					</marker>
 				</defs>
-				<path id={id} style={{ ...style, strokeWidth: 4, stroke: `url(#child-gradient-${id})`, strokeLinecap: 'round', strokeLinejoin: 'round' }} className="react-flow__edge-path" d={edgePath} markerEnd={`url(#child-arrow-${id})`} />
-				<circle cx={marriageCenterX} cy={marriageCenterY} r="5" fill="#22c55e" stroke="white" strokeWidth="2" className="drop-shadow-md" />
-				<circle cx={targetX} cy={intermediateY} r="3" fill="#10b981" stroke="white" strokeWidth="1" />
+				<path id={id} style={{ ...style, strokeWidth: 3, stroke: `url(#child-gradient-${id})`, strokeLinecap: 'round', strokeLinejoin: 'round' }} className="react-flow__edge-path" d={edgePath} markerEnd={`url(#child-arrow-${id})`} />
+				<circle cx={marriageCenterX} cy={marriageCenterY} r="6" fill="#22c55e" stroke="white" strokeWidth="2" className="drop-shadow-lg" />
+				<circle cx={targetX} cy={intermediateY} r="4" fill="#10b981" stroke="white" strokeWidth="1.5" className="drop-shadow-md" />
 			</>
 		);
 	}
