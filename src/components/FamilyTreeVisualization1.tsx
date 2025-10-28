@@ -466,6 +466,7 @@ const FamilyTreeVisualization: React.FC<FamilyTreeVisualizationProps> = ({
   const containerRef = useRef<HTMLDivElement>(null);
   const cyRef = useRef<cytoscape.Core | null>(null);
   const svgRef = useRef<SVGSVGElement>(null);
+  const userInteractedRef = useRef(false);
   const [nodePopup, setNodePopup] = useState<{
     id: string;
     x: number;
@@ -729,6 +730,7 @@ const FamilyTreeVisualization: React.FC<FamilyTreeVisualizationProps> = ({
     });
 
     cyRef.current.on("tap", "node", (evt: cytoscape.EventObject) => {
+      userInteractedRef.current = true;
       const node = evt.target as cytoscape.NodeSingular;
       const nodeId: string = (node.data("originalId") as string) || node.id();
       setSelectedNodes((prev) => {
@@ -867,9 +869,10 @@ const FamilyTreeVisualization: React.FC<FamilyTreeVisualizationProps> = ({
       // Then fit and center the entire tree
       setTimeout(() => {
         if (!cyRef.current) return;
-        cyRef.current.fit(undefined, 80);
-        cyRef.current.center();
-        
+        if (!userInteractedRef.current) {
+          cyRef.current.fit(undefined, 80);
+          cyRef.current.center();
+        }
         // Update popup position if open
         setNodePopup((prev) => {
           if (!prev) return prev;
@@ -919,7 +922,7 @@ const FamilyTreeVisualization: React.FC<FamilyTreeVisualizationProps> = ({
         return prev;
       });
     };
-    cyRef.current.on('pan zoom', updatePopupPosition);
+    cyRef.current.on('pan zoom', () => { userInteractedRef.current = true; updatePopupPosition(); });
     cyRef.current.on('pan zoom', renderCustomEdges);
     
     // Add dynamic edge updates for node movement
