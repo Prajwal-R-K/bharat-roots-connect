@@ -7,7 +7,7 @@ import { Badge } from "@/components/ui/badge";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { getFamilyRelationships } from "@/lib/neo4j/family-tree";
 import { getUserPersonalizedFamilyTree } from "@/lib/neo4j/relationships";
-import { Mail, ZoomIn, ZoomOut, Maximize, RotateCcw, Info, Search, X } from "lucide-react";
+import { Mail, ZoomIn, ZoomOut, Maximize, RotateCcw, Info, Search, X, Maximize2, ArrowLeft } from "lucide-react";
 
 import cytoscape from "cytoscape";
 import elk from "cytoscape-elk";
@@ -443,7 +443,7 @@ const createCytoscapeElements = (
 };
 
 // Enhanced layout options for better hierarchy alignment
-const elkOptions: any = {
+const elkOptions: Record<string, unknown> = {
   name: "elk",
   elk: {
     "algorithm": "layered",
@@ -488,6 +488,7 @@ const FamilyTreeVisualization: React.FC<FamilyTreeVisualizationProps> = ({
   const [showSearch, setShowSearch] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [searchResults, setSearchResults] = useState<FamilyMember[]>([]);
+  const [isFullscreen, setIsFullscreen] = useState(false);
 
   // Enhanced edge styling with better defaults
   const [edgeCurvature, setEdgeCurvature] = useState<number>(60);
@@ -525,7 +526,7 @@ const FamilyTreeVisualization: React.FC<FamilyTreeVisualizationProps> = ({
       if (actualTargetNode.empty()) return;
       
       // For source, handle both individual nodes and couple containers
-      let sourceNode = cyRef.current.$id(sourceId);
+      const sourceNode = cyRef.current.$id(sourceId);
       let startX, startY;
       
       if (sourceNode.data('type') === 'couple') {
@@ -709,14 +710,14 @@ const FamilyTreeVisualization: React.FC<FamilyTreeVisualizationProps> = ({
       style: getCytoscapeStyles(),
       zoomingEnabled: true,
       panningEnabled: true,
-      userZoomingEnabled: false,
-      userPanningEnabled: false,
+      userZoomingEnabled: true,
+      userPanningEnabled: true,
       boxSelectionEnabled: false,
       autounselectify: false,
       autoungrabify: true,
       minZoom: 0.2,
       maxZoom: 4,
-      wheelSensitivity: 0
+      wheelSensitivity: 0.2
     });
 
     // Enhanced hover effects
@@ -891,11 +892,8 @@ const FamilyTreeVisualization: React.FC<FamilyTreeVisualizationProps> = ({
       ro = new ResizeObserver(() => {
         if (!cyRef.current) return;
         cyRef.current.resize();
-        cyRef.current.fit(undefined, 80);
-        cyRef.current.center();
-        shapeParentChildEdges();
+        // Do NOT auto-fit/center here, to preserve user zoom/pan
         renderCustomEdges();
-        
         setNodePopup((prev) => {
           if (!prev) return prev;
           const n = cyRef.current!.$id(prev.id);
@@ -914,7 +912,7 @@ const FamilyTreeVisualization: React.FC<FamilyTreeVisualizationProps> = ({
       setNodePopup((prev) => {
         if (!prev) return prev;
         const n = cyRef.current!.$id(prev.id);
-        if (n.nonempty()) {
+        if (!n.empty()) {
           const bb = n.renderedBoundingBox();
           return { ...prev, x: bb.x2 + 15, y: bb.y1 };
         }
@@ -1076,6 +1074,30 @@ const FamilyTreeVisualization: React.FC<FamilyTreeVisualizationProps> = ({
     }, 800);
   };
 
+  const enterFullscreen = () => {
+    setIsFullscreen(true);
+    setTimeout(() => {
+      if (cyRef.current) {
+        cyRef.current.resize();
+        cyRef.current.fit(undefined, 60);
+        cyRef.current.center();
+        renderCustomEdges();
+      }
+    }, 50);
+  };
+
+  const exitFullscreen = () => {
+    setIsFullscreen(false);
+    setTimeout(() => {
+      if (cyRef.current) {
+        cyRef.current.resize();
+        cyRef.current.fit(undefined, 60);
+        cyRef.current.center();
+        renderCustomEdges();
+      }
+    }, 50);
+  };
+
   const selectedMember = (() => {
     if (activeMemberId) return familyMembers.find((m) => m.userId === activeMemberId) || null;
     if (selectedNodes.length === 1) return familyMembers.find((m) => m.userId === selectedNodes[0]) || null;
@@ -1086,6 +1108,14 @@ const FamilyTreeVisualization: React.FC<FamilyTreeVisualizationProps> = ({
     <div className="w-full relative" style={{ minHeight }}>
       {showControls && (
         <div className="flex items-center gap-1 mb-4">
+          <button
+            type="button"
+            onClick={enterFullscreen}
+            className="inline-flex items-center justify-center w-10 h-10 rounded-lg border border-gray-300 bg-white hover:bg-gray-50 transition-colors shadow-sm"
+            title="Fullscreen"
+          >
+            <Maximize2 className="w-5 h-5" />
+          </button>
           <button
             type="button"
             onClick={handleZoomIn}
@@ -1112,14 +1142,6 @@ const FamilyTreeVisualization: React.FC<FamilyTreeVisualizationProps> = ({
           </button>
           <button
             type="button"
-            onClick={handleRelayout}
-            className="inline-flex items-center justify-center w-10 h-10 rounded-lg border border-gray-300 bg-white hover:bg-gray-50 transition-colors shadow-sm"
-            title="Re-layout Tree"
-          >
-            <RotateCcw className="w-5 h-5" />
-          </button>
-          <button
-            type="button"
             onClick={() => setShowSearch(!showSearch)}
             className="inline-flex items-center justify-center w-10 h-10 rounded-lg border border-gray-300 bg-white hover:bg-gray-50 transition-colors shadow-sm"
             title="Search Member"
@@ -1129,6 +1151,43 @@ const FamilyTreeVisualization: React.FC<FamilyTreeVisualizationProps> = ({
         </div>
       )}
 
+      {isFullscreen && (
+        <div className="fixed top-4 left-4 z-[1000] flex items-center gap-2">
+          <button
+            type="button"
+            onClick={exitFullscreen}
+            className="inline-flex items-center gap-2 px-4 h-10 rounded-lg border border-gray-300 bg-white hover:bg-gray-50 transition-colors shadow-sm"
+            title="Back"
+          >
+            <ArrowLeft className="w-5 h-5" />
+            <span className="hidden sm:inline text-sm font-medium">Back</span>
+          </button>
+          <button
+            type="button"
+            onClick={handleZoomIn}
+            className="inline-flex items-center justify-center w-10 h-10 rounded-lg border border-gray-300 bg-white hover:bg-gray-50 transition-colors shadow-sm"
+            title="Zoom In"
+          >
+            <ZoomIn className="w-5 h-5" />
+          </button>
+          <button
+            type="button"
+            onClick={handleZoomOut}
+            className="inline-flex items-center justify-center w-10 h-10 rounded-lg border border-gray-300 bg-white hover:bg-gray-50 transition-colors shadow-sm"
+            title="Zoom Out"
+          >
+            <ZoomOut className="w-5 h-5" />
+          </button>
+          <button
+            type="button"
+            onClick={handleFit}
+            className="inline-flex items-center justify-center w-10 h-10 rounded-lg border border-gray-300 bg-white hover:bg-gray-50 transition-colors shadow-sm"
+            title="Fit to View"
+          >
+            <Maximize className="w-5 h-5" />
+          </button>
+        </div>
+      )}
       {/* Search Panel */}
       {showSearch && (
         <div className="mb-4 p-4 bg-white rounded-lg shadow-lg border">
@@ -1183,36 +1242,17 @@ const FamilyTreeVisualization: React.FC<FamilyTreeVisualizationProps> = ({
                         // Stop any ongoing animations
                         cyRef.current.stop();
                         
-                        // Complete reset of the viewport
-                        cyRef.current.reset();
-                        
-                        // Fit all nodes to ensure everything is visible
-                        cyRef.current.fit(cyRef.current.nodes(), 100);
-                        
-                        // Wait a bit longer for the reset to complete
-                        setTimeout(() => {
-                          if (cyRef.current) {
-                            // Get fresh node reference after reset
-                            const freshNode = cyRef.current.getElementById(member.userId);
-                            if (freshNode.length > 0) {
-                              console.log('Animating to fresh node position:', freshNode.position());
-                              
-                              // Animate to the node with higher zoom for better visibility
-                              cyRef.current.animate({
-                                center: { eles: freshNode },
-                                zoom: 3
-                              }, {
-                                duration: 1200,
-                                easing: 'ease-in-out',
-                                complete: () => {
-                                  // Add highlight after animation completes
-                                  freshNode.addClass('highlighted');
-                                  setTimeout(() => freshNode.removeClass('highlighted'), 4000);
-                                }
-                              });
-                            }
+                        // Smoothly center to the node while preserving current zoom
+                        cyRef.current.animate({
+                          center: { eles: node }
+                        }, {
+                          duration: 800,
+                          easing: 'ease-in-out',
+                          complete: () => {
+                            node.addClass('highlighted');
+                            setTimeout(() => node.removeClass('highlighted'), 4000);
                           }
-                        }, 800);
+                        });
                       } else {
                         console.warn('Node not found for member:', member.userId);
                       }
@@ -1238,11 +1278,11 @@ const FamilyTreeVisualization: React.FC<FamilyTreeVisualizationProps> = ({
         </div>
       )}
 
-      <div className="relative">
-        <div 
-          ref={containerRef} 
-          className="w-full rounded-xl shadow-lg ring-1 ring-gray-200 bg-white/60 backdrop-blur-sm" 
-          style={{ minHeight }} 
+      <div className={isFullscreen ? "fixed inset-0 z-[900] bg-white" : "relative"}>
+        <div
+          ref={containerRef}
+          className={isFullscreen ? "absolute inset-0 bg-white" : "w-full rounded-xl shadow-lg ring-1 ring-gray-200 bg-white/60 backdrop-blur-sm"}
+          style={{ minHeight: isFullscreen ? undefined : minHeight }}
         />
         
         {/* Custom SVG overlay for perfect curved dotted edges */}
