@@ -1,7 +1,8 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import Layout from '@/components/Layout';
 import FamilyTreeVisualization from '@/components/FamilyTreeVisualization1';
+import FamilyTreeMetaGraph from '@/components/FamilyTreeMetaGraph';
 import RelationshipAnalyzer from '@/components/RelationshipAnalyzer';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -9,16 +10,35 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Badge } from '@/components/ui/badge';
 import { toast } from '@/hooks/use-toast';
 import { User } from '@/types';
-import { getFamilyMembers, getTraversableFamilyTreeData, getUserPersonalFamilyView, getConnectedFamilyTrees } from '@/lib/neo4j';
+import { getFamilyMembers, getTraversableFamilyTreeData, getUserPersonalFamilyView, getConnectedFamilyTrees, getFamilyTreeMetaGraph } from '@/lib/neo4j';
+
+type UIMember = {
+  userId: string;
+  name: string;
+  email?: string;
+  status?: string;
+  profilePicture?: string;
+  relationship?: string;
+  gender?: string;
+};
+
+type GraphLink = {
+  source: string;
+  target: string;
+  type: 'PARENTS_OF' | 'SIBLING' | 'MARRIED_TO';
+  sourceName?: string;
+  targetName?: string;
+};
 
 const FamilyTreeViewPage = () => {
   const location = useLocation();
   const navigate = useNavigate();
   const [currentUser, setCurrentUser] = useState<User | null>(null);
-  const [familyMembers, setFamilyMembers] = useState<any[]>([]);
-  const [treeData, setTreeData] = useState<{ nodes: any[], links: any[] }>({ nodes: [], links: [] });
+  const [familyMembers, setFamilyMembers] = useState<UIMember[]>([]);
+  const [treeData, setTreeData] = useState<{ nodes: UIMember[], links: GraphLink[] }>({ nodes: [], links: [] });
   const [viewType, setViewType] = useState<"personal" | "all" | "hyper">("all");
   const [connectedTrees, setConnectedTrees] = useState<any[]>([]);
+  const [metaGraphData, setMetaGraphData] = useState<{ trees: any[], connections: any[] }>({ trees: [], connections: [] });
   const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
@@ -30,40 +50,28 @@ const FamilyTreeViewPage = () => {
     }
   }, [navigate]);
 
-  useEffect(() => {
-    if (currentUser) {
-      fetchFamilyData();
-    }
-  }, [currentUser, viewType]);
 
-  const fetchFamilyData = async () => {
+  const fetchFamilyData = useCallback(async () => {
     setIsLoading(true);
     try {
-      let members: any[] = [];
-      let visualizationData: { nodes: any[], links: any[] } = { nodes: [], links: [] };
+      let members: UIMember[] = [];
+      let visualizationData: { nodes: UIMember[], links: GraphLink[] } = { nodes: [], links: [] };
       let connections: any[] = [];
 
       if (viewType === "personal") {
         members = await getUserPersonalFamilyView(currentUser!.userId, currentUser!.familyTreeId);
-        visualizationData = {
-          nodes: members.map(member => ({
-            id: member.userId,
-            name: member.name,
-            status: member.status,
-            profilePicture: member.profilePicture
-          })),
-          links: members.map(member => ({
-            source: currentUser!.userId,
-            target: member.userId,
-            type: member.relationship || 'family'
-          }))
-        };
+        visualizationData = { nodes: members, links: [] };
       } else if (viewType === "hyper") {
-        connections = await getConnectedFamilyTrees(currentUser!.familyTreeId);
-        visualizationData = { nodes: [], links: [] }; // No visualization for hyper view
+        const metaGraph = await getFamilyTreeMetaGraph(currentUser!.familyTreeId);
+        console.log('Meta-graph data:', metaGraph);
+        setMetaGraphData(metaGraph);
+        // Set empty visualization data for meta-graph mode
+        members = [];
+        visualizationData = { nodes: [], links: [] };
       } else {
         members = await getFamilyMembers(currentUser!.familyTreeId);
-        visualizationData = await getTraversableFamilyTreeData(currentUser!.familyTreeId);
+        const single = await getTraversableFamilyTreeData(currentUser!.familyTreeId);
+        visualizationData = { nodes: (single.nodes as UIMember[]), links: (single.links as GraphLink[]) };
       }
 
       setFamilyMembers(members);
@@ -79,7 +87,13 @@ const FamilyTreeViewPage = () => {
     } finally {
       setIsLoading(false);
     }
-  };
+  }, [currentUser, viewType]);
+
+  useEffect(() => {
+    if (currentUser) {
+      fetchFamilyData();
+    }
+  }, [currentUser, viewType, fetchFamilyData]);
 
   return (
     <Layout>
@@ -169,16 +183,23 @@ const FamilyTreeViewPage = () => {
                 <CardDescription>
                   {viewType === "personal" ? "Your personal view of family relationships" : 
                    viewType === "all" ? "All members and relationships in your family tree" : 
-                   "Visualization including connected family trees"}
+                   "High-level view of interconnected family trees"}
                 </CardDescription>
               </CardHeader>
               <CardContent>
-                <div className="h-96 border rounded-lg">
-                  {currentUser && (
+                <div className={`${viewType === "hyper" ? "h-[700px]" : "h-96"} border rounded-lg`}>
+                  {currentUser && viewType === "hyper" ? (
+                    <FamilyTreeMetaGraph
+                      currentUser={currentUser}
+                      trees={metaGraphData.trees}
+                      connections={metaGraphData.connections}
+                      minHeight="700px"
+                    />
+                  ) : currentUser && (
                     <FamilyTreeVisualization 
                       user={currentUser} 
                       familyMembers={familyMembers}
-                      viewMode={viewType === "hyper" ? "all" : viewType}
+                      viewMode={viewType}
                       minHeight="400px"
                       showControls={true}
                     />

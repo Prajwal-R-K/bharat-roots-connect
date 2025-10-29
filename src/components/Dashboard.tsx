@@ -1,5 +1,6 @@
 import * as React from 'react';
-import { User, Calendar, MessageSquare, Users, Settings, Home, Plus, Download, Mail, LogOut, X, CalendarIcon, UserPlus, Camera, Menu } from 'lucide-react';
+import { User, Calendar, MessageSquare, Users, Settings, Home, Plus, Download, Mail, LogOut, X, CalendarIcon, UserPlus, Camera, Menu, Link2, Bell } from 'lucide-react';
+
 import { useNavigate } from 'react-router-dom';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -11,9 +12,11 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Calendar as CalendarComponent } from '@/components/ui/calendar';
 import { useToast } from '@/hooks/use-toast';
-import { updateUserProfile, getFamilyMembers, getUserByEmailOrId } from '@/lib/neo4j';
+import { updateUserProfile, getFamilyMembers, getUserByEmailOrId, getUnreadInterconnectCount, getIncomingInterconnectRequests, markInterconnectRequestRead, acceptInterconnectRequest, rejectInterconnectRequest, deleteInterconnectRequestForUser } from '@/lib/neo4j';
+import type { InterconnectRequest } from '@/lib/neo4j/relationships';
+
 import { uploadProfilePhoto, getProfilePhotoUrl } from '@/lib/profile-api';
-import { User as UserType } from '@/types';
+import { User as UserType, FamilyMember } from '@/types';
 import FamilyTreeVisualization from './FamilyTreeVisualization1';
 import RelationshipAnalyzer from './RelationshipAnalyzer';
 import { format } from 'date-fns';
@@ -28,7 +31,7 @@ const Dashboard: React.FC<DashboardProps> = ({ user: initialUser, onUserUpdate }
   const { toast } = useToast();
   const navigate = useNavigate();
   const [user, setUser] = React.useState<UserType>(initialUser);
-  const [familyMembers, setFamilyMembers] = React.useState<any[]>([]);
+  const [familyMembers, setFamilyMembers] = React.useState<FamilyMember[]>([]);
   
   // State for profile modal
   const [profileOpen, setProfileOpen] = React.useState(false);
@@ -39,6 +42,10 @@ const Dashboard: React.FC<DashboardProps> = ({ user: initialUser, onUserUpdate }
   
   // State for mobile menu
   const [mobileMenuOpen, setMobileMenuOpen] = React.useState(false);
+  const [unreadInterconnects, setUnreadInterconnects] = React.useState<number>(0);
+  const [notifOpen, setNotifOpen] = React.useState(false);
+  const [loadingNotifs, setLoadingNotifs] = React.useState(false);
+  const [incomingNotifs, setIncomingNotifs] = React.useState<InterconnectRequest[]>([]);
 
   // Update user state when initialUser prop changes
   React.useEffect(() => {
@@ -94,7 +101,7 @@ const Dashboard: React.FC<DashboardProps> = ({ user: initialUser, onUserUpdate }
     });
 
     try {
-      const updateData: any = {
+      const updateData: Partial<UserType> = {
         name: editData.name || '',
         phone: editData.phone || '',
         address: editData.address || '',
@@ -219,6 +226,77 @@ const Dashboard: React.FC<DashboardProps> = ({ user: initialUser, onUserUpdate }
     }
   }, [user.familyTreeId]);
 
+  // Poll unread interconnect requests count and listen for refresh/focus
+  React.useEffect(() => {
+    const intervalDelay = 10000;
+    const fetchUnread = async () => {
+      try {
+        const count = await getUnreadInterconnectCount(user.userId);
+        setUnreadInterconnects(typeof count === 'number' ? count : 0);
+      } catch (err) {
+        console.error('Failed to fetch unread interconnect count', err);
+      }
+    };
+    fetchUnread();
+    const interval = window.setInterval(fetchUnread, intervalDelay);
+    const onRefresh = () => fetchUnread();
+    const onFocus = () => fetchUnread();
+    window.addEventListener('interconnect:refresh', onRefresh);
+    window.addEventListener('focus', onFocus);
+    return () => {
+      window.clearInterval(interval);
+      window.removeEventListener('interconnect:refresh', onRefresh);
+      window.removeEventListener('focus', onFocus);
+    };
+  }, [user.userId]);
+
+  // Notification list handlers for popover
+  const fetchIncomingList = React.useCallback(async () => {
+    setLoadingNotifs(true);
+    try {
+      const list = await getIncomingInterconnectRequests(user.userId);
+      setIncomingNotifs(list);
+    } catch (err) {
+      console.error('Failed to load notifications', err);
+    } finally {
+      setLoadingNotifs(false);
+    }
+  }, [user.userId]);
+
+  React.useEffect(() => {
+    if (notifOpen) fetchIncomingList();
+  }, [notifOpen, fetchIncomingList]);
+
+  const handleMarkRead = async (id: string) => {
+    await markInterconnectRequestRead(id);
+    window.dispatchEvent(new Event('interconnect:refresh'));
+    fetchIncomingList();
+  };
+  const handleAccept = async (id: string) => {
+    const ok = await acceptInterconnectRequest(id);
+    window.dispatchEvent(new Event('interconnect:refresh'));
+    fetchIncomingList();
+    if (!ok) {
+      toast({ title: 'Failed', description: 'Unable to accept request', variant: 'destructive' });
+    }
+  };
+  const handleReject = async (id: string) => {
+    const ok = await rejectInterconnectRequest(id);
+    window.dispatchEvent(new Event('interconnect:refresh'));
+    fetchIncomingList();
+    if (!ok) {
+      toast({ title: 'Failed', description: 'Unable to reject request', variant: 'destructive' });
+    }
+  };
+  const handleDelete = async (id: string) => {
+    const ok = await deleteInterconnectRequestForUser(id, user.userId);
+    window.dispatchEvent(new Event('interconnect:refresh'));
+    fetchIncomingList();
+    if (!ok) {
+      toast({ title: 'Delete failed', description: 'Unable to delete notification', variant: 'destructive' });
+    }
+  };
+
   const activeMembers = familyMembers.filter(m => m.status === 'active');
   const pendingInvites = familyMembers.filter(m => m.status === 'invited');
   const treeCreatedDate = user.createdAt ? new Date(user.createdAt).toLocaleDateString() : new Date().toLocaleDateString();
@@ -273,6 +351,69 @@ const Dashboard: React.FC<DashboardProps> = ({ user: initialUser, onUserUpdate }
                   <MessageSquare className="w-4 h-4" />
                   Chat
                 </Button>
+                <Button 
+                  variant="ghost" 
+                  className="text-slate-700 hover:bg-amber-50 hover:text-amber-700 px-4 py-2 rounded-lg text-sm font-medium flex items-center gap-2 transition-all duration-300 font-serif"
+                  onClick={() => navigate('/interconnect')}
+                >
+                  <Link2 className="w-4 h-4" />
+                  Interconnect
+                </Button>
+                <Popover open={notifOpen} onOpenChange={setNotifOpen}>
+                  <PopoverTrigger asChild>
+                    <Button 
+                      variant="ghost" 
+                      className="relative text-slate-700 hover:bg-amber-50 hover:text-amber-700 px-4 py-2 rounded-lg text-sm font-medium flex items-center gap-2 transition-all duration-300 font-serif"
+                    >
+                      <Bell className="w-4 h-4" />
+                      {unreadInterconnects > 0 && (
+                        <span className="absolute -top-1 -right-1 inline-flex items-center justify-center h-5 min-w-5 px-1 rounded-full bg-green-500 text-white text-[10px] font-bold">
+                          {unreadInterconnects}
+                        </span>
+                      )}
+                    </Button>
+                  </PopoverTrigger>
+                  <PopoverContent className="w-96 p-0 hidden md:block" align="end">
+                    <div className="p-3 border-b">
+                      <div className="flex items-center justify-between">
+                        <div className="font-semibold">Notifications</div>
+                        <Button variant="ghost" size="sm" onClick={fetchIncomingList}>Refresh</Button>
+                      </div>
+                      <div className="text-xs text-slate-500">Incoming interconnect requests</div>
+                    </div>
+                    <div className="max-h-80 overflow-auto">
+                      {loadingNotifs ? (
+                        <div className="p-4 text-sm text-slate-500">Loading...</div>
+                      ) : incomingNotifs.length === 0 ? (
+                        <div className="p-4 text-sm text-slate-500">No notifications</div>
+                      ) : (
+                        <div className="divide-y">
+                          {incomingNotifs.map((req) => (
+                            <div key={req.id} className="p-3 flex items-start justify-between gap-3">
+                              <div className="space-y-1">
+                                <div className="text-sm">From <Badge variant="secondary">{req.sourceFamilyTreeId}</Badge> → <Badge variant="secondary">{req.targetFamilyTreeId}</Badge></div>
+                                <div className="text-xs text-slate-600">Rel: <span className="font-medium">{req.sourceRel}</span> • You as <span className="font-medium">{req.targetRel}</span></div>
+                                <div className="text-[11px] text-slate-400">{req.status}{!req.readByTarget ? ' • unread' : ''}</div>
+                              </div>
+                              <div className="flex flex-col gap-1">
+                                {req.status === 'pending' && (
+                                  <>
+                                    <Button size="xs" variant="default" onClick={() => handleAccept(req.id)}>Accept</Button>
+                                    <Button size="xs" variant="destructive" onClick={() => handleReject(req.id)}>Reject</Button>
+                                  </>
+                                )}
+                                {!req.readByTarget && (
+                                  <Button size="xs" variant="outline" onClick={() => handleMarkRead(req.id)}>Mark read</Button>
+                                )}
+                                <Button size="xs" variant="ghost" onClick={() => handleDelete(req.id)}>Delete</Button>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  </PopoverContent>
+                </Popover>
               </div>
             </div>
 
@@ -280,6 +421,61 @@ const Dashboard: React.FC<DashboardProps> = ({ user: initialUser, onUserUpdate }
             <div className="flex items-center gap-3">
               {/* Profile Avatar */}
               <div className="relative">
+                {/* Notification bell - mobile view */}
+                <Popover open={notifOpen} onOpenChange={setNotifOpen}>
+                  <PopoverTrigger asChild>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="md:hidden relative mr-2"
+                    >
+                      <Bell className="w-5 h-5" />
+                      {unreadInterconnects > 0 && (
+                        <span className="absolute -top-1 -right-1 inline-flex items-center justify-center h-4 min-w-4 px-0.5 rounded-full bg-green-500 text-white text-[10px] font-bold">
+                          {unreadInterconnects}
+                        </span>
+                      )}
+                    </Button>
+                  </PopoverTrigger>
+                  <PopoverContent className="w-80 p-0 mr-2 md:hidden" align="end">
+                    <div className="p-3 border-b">
+                      <div className="flex items-center justify-between">
+                        <div className="font-semibold">Notifications</div>
+                        <Button variant="ghost" size="sm" onClick={fetchIncomingList}>Refresh</Button>
+                      </div>
+                    </div>
+                    <div className="max-h-80 overflow-auto">
+                      {loadingNotifs ? (
+                        <div className="p-4 text-sm text-slate-500">Loading...</div>
+                      ) : incomingNotifs.length === 0 ? (
+                        <div className="p-4 text-sm text-slate-500">No notifications</div>
+                      ) : (
+                        <div className="divide-y">
+                          {incomingNotifs.map((req) => (
+                            <div key={req.id} className="p-3 flex items-start justify-between gap-3">
+                              <div className="space-y-1">
+                                <div className="text-xs">From <Badge variant="secondary">{req.sourceFamilyTreeId}</Badge> → <Badge variant="secondary">{req.targetFamilyTreeId}</Badge></div>
+                                <div className="text-[11px] text-slate-600">Rel: <span className="font-medium">{req.sourceRel}</span> • You as <span className="font-medium">{req.targetRel}</span></div>
+                              </div>
+                              <div className="flex flex-col gap-1">
+                                {req.status === 'pending' && (
+                                  <>
+                                    <Button size="xs" variant="default" onClick={() => handleAccept(req.id)}>Accept</Button>
+                                    <Button size="xs" variant="destructive" onClick={() => handleReject(req.id)}>Reject</Button>
+                                  </>
+                                )}
+                                {!req.readByTarget && (
+                                  <Button size="xs" variant="outline" onClick={() => handleMarkRead(req.id)}>Mark read</Button>
+                                )}
+                                <Button size="xs" variant="ghost" onClick={() => handleDelete(req.id)}>Delete</Button>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  </PopoverContent>
+                </Popover>
                 <Avatar 
                   className="h-10 w-10 ring-2 ring-amber-300 shadow-lg cursor-pointer hover:ring-amber-400 transition-all duration-200 hover:shadow-xl"
                   onClick={() => setProfileOpen(true)}

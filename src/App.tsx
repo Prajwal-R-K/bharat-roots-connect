@@ -6,6 +6,7 @@ import { GlobalCallProvider } from "@/components/GlobalCallProvider";
 import AuthPage from "@/pages/AuthPage";
 import DashboardPage from "@/pages/DashboardPage";
 import FamilyTreeViewPage from "@/pages/FamilyTreeViewPage";
+import InterconnectPage from "@/pages/InterconnectPage";
 import AddFamilyMemberPage from "@/pages/AddFamilyMemberPage";
 import InviteMembersPage from "@/pages/InviteMembersPage";
 import EditProfilePage from "@/pages/EditProfilePage";
@@ -33,6 +34,7 @@ function App() {
               <Route path="/chat" element={<ChatPage />} />
               <Route path="/groups" element={<GroupViewPage />} />
               <Route path="/events" element={<EventsPage />} />
+              <Route path="/interconnect" element={<InterconnectPage />} />
               <Route path="/posts" element={<PostsPageWrapper />} />
               <Route path="/" element={<Navigate to="/auth" replace />} />
               <Route path="*" element={<Navigate to="/auth" replace />} />

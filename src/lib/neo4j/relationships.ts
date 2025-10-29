@@ -552,3 +552,195 @@ export const deriveExtendedRelationships = async (familyTreeId: string) => {
     return [];
   }
 };
+
+// ============ Inter-family-tree connection requests ============
+
+export interface InterconnectRequest {
+  id: string;
+  fromUserId: string;
+  toUserId: string;
+  sourceFamilyTreeId: string;
+  targetFamilyTreeId: string;
+  sourceRel: string;
+  targetRel: string;
+  status: 'pending' | 'accepted' | 'rejected';
+  createdAt: number;
+  readByTarget: boolean;
+}
+
+export const createInterconnectRequest = async (
+  fromUserId: string,
+  toUserId: string,
+  sourceFamilyTreeId: string,
+  targetFamilyTreeId: string,
+  sourceRel: string,
+  targetRel: string,
+): Promise<InterconnectRequest | null> => {
+  try {
+    const id = `ic_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`;
+    const cypher = `
+      CREATE (req:InterconnectRequest {
+        id: $id,
+        fromUserId: $fromUserId,
+        toUserId: $toUserId,
+        sourceFamilyTreeId: $sourceFamilyTreeId,
+        targetFamilyTreeId: $targetFamilyTreeId,
+        sourceRel: toLower($sourceRel),
+        targetRel: toLower($targetRel),
+        status: 'pending',
+        createdAt: timestamp(),
+        readByTarget: false
+      })
+      RETURN req
+    `;
+    const result = await runQuery(cypher, { id, fromUserId, toUserId, sourceFamilyTreeId, targetFamilyTreeId, sourceRel, targetRel });
+    const reqNode = result?.[0]?.req?.properties as InterconnectRequest | undefined;
+    return reqNode || null;
+  } catch (error) {
+    console.error('Error creating interconnect request:', error);
+    return null;
+  }
+};
+
+export const getIncomingInterconnectRequests = async (userId: string): Promise<InterconnectRequest[]> => {
+  try {
+    const cypher = `
+      MATCH (req:InterconnectRequest { toUserId: $userId })
+      WHERE coalesce(req.deletedByTarget, false) <> true
+      RETURN req
+      ORDER BY req.createdAt DESC
+    `;
+    const result = await runQuery(cypher, { userId });
+    return (result || []).map((r: any) => {
+      const node = r.req;
+      return (node && node.properties) ? (node.properties as InterconnectRequest) : (node as InterconnectRequest);
+    });
+  } catch (error) {
+    console.error('Error fetching incoming interconnect requests:', error);
+    return [];
+  }
+};
+
+export const getOutgoingInterconnectRequests = async (userId: string): Promise<InterconnectRequest[]> => {
+  try {
+    const cypher = `
+      MATCH (req:InterconnectRequest { fromUserId: $userId })
+      WHERE coalesce(req.deletedBySource, false) <> true
+      RETURN req
+      ORDER BY req.createdAt DESC
+    `;
+    const result = await runQuery(cypher, { userId });
+    return (result || []).map((r: any) => {
+      const node = r.req;
+      return (node && node.properties) ? (node.properties as InterconnectRequest) : (node as InterconnectRequest);
+    });
+  } catch (error) {
+    console.error('Error fetching outgoing interconnect requests:', error);
+    return [];
+  }
+};
+
+export const getUnreadInterconnectCount = async (userId: string): Promise<number> => {
+  try {
+    const cypher = `
+      MATCH (req:InterconnectRequest { toUserId: $userId, status: 'pending', readByTarget: false })
+      WHERE coalesce(req.deletedByTarget, false) <> true
+      RETURN count(req) as count
+    `;
+    const result = await runQuery(cypher, { userId });
+    const raw = result && result[0] && result[0].count;
+    if (typeof raw === 'number') return raw;
+    if (raw && typeof raw.toNumber === 'function') return raw.toNumber();
+    if (raw && typeof raw.low === 'number') return raw.low; // handle neo4j Integer object shape
+    return 0;
+  } catch (error) {
+    console.error('Error fetching unread interconnect count:', error);
+    return 0;
+  }
+};
+
+export const markInterconnectRequestRead = async (requestId: string): Promise<boolean> => {
+  try {
+    const cypher = `
+      MATCH (req:InterconnectRequest { id: $requestId })
+      SET req.readByTarget = true
+      RETURN req.id as id
+    `;
+    const result = await runQuery(cypher, { requestId });
+    return !!result?.[0]?.id;
+  } catch (error) {
+    console.error('Error marking request as read:', error);
+    return false;
+  }
+};
+
+export const acceptInterconnectRequest = async (requestId: string): Promise<boolean> => {
+  try {
+    const getCypher = `
+      MATCH (req:InterconnectRequest { id: $requestId, status: 'pending' })
+      RETURN req
+    `;
+    const found = await runQuery(getCypher, { requestId });
+    if (!found || found.length === 0) return false;
+    const req = found[0].req.properties as InterconnectRequest;
+
+    const ok = await connectFamilyTrees(
+      { userId: req.fromUserId, email: '', familyTreeId: req.sourceFamilyTreeId },
+      { userId: req.toUserId, email: '', familyTreeId: req.targetFamilyTreeId },
+      req.sourceRel,
+      req.targetRel
+    );
+    if (!ok) return false;
+
+    const upd = await runQuery(
+      `MATCH (r:InterconnectRequest { id: $requestId }) SET r.status = 'accepted', r.readByTarget = true RETURN r.id as id`,
+      { requestId }
+    );
+    return !!upd?.[0]?.id;
+  } catch (error) {
+    console.error('Error accepting interconnect request:', error);
+    return false;
+  }
+};
+
+export const rejectInterconnectRequest = async (requestId: string): Promise<boolean> => {
+  try {
+    const cypher = `
+      MATCH (r:InterconnectRequest { id: $requestId })
+      SET r.status = 'rejected', r.readByTarget = true
+      RETURN r.id as id
+    `;
+    const result = await runQuery(cypher, { requestId });
+    return !!result?.[0]?.id;
+  } catch (error) {
+    console.error('Error rejecting interconnect request:', error);
+    return false;
+  }
+};
+
+export const deleteInterconnectRequestForUser = async (requestId: string, userId: string): Promise<boolean> => {
+  try {
+    // Soft delete for respective side
+    const update = await runQuery(
+      `MATCH (req:InterconnectRequest { id: $requestId })
+       SET req.deletedByTarget = CASE WHEN req.toUserId = $userId THEN true ELSE coalesce(req.deletedByTarget,false) END,
+           req.deletedBySource = CASE WHEN req.fromUserId = $userId THEN true ELSE coalesce(req.deletedBySource,false) END
+       RETURN req as req`,
+      { requestId, userId }
+    );
+    if (!update || update.length === 0) return false;
+
+    // Hard delete if both sides deleted
+    await runQuery(
+      `MATCH (req:InterconnectRequest { id: $requestId })
+       WITH req, coalesce(req.deletedByTarget,false) as dT, coalesce(req.deletedBySource,false) as dS
+       WHERE dT AND dS
+       DETACH DELETE req`,
+      { requestId }
+    );
+    return true;
+  } catch (error) {
+    console.error('Error deleting interconnect request for user:', error);
+    return false;
+  }
+};

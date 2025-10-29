@@ -51,6 +51,7 @@ interface FamilyTreeVisualizationProps {
   viewMode?: "personal" | "all";
   minHeight?: string;
   showControls?: boolean;
+  relationships?: CoreRelationship[];
 }
 
 const getCytoscapeStyles = () => [
@@ -167,13 +168,14 @@ const getCytoscapeStyles = () => [
       "line-style": "dashed",
       opacity: 0.9,
       "line-cap": "round",
-      label: "💔",
+      label: "Divorced",
       color: "#374151",
       'text-background-color': '#ffffff',
       'text-background-opacity': 0.95,
       'text-background-padding': 4,
       'text-background-shape': 'roundrectangle',
-      'font-size': 12
+      'font-size': 11,
+      'font-weight': 'bold'
     }
   },
   // PARENT-CHILD EDGES - Hidden, will use custom SVG overlay
@@ -323,7 +325,8 @@ const createCytoscapeElements = (
       const isRoot = m.userId === createdByUserId;
       const isCurrent = m.userId === loggedInUserId;
       const colors = getSafeColor(m, isRoot, isCurrent);
-      const displayName = m.name.length > 12 ? m.name.substring(0, 12) + "..." : m.name;
+      const safeName = m.name || '';
+      const displayName = safeName.length > 12 ? safeName.substring(0, 12) + "..." : safeName;
       elements.push({
         data: {
           id: `${coupleId}_${m.userId}`,
@@ -331,7 +334,7 @@ const createCytoscapeElements = (
           type: "coupleMember",
           originalId: m.userId,
           displayName,
-          fullName: m.name,
+          fullName: safeName,
           email: m.email || "",
           status: m.status || "",
           relationship: m.relationship || "",
@@ -351,14 +354,15 @@ const createCytoscapeElements = (
     const isRoot = m.userId === createdByUserId;
     const isCurrent = m.userId === loggedInUserId;
     const colors = getSafeColor(m, isRoot, isCurrent);
-    let displayName = m.name.length > 15 ? m.name.substring(0, 15) + "..." : m.name;
-    if (isCurrent) displayName = `👑 ${displayName}`;
+    const safeName = m.name || '';
+    const displayName = safeName.length > 15 ? safeName.substring(0, 15) + "..." : safeName;
+    // Current user is already highlighted with golden color, no need for crown emoji
     elements.push({
       data: {
         id: m.userId,
         type: "individual",
         displayName,
-        fullName: m.name,
+        fullName: safeName,
         email: m.email || "",
         status: m.status || "",
         relationship: m.relationship || "",
@@ -461,10 +465,12 @@ const FamilyTreeVisualization: React.FC<FamilyTreeVisualizationProps> = ({
   familyMembers,
   viewMode = "personal",
   minHeight = "600px",
-  showControls = true
+  showControls = true,
+  relationships,
 }) => {
   const containerRef = useRef<HTMLDivElement>(null);
   const cyRef = useRef<cytoscape.Core | null>(null);
+  const layoutRef = useRef<any>(null);
   const svgRef = useRef<SVGSVGElement>(null);
   const userInteractedRef = useRef(false);
   const [nodePopup, setNodePopup] = useState<{
@@ -476,7 +482,7 @@ const FamilyTreeVisualization: React.FC<FamilyTreeVisualizationProps> = ({
   } | null>(null);
 
   const [coreRelationships, setCoreRelationships] = useState<CoreRelationship[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
+  const [isLoading, setIsLoading] = useState(false);
   const [selectedNodes, setSelectedNodes] = useState<string[]>([]);
   const [nodeDetailsOpen, setNodeDetailsOpen] = useState(false);
   const [relationshipAnalysisOpen, setRelationshipAnalysisOpen] = useState(false);
@@ -658,6 +664,11 @@ const FamilyTreeVisualization: React.FC<FamilyTreeVisualizationProps> = ({
   }, [parentChildColor]);
 
   useEffect(() => {
+    if (Array.isArray(relationships)) {
+      setCoreRelationships(relationships || []);
+      setIsLoading(false);
+      return;
+    }
     const fetch = async () => {
       setIsLoading(true);
       try {
@@ -687,7 +698,14 @@ const FamilyTreeVisualization: React.FC<FamilyTreeVisualizationProps> = ({
       }
     };
     fetch();
-  }, [user.userId, user.familyTreeId, viewMode]);
+  }, [user.userId, user.familyTreeId, viewMode, relationships]);
+
+  // Force loading to false if we have members (even with no relationships)
+  useEffect(() => {
+    if (familyMembers.length > 0) {
+      setIsLoading(false);
+    }
+  }, [familyMembers]);
 
   useEffect(() => {
     if (!containerRef.current) return;
@@ -803,7 +821,12 @@ const FamilyTreeVisualization: React.FC<FamilyTreeVisualizationProps> = ({
       }
     });
 
-    const layout = cyRef.current.layout(elkOptions);
+    // Choose layout engine with fallback
+    const elementCount = cyRef.current.elements().length;
+    const edgeCount = cyRef.current.edges().length;
+    const preferGrid = elementCount < 3 || edgeCount === 0;
+    let layout = cyRef.current.layout(preferGrid ? { name: 'grid', fit: true, padding: 50 } : elkOptions);
+    layoutRef.current = layout;
     
     // Enhanced edge shaping with perfect centering for children
     const shapeParentChildEdges = () => {
@@ -886,14 +909,29 @@ const FamilyTreeVisualization: React.FC<FamilyTreeVisualizationProps> = ({
       }, 100);
     });
 
-    layout.run();
+    try {
+      if (cyRef.current && !cyRef.current.destroyed() && cyRef.current.elements().length > 0) {
+        layout.run();
+      }
+    } catch (err) {
+      // Fallback to grid layout to avoid crashes if ELK fails
+      try {
+        if (cyRef.current && !cyRef.current.destroyed()) {
+          layout = cyRef.current.layout({ name: 'grid', fit: true, padding: 50 });
+          layoutRef.current = layout;
+          layout.run();
+        }
+      } catch (e2) {
+        console.error('Cytoscape layout failed', e2);
+      }
+    }
 
     // Enhanced resize handling for consistent centering
     let ro: ResizeObserver | null = null;
     const containerEl = containerRef.current;
     if (containerEl) {
       ro = new ResizeObserver(() => {
-        if (!cyRef.current) return;
+        if (!cyRef.current || cyRef.current.destroyed()) return;
         cyRef.current.resize();
         // Do NOT auto-fit/center here, to preserve user zoom/pan
         renderCustomEdges();
@@ -946,11 +984,6 @@ const FamilyTreeVisualization: React.FC<FamilyTreeVisualizationProps> = ({
       }
       cyRef.current?.off('pan', updatePopupPosition);
       cyRef.current?.off('zoom', updatePopupPosition);
-      cyRef.current?.off('drag', renderCustomEdges);
-      cyRef.current?.off('position', renderCustomEdges);
-      cyRef.current?.off('move', renderCustomEdges);
-      cyRef.current?.off('grab', renderCustomEdges);
-      cyRef.current?.off('free', renderCustomEdges);
     };
   }, [coreRelationships, familyMembers, user, selectionMode, parentChildColor, marriageColor, siblingColor, edgeCurvature, renderCustomEdges]);
 

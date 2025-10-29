@@ -19,6 +19,84 @@ export const createFamilyTree = async (treeData: Partial<FamilyTree>): Promise<F
   throw new Error('Failed to create family tree');
 };
 
+// Get meta-graph of family trees and their interconnections
+export const getFamilyTreeMetaGraph = async (familyTreeId: string) => {
+  try {
+    console.log(`Fetching family tree meta-graph for: ${familyTreeId}`);
+
+    const cypher = `
+      // Get current tree and all connected trees
+      MATCH (current:User {familyTreeId: $familyTreeId})
+      WITH current, $familyTreeId AS currentTreeId
+      
+      // Find all trees connected via CONNECTS_TO
+      OPTIONAL MATCH (current)-[:CONNECTS_TO]-(other:User)
+      WHERE other.familyTreeId <> currentTreeId
+      WITH currentTreeId, COLLECT(DISTINCT other.familyTreeId) AS connectedTreeIds
+      
+      // Get tree statistics
+      WITH currentTreeId, connectedTreeIds, [currentTreeId] + connectedTreeIds AS allTreeIds
+      UNWIND allTreeIds AS treeId
+      MATCH (member:User {familyTreeId: treeId})
+      WITH treeId, 
+           COUNT(DISTINCT member) AS memberCount,
+           treeId = currentTreeId AS isCurrentTree,
+           HEAD(COLLECT(DISTINCT member.name)) AS creatorName
+      
+      // Get connections between trees
+      WITH COLLECT({
+        familyTreeId: treeId,
+        memberCount: memberCount,
+        isCurrentTree: isCurrentTree,
+        creatorName: creatorName
+      }) AS trees
+      
+      MATCH (source:User)-[ct:CONNECTS_TO]->(target:User)
+      WHERE source.familyTreeId <> target.familyTreeId
+        AND (source.familyTreeId = $familyTreeId OR target.familyTreeId = $familyTreeId)
+      
+      RETURN trees,
+             COLLECT(DISTINCT {
+               sourceFamilyTreeId: source.familyTreeId,
+               targetFamilyTreeId: target.familyTreeId,
+               relationshipType: ct.relationship,
+               sourceUserName: source.name,
+               targetUserName: target.name
+             }) AS connections
+    `;
+
+    const result = await runQuery(cypher, { familyTreeId });
+    if (!result || result.length === 0) {
+      return { trees: [], connections: [] };
+    }
+
+    const { trees, connections } = result[0];
+    
+    // Helper to convert Neo4j Integer to number
+    const toNumber = (val: any): number => {
+      if (val === null || val === undefined) return 0;
+      if (typeof val === 'number') return val;
+      if (typeof val === 'object' && 'low' in val) return val.low;
+      return Number(val) || 0;
+    };
+
+    // Add connection counts to trees and convert Neo4j Integers
+    const treesWithCounts = (trees || []).map((tree: any) => ({
+      ...tree,
+      memberCount: toNumber(tree.memberCount),
+      connectionCount: (connections || []).filter((c: any) => 
+        c.sourceFamilyTreeId === tree.familyTreeId || c.targetFamilyTreeId === tree.familyTreeId
+      ).length
+    }));
+
+    console.log(`Meta-graph: ${treesWithCounts.length} trees, ${connections?.length || 0} connections`);
+    return { trees: treesWithCounts, connections: connections || [] };
+  } catch (error) {
+    console.error('Error fetching family tree meta-graph:', error);
+    return { trees: [], connections: [] };
+  }
+};
+
 export const getFamilyTree = async (familyTreeId: string): Promise<FamilyTree | null> => {
   const cypher = `
     MATCH (ft:FamilyTree {familyTreeId: $familyTreeId})
@@ -310,7 +388,7 @@ export const getTraversableFamilyTreeData = async (
   try {
     console.log(`Fetching complete family tree data for tree: ${familyTreeId} with level: ${level}`);
 
-    // Get all users and their core relationships
+    // Get all users and their core relationships for a single tree
     const cypher = `
       MATCH (u1:User {familyTreeId: $familyTreeId})-[r]->(u2:User {familyTreeId: $familyTreeId})
       WHERE type(r) IN ['PARENTS_OF', 'SIBLING', 'MARRIED_TO']
