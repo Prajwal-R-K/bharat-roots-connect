@@ -185,7 +185,7 @@ const getCytoscapeStyles = () => [
       opacity: 0, // Hide cytoscape edges, use custom SVG overlay
     }
   },
-  // SIBLING EDGES - Blue horizontal lines
+  // SIBLING EDGES - Blue horizontal lines (bidirectional)
   {
     selector: 'edge[type="sibling"]',
     style: {
@@ -193,8 +193,23 @@ const getCytoscapeStyles = () => [
       "line-color": "#2563eb",
       "curve-style": "straight",
       "line-style": "solid",
-      // Hide sibling connectors to match reference
-      opacity: 0
+      opacity: 1,
+      "target-arrow-shape": "triangle",
+      "target-arrow-color": "#2563eb",
+      "source-arrow-shape": "triangle",
+      "source-arrow-color": "#2563eb",
+      "arrow-scale": 1,
+      label: "SIBLING",
+      "font-size": 10,
+      "font-weight": "bold",
+      color: "#1e40af",
+      "text-background-color": "#ffffff",
+      "text-background-opacity": 0.9,
+      "text-background-padding": 4,
+      "text-background-shape": "roundrectangle",
+      "text-border-width": 1,
+      "text-border-color": "#dbeafe",
+      "text-border-opacity": 1
     }
   },
   {
@@ -245,14 +260,59 @@ const createCytoscapeElements = (
   members.forEach((m) => nodeMap.set(m.userId, m));
 
   const spouseMap = new Map<string, string[]>();
+  const parentMap = new Map<string, string[]>();  // child -> parents
+  const childMap = new Map<string, string[]>();   // parent -> children
+  const siblingMap = new Map<string, Set<string>>();  // userId -> siblings
+  
   relationships.forEach((r) => {
     if (r.type === "MARRIED_TO") {
       if (!spouseMap.has(r.source)) spouseMap.set(r.source, []);
       spouseMap.get(r.source)!.push(r.target);
       if (!spouseMap.has(r.target)) spouseMap.set(r.target, []);
       spouseMap.get(r.target)!.push(r.source);
+    } else if (r.type === "PARENTS_OF") {
+      if (!parentMap.has(r.target)) parentMap.set(r.target, []);
+      parentMap.get(r.target)!.push(r.source);
+      if (!childMap.has(r.source)) childMap.set(r.source, []);
+      childMap.get(r.source)!.push(r.target);
+    } else if (r.type === "SIBLING") {
+      if (!siblingMap.has(r.source)) siblingMap.set(r.source, new Set());
+      siblingMap.get(r.source)!.add(r.target);
+      if (!siblingMap.has(r.target)) siblingMap.set(r.target, new Set());
+      siblingMap.get(r.target)!.add(r.source);
     }
   });
+
+  // Calculate generation/layer for each node (BFS from root nodes)
+  const layerMap = new Map<string, number>();
+  const rootNodes = members.filter(m => !parentMap.has(m.userId));
+  
+  // BFS to assign layers
+  const queue: Array<{userId: string, layer: number}> = rootNodes.map(m => ({userId: m.userId, layer: 0}));
+  const visited = new Set<string>();
+  
+  while (queue.length > 0) {
+    const {userId, layer} = queue.shift()!;
+    if (visited.has(userId)) continue;
+    visited.add(userId);
+    layerMap.set(userId, layer);
+    
+    // Add children to queue
+    const children = childMap.get(userId) || [];
+    children.forEach(childId => {
+      if (!visited.has(childId)) {
+        queue.push({userId: childId, layer: layer + 1});
+      }
+    });
+    
+    // Spouses should be at the same layer
+    const spouses = spouseMap.get(userId) || [];
+    spouses.forEach(spouseId => {
+      if (!visited.has(spouseId)) {
+        queue.push({userId: spouseId, layer});
+      }
+    });
+  }
 
   const couples = new Map<string, { member1: string; member2: string }>();
   spouseMap.forEach((arr, id) => {
@@ -311,13 +371,17 @@ const createCytoscapeElements = (
     const m2 = nodeMap.get(couple.member2);
     if (!m1 || !m2) return;
 
+    // Use the layer from the first member (spouses should be at same layer)
+    const layer = layerMap.get(m1.userId) || 0;
+
     elements.push({
       data: { 
         id: coupleId, 
         type: "couple", 
         bgColor: "#ffffff", 
         gradientColors: "#ffffff #f8fafc", 
-        borderColor: "#e2e8f0" 
+        borderColor: "#e2e8f0",
+        'elk.layered.layerConstraint': layer  // Force this couple to specific layer
       }
     });
 
@@ -327,6 +391,7 @@ const createCytoscapeElements = (
       const colors = getSafeColor(m, isRoot, isCurrent);
       const safeName = m.name || '';
       const displayName = safeName.length > 12 ? safeName.substring(0, 12) + "..." : safeName;
+      const memberLayer = layerMap.get(m.userId) || 0;
       elements.push({
         data: {
           id: `${coupleId}_${m.userId}`,
@@ -342,11 +407,25 @@ const createCytoscapeElements = (
           isRoot,
           isCurrent,
           ...colors,
-          profileImage: getAvatarForMember(m, m.profilePicture)
+          profileImage: getAvatarForMember(m, m.profilePicture),
+          'elk.layered.layerConstraint': memberLayer  // Force to specific layer
         }
       });
       processed.add(m.userId);
     });
+  });
+
+  // Group siblings by their shared parents for in-layer positioning
+  const siblingGroupsMap = new Map<string, string[]>();
+  members.forEach(m => {
+    const parents = parentMap.get(m.userId) || [];
+    if (parents.length > 0) {
+      const parentKey = parents.sort().join('-');
+      if (!siblingGroupsMap.has(parentKey)) {
+        siblingGroupsMap.set(parentKey, []);
+      }
+      siblingGroupsMap.get(parentKey)!.push(m.userId);
+    }
   });
 
   members.forEach((m) => {
@@ -356,23 +435,34 @@ const createCytoscapeElements = (
     const colors = getSafeColor(m, isRoot, isCurrent);
     const safeName = m.name || '';
     const displayName = safeName.length > 15 ? safeName.substring(0, 15) + "..." : safeName;
+    const layer = layerMap.get(m.userId) || 0;
+    
+    // Find siblings for in-layer successor constraint
+    const siblings = siblingMap.get(m.userId);
+    const nodeData: any = {
+      id: m.userId,
+      type: "individual",
+      displayName,
+      fullName: safeName,
+      email: m.email || "",
+      status: m.status || "",
+      relationship: m.relationship || "",
+      gender: m.gender || "",
+      isRoot,
+      isCurrent,
+      ...colors,
+      profileImage: getAvatarForMember(m, m.profilePicture),
+      'elk.layered.layerConstraint': layer  // Force to specific layer
+    };
+    
+    // Add in-layer successor for siblings (pick first sibling as successor)
+    if (siblings && siblings.size > 0) {
+      const siblingArray = Array.from(siblings);
+      nodeData['elk.layered.inLayerSuccessorConstraint'] = siblingArray;
+    }
+    
     // Current user is already highlighted with golden color, no need for crown emoji
-    elements.push({
-      data: {
-        id: m.userId,
-        type: "individual",
-        displayName,
-        fullName: safeName,
-        email: m.email || "",
-        status: m.status || "",
-        relationship: m.relationship || "",
-        gender: m.gender || "",
-        isRoot,
-        isCurrent,
-        ...colors,
-        profileImage: getAvatarForMember(m, m.profilePicture)
-      }
-    });
+    elements.push({ data: nodeData });
   });
 
   const parentEdgeSet = new Set<string>();
@@ -424,39 +514,63 @@ const createCytoscapeElements = (
       return;
     }
 
-    elements.push({
-      data: {
-        id: `${type}_${sourceGroup}_${targetGroup}`,
-        source: sourceGroup,
-        target: targetGroup,
-        type,
-        relationship: rel.type,
-        sourceName,
-        targetName: rel.targetName || "",
-        curveDistances: [0, 0, 0],
-        curveWeights: [0.1, 0.65, 0.95],
-        edgeDash: [0, 0],
-        lineStyle: "solid",
-        edgeWidth: type === 'parentChild' ? 4 : 3,
-        edgeColor: type === 'parentChild' ? '#00bfff' : (type === 'adopted' ? '#0ea5e9' : (type === 'marriage' ? '#dc2626' : '#2563eb'))
-      }
-    });
+    // Add ELK layout constraints for sibling edges to keep them at same level
+    const edgeData: any = {
+      id: `${type}_${sourceGroup}_${targetGroup}`,
+      source: sourceGroup,
+      target: targetGroup,
+      type,
+      relationship: rel.type,
+      sourceName,
+      targetName: rel.targetName || "",
+      curveDistances: [0, 0, 0],
+      curveWeights: [0.1, 0.65, 0.95],
+      edgeDash: [0, 0],
+      lineStyle: "solid",
+      edgeWidth: type === 'parentChild' ? 4 : 3,
+      edgeColor: type === 'parentChild' ? '#00bfff' : (type === 'adopted' ? '#0ea5e9' : (type === 'marriage' ? '#dc2626' : '#2563eb'))
+    };
+
+    // CRITICAL: Completely exclude sibling edges from layout computation
+    if (type === 'sibling') {
+      edgeData['elk.priority'] = 0;
+      edgeData['elk.layered.priority.direction'] = 0;
+      edgeData['elk.edgeRouting'] = 'ORTHOGONAL';
+      edgeData['elk.layered.edgeType'] = 'ASSOCIATION';
+      edgeData['elk.no.layout'] = true;  // Don't use for layout calculation
+      edgeData['elk.edge.thickness'] = 0;  // Zero thickness for layout
+    } else {
+      edgeData['elk.layered.edgeType'] = 'DIRECTED';
+    }
+
+    elements.push({ data: edgeData });
   });
 
   return elements;
 };
 
-// Enhanced layout options for better hierarchy alignment
+// Enhanced layout options - use only parent-child edges for layering
 const elkOptions: Record<string, unknown> = {
   name: "elk",
   elk: {
     "algorithm": "layered",
     "elk.direction": "DOWN",
-    "elk.spacing.nodeNode": 100,
-    "elk.layered.spacing.nodeNodeBetweenLayers": 150,
+    "elk.spacing.nodeNode": 150,  // Increased horizontal spacing between siblings
+    "elk.layered.spacing.nodeNodeBetweenLayers": 150,  // Vertical spacing between generations
     "elk.spacing.edgeNode": 50,
     "elk.spacing.edgeEdge": 30,
-    "elk.alignment": "CENTER"
+    "elk.alignment": "CENTER",
+    "elk.layered.nodePlacement.strategy": "BRANDES_KOEPF",  // Better for siblings at same level
+    "elk.layered.considerModelOrder.strategy": "NODES_AND_EDGES",
+    "elk.layered.crossingMinimization.strategy": "LAYER_SWEEP",
+    "elk.layered.thoroughness": 10,
+    "elk.separateConnectedComponents": false,
+    "elk.spacing.componentComponent": 80,
+    "elk.layered.priority.direction": 0,  // Don't prioritize any direction
+    "elk.layered.layering.strategy": "INTERACTIVE",  // Respect layer constraints strictly
+    "elk.layered.cycleBreaking.strategy": "GREEDY",
+    "elk.layered.nodePlacement.bk.fixedAlignment": "BALANCED",  // Balance siblings
+    "elk.hierarchyHandling": "INCLUDE_CHILDREN"
   }
 };
 
@@ -825,6 +939,12 @@ const FamilyTreeVisualization: React.FC<FamilyTreeVisualizationProps> = ({
     const elementCount = cyRef.current.elements().length;
     const edgeCount = cyRef.current.edges().length;
     const preferGrid = elementCount < 3 || edgeCount === 0;
+    
+    // CRITICAL FIX: Temporarily hide sibling edges during layout to prevent vertical stacking
+    const siblingEdges = cyRef.current.edges('[type = "sibling"]');
+    const hiddenSiblingEdges = siblingEdges.style('display', 'none');
+    
+    // Run layout WITHOUT sibling edges
     let layout = cyRef.current.layout(preferGrid ? { name: 'grid', fit: true, padding: 50 } : elkOptions);
     layoutRef.current = layout;
     
@@ -909,6 +1029,14 @@ const FamilyTreeVisualization: React.FC<FamilyTreeVisualizationProps> = ({
       }, 100);
     });
 
+    // Listen for layout completion to restore sibling edges
+    layout.on('layoutstop', () => {
+      // Restore sibling edges after layout is complete
+      if (siblingEdges && cyRef.current) {
+        siblingEdges.style('display', 'element');
+      }
+    });
+
     try {
       if (cyRef.current && !cyRef.current.destroyed() && cyRef.current.elements().length > 0) {
         layout.run();
@@ -917,12 +1045,20 @@ const FamilyTreeVisualization: React.FC<FamilyTreeVisualizationProps> = ({
       // Fallback to grid layout to avoid crashes if ELK fails
       try {
         if (cyRef.current && !cyRef.current.destroyed()) {
+          // Restore sibling edges before fallback layout
+          if (siblingEdges) {
+            siblingEdges.style('display', 'element');
+          }
           layout = cyRef.current.layout({ name: 'grid', fit: true, padding: 50 });
           layoutRef.current = layout;
           layout.run();
         }
       } catch (e2) {
         console.error('Cytoscape layout failed', e2);
+        // Ensure sibling edges are visible even on error
+        if (siblingEdges && cyRef.current && !cyRef.current.destroyed()) {
+          siblingEdges.style('display', 'element');
+        }
       }
     }
 
@@ -1100,12 +1236,26 @@ const FamilyTreeVisualization: React.FC<FamilyTreeVisualizationProps> = ({
   
   const handleRelayout = () => {
     if (!cyRef.current) return;
+    
+    // Hide sibling edges during relayout
+    const siblingEdges = cyRef.current.edges('[type = "sibling"]');
+    siblingEdges.style('display', 'none');
+    
     const layout = cyRef.current.layout(elkOptions);
+    
+    // Restore sibling edges after layout
+    layout.on('layoutstop', () => {
+      if (siblingEdges && cyRef.current) {
+        siblingEdges.style('display', 'element');
+      }
+    });
+    
     layout.run();
     setTimeout(() => {
       if (cyRef.current) {
         cyRef.current.fit(undefined, 60);
         cyRef.current.center();
+        renderCustomEdges();
       }
     }, 800);
   };
