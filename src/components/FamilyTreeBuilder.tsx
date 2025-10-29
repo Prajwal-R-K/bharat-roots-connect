@@ -72,6 +72,7 @@ const FamilyTreeBuilder: React.FC<FamilyTreeBuilderProps> = ({ onComplete, onBac
 
   const nodesRef = useRef(nodes);
   const edgesRef = useRef(edges);
+  const initializingRef = useRef(false);
   
   useEffect(() => {
     nodesRef.current = nodes;
@@ -148,27 +149,35 @@ const FamilyTreeBuilder: React.FC<FamilyTreeBuilderProps> = ({ onComplete, onBac
   // Initialize family tree, root user, and root node
   useEffect(() => {
     const initialize = async () => {
-      if (registrationData && !familyTreeId && nodes.length === 0) {
-        const { familyTreeId: ftId, rootUser: ru } = await initializeFamilyTree(registrationData);
-        setFamilyTreeId(ftId);
-        setRootUser(ru);
+      // Prevent double initialization in React Strict Mode
+      if (registrationData && !familyTreeId && nodes.length === 0 && !initializingRef.current) {
+        initializingRef.current = true;
+        
+        try {
+          const { familyTreeId: ftId, rootUser: ru } = await initializeFamilyTree(registrationData);
+          setFamilyTreeId(ftId);
+          setRootUser(ru);
 
-        const rootNode: FamilyMemberNode = {
-          id: 'root',
-          type: 'familyMember',
-          position: { x: 0, y: 0 },
-          data: {
-            label: ru.name,
-            name: ru.name,
-            email: ru.email,
-            generation: 0,
-            isRoot: true,
-            onAddRelation: handleAddRelation,
-            gender: ru.gender,
-            userId: ru.userId,
-          }
-        };
-        setNodes([rootNode]);
+          const rootNode: FamilyMemberNode = {
+            id: 'root',
+            type: 'familyMember',
+            position: { x: 0, y: 0 },
+            data: {
+              label: ru.name,
+              name: ru.name,
+              email: ru.email,
+              generation: 0,
+              isRoot: true,
+              onAddRelation: handleAddRelation,
+              gender: ru.gender,
+              userId: ru.userId,
+            }
+          };
+          setNodes([rootNode]);
+        } catch (error) {
+          console.error('Failed to initialize family tree:', error);
+          initializingRef.current = false; // Reset flag on error
+        }
       }
     };
     initialize();
