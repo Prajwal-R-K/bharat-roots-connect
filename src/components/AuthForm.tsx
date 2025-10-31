@@ -5,7 +5,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { getUserByEmailOrId, verifyPassword, updateUser } from "@/lib/neo4j";
+import { getUserByEmailOrId, getUsersByEmail, verifyPassword, updateUser } from "@/lib/neo4j";
 import { cn } from "@/lib/utils";
 import { Icons } from "@/components/icons";
 import { Separator } from "@/components/ui/separator";
@@ -27,6 +27,9 @@ const AuthForm = () => {
     userId: "",
     gender: "",
   });
+  const [showUserSelection, setShowUserSelection] = useState(false);
+  const [availableUsers, setAvailableUsers] = useState<any[]>([]);
+  const [selectedUserId, setSelectedUserId] = useState("");
   const [showActivation, setShowActivation] = useState(false);
   const [invitedUser, setInvitedUser] = useState<any>(null);
   const [activationInput, setActivationInput] = useState({
@@ -70,50 +73,31 @@ const AuthForm = () => {
     setIsLoading(true);
 
     try {
-      const existingUser = await getUserByEmailOrId(input.email);
-
-      if (!existingUser) {
+      // Check if multiple users exist with this email
+      const usersWithEmail = await getUsersByEmail(input.email);
+      
+      if (usersWithEmail.length === 0) {
         toast({
           title: "Invalid credentials",
-          description: "Incorrect email or password.",
+          description: "No account found with this email.",
           variant: "destructive",
         });
         setIsLoading(false);
         return;
       }
-
-      const isPasswordValid = await verifyPassword(
-        input.password,
-        existingUser.password
-      );
-
-      if (!isPasswordValid) {
-        toast({
-          title: "Invalid credentials",
-          description: "Incorrect email or password.",
-          variant: "destructive",
-        });
+      
+      if (usersWithEmail.length > 1) {
+        // Multiple users found, show selection dropdown
+        setAvailableUsers(usersWithEmail);
+        setShowUserSelection(true);
         setIsLoading(false);
         return;
       }
-
-      if (existingUser.status === "invited") {
-        // Show activation section
-        setInvitedUser(existingUser);
-        setShowActivation(true);
-        setIsLoading(false);
-        return;
-      }
-
-      localStorage.setItem("userId", existingUser.userId);
-      localStorage.setItem("userData", JSON.stringify(existingUser));
-      toast({
-        title: "Login successful",
-        description: "You have successfully logged in.",
-      });
-
-      setIsLoading(false);
-      navigate("/dashboard", { state: { user: existingUser } });
+      
+      // Single user found, proceed with login
+      const existingUser = usersWithEmail[0];
+      await proceedWithLogin(existingUser);
+      
     } catch (error) {
       console.error("Login error:", error);
       toast({
@@ -123,6 +107,61 @@ const AuthForm = () => {
       });
       setIsLoading(false);
     }
+  };
+  
+  const handleUserSelection = async () => {
+    if (!selectedUserId) {
+      toast({
+        title: "Selection required",
+        description: "Please select a user account.",
+        variant: "destructive",
+      });
+      return;
+    }
+    
+    setIsLoading(true);
+    const selectedUser = availableUsers.find(user => user.userId === selectedUserId);
+    if (selectedUser) {
+      await proceedWithLogin(selectedUser);
+    }
+  };
+  
+  const proceedWithLogin = async (existingUser: any) => {
+    const isPasswordValid = await verifyPassword(
+      input.password,
+      existingUser.password
+    );
+
+    if (!isPasswordValid) {
+      toast({
+        title: "Invalid credentials",
+        description: "Incorrect password.",
+        variant: "destructive",
+      });
+      setIsLoading(false);
+      setShowUserSelection(false);
+      return;
+    }
+
+    if (existingUser.status === "invited") {
+      // Show activation section
+      setInvitedUser(existingUser);
+      setShowActivation(true);
+      setShowUserSelection(false);
+      setIsLoading(false);
+      return;
+    }
+
+    localStorage.setItem("userId", existingUser.userId);
+    localStorage.setItem("userData", JSON.stringify(existingUser));
+    toast({
+      title: "Login successful",
+      description: "You have successfully logged in.",
+    });
+
+    setIsLoading(false);
+    setShowUserSelection(false);
+    navigate("/dashboard", { state: { user: existingUser } });
   };
 
   const handleRegister = async (e: React.SyntheticEvent) => {
@@ -343,6 +382,50 @@ const AuthForm = () => {
             >
               {isLoading ? "Activating..." : "Activate Account"}
             </Button>
+          </CardContent>
+        </Card>
+      ) : showUserSelection ? (
+        <Card className="w-[350px]">
+          <CardHeader>
+            <CardTitle>Select Your Account</CardTitle>
+            <CardDescription>
+              Multiple accounts found with this email. Please select your account.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div className="space-y-2">
+              <Label htmlFor="userSelect">Select Account</Label>
+              <select
+                id="userSelect"
+                value={selectedUserId}
+                onChange={(e) => setSelectedUserId(e.target.value)}
+                className="w-full border rounded px-3 py-2 focus:outline-none focus:ring"
+                required
+              >
+                <option value="">Choose an account</option>
+                {availableUsers.map(user => (
+                  <option key={user.userId} value={user.userId}>
+                    {user.name} ({user.userId})
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div className="flex gap-2">
+              <Button
+                variant="outline"
+                onClick={() => setShowUserSelection(false)}
+                className="flex-1"
+              >
+                Back
+              </Button>
+              <Button
+                onClick={handleUserSelection}
+                disabled={isLoading || !selectedUserId}
+                className="flex-1"
+              >
+                {isLoading ? "Logging in..." : "Login"}
+              </Button>
+            </div>
           </CardContent>
         </Card>
       ) : showFamilyTreeBuilder ? (

@@ -121,6 +121,17 @@ export const FamilyNode: React.FC<FamilyNodeProps> = ({ data, id, selected }) =>
 								<span>{data.dateOfBirth}</span>
 							</div>
 						)}
+						{data.isAlive === false && data.dateOfDeath && (
+							<div className="flex items-center justify-center text-xs text-red-600 space-x-1 bg-red-50 rounded-full px-2 py-1">
+								<Calendar className="w-3 h-3 flex-shrink-0" />
+								<span>† {data.dateOfDeath}</span>
+							</div>
+						)}
+						{data.isAlive === false && (
+							<div className="inline-flex items-center text-[11px] font-semibold text-white px-2 py-0.5 rounded-full bg-gray-600">
+								Deceased
+							</div>
+						)}
 					</div>
 
 					{/* Relationship Badge */}

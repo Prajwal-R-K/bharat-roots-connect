@@ -25,6 +25,8 @@ export interface FamilyMemberNode extends Node {
 		status?: string;
 		isHighlighted?: boolean;
 		isSelected?: boolean;
+		isAlive?: boolean;
+		dateOfDeath?: string;
 	};
 }
 

@@ -82,17 +82,20 @@ export const addFamilyMemberWithRelationships = async (
 
   // Create new user with enhanced data structure
   const memberData: any = {
-    userId: generateId('U'),
+    userId: newMember.hasEmail ? generateId('U') : newMember.userId,
     name: newMember.name,
-    email: newMember.email,
+    email: newMember.hasEmail ? newMember.email : '',
     phone: newMember.phone,
-    status: 'invited' as const,
+    status: newMember.hasEmail ? 'invited' as const : 'active' as const,
     familyTreeId,
     createdBy: rootUser.userId,
     createdAt: getCurrentDateTime(),
     myRelationship: newMember.relationship,
     gender: newMember.gender || 'other',
     dateOfBirth: newMember.dateOfBirth,
+    isAlive: newMember.isAlive,
+    dateOfDeath: newMember.isAlive ? '' : newMember.dateOfDeath,
+    password: newMember.hasEmail ? undefined : newMember.password,
   };
 
   if (selectedRelationshipCategory === 'spouse') {
@@ -128,7 +131,9 @@ export const addFamilyMemberWithRelationships = async (
       marriageDate: newMember.marriageDate,
       marriageStatus: newMember.marriageStatus,
       userId: newUserId,
-      status: 'invited'
+      status: newMember.hasEmail ? 'invited' : 'active',
+      isAlive: newMember.isAlive,
+      dateOfDeath: newMember.isAlive ? '' : newMember.dateOfDeath
     }
   };
 

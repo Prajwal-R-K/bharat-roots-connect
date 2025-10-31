@@ -14,20 +14,33 @@ function generateRandomPassword(length = 8) {
 }
 
 export const createUser = async (userData: any) => {
-  // If no userId is provided, use a temporary placeholder for invited users
-  if (!userData.userId && userData.status === 'invited') {
-    userData.userId = `temp_${generateId('U')}`;
-    console.log(`Generated temporary userId ${userData.userId} for invited user ${userData.email}`);
+  // Handle users without email - generate unique userId if not provided
+  if (!userData.userId) {
+    if (userData.status === 'invited' || !userData.email) {
+      userData.userId = `temp_${generateId('U')}`;
+      console.log(`Generated temporary userId ${userData.userId} for user ${userData.name}`);
+    }
   }
   
-  // Autogenerate password for invited family members
-  const finalPassword = userData.status === 'invited'
-    ? generateRandomPassword(8)
-    : (userData.password || '');
+  // Handle password creation
+  let finalPassword;
+  if (userData.password) {
+    // User provided password (for family members without email)
+    finalPassword = await hashPassword(userData.password);
+  } else if (userData.status === 'invited') {
+    // Autogenerate password for invited family members
+    finalPassword = await hashPassword(generateRandomPassword(8));
+  } else {
+    finalPassword = '';
+  }
 
   // Ensure required optional fields are present
   userData.phone = userData.phone ?? '';
   userData.myRelationship = userData.myRelationship ?? '';
+  userData.email = userData.email ?? ''; // Allow empty email
+  userData.isAlive = userData.isAlive ?? true;
+  userData.dateOfBirth = userData.dateOfBirth ?? '';
+  userData.dateOfDeath = userData.dateOfDeath ?? '';
 
   const cypher = `
     CREATE (u:User {
@@ -41,7 +54,10 @@ export const createUser = async (userData: any) => {
       createdAt: $createdAt,
       gender: $gender,
       phone: $phone,
-      myRelationship: $myRelationship
+      myRelationship: $myRelationship,
+      isAlive: $isAlive,
+      dateOfBirth: $dateOfBirth,
+      dateOfDeath: $dateOfDeath
     })
     RETURN u
   `;
@@ -59,7 +75,7 @@ export const createUser = async (userData: any) => {
 export const getUserByEmailOrId = async (identifier: string): Promise<User | null> => {
   const cypher = `
     MATCH (u:User)
-    WHERE u.userId = $identifier OR u.email = $identifier
+    WHERE u.userId = $identifier OR (u.email = $identifier AND u.email <> '')
     RETURN u
   `;
   
@@ -68,6 +84,19 @@ export const getUserByEmailOrId = async (identifier: string): Promise<User | nul
     return result[0].u.properties as User;
   }
   return null;
+};
+
+// New function to get all users by email for login dropdown
+export const getUsersByEmail = async (email: string): Promise<User[]> => {
+  const cypher = `
+    MATCH (u:User)
+    WHERE u.email = $email AND u.email <> '' AND u.status = 'active'
+    RETURN u
+    ORDER BY u.name
+  `;
+  
+  const result = await runQuery(cypher, { email });
+  return result.map(record => record.u.properties as User);
 };
 
 export const updateUser = async (userId: string, userData: Partial<User>): Promise<User> => {

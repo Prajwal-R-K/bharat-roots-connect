@@ -1,5 +1,5 @@
 import * as React from 'react';
-import { User, Calendar, MessageSquare, Users, Settings, Home, Plus, Download, Mail, LogOut, X, CalendarIcon, UserPlus, Camera, Menu, Link2, Bell } from 'lucide-react';
+import { User, Calendar, MessageSquare, Users, Settings, Home, Plus, Download, Mail, LogOut, X, CalendarIcon, UserPlus, Camera, Menu, Link2, Bell, Compass } from 'lucide-react';
 
 import { useNavigate } from 'react-router-dom';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -10,6 +10,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Calendar as CalendarComponent } from '@/components/ui/calendar';
 import { useToast } from '@/hooks/use-toast';
 import { updateUserProfile, getFamilyMembers, getUserByEmailOrId, getUnreadInterconnectCount, getIncomingInterconnectRequests, markInterconnectRequestRead, acceptInterconnectRequest, rejectInterconnectRequest, deleteInterconnectRequestForUser } from '@/lib/neo4j';
@@ -21,6 +22,9 @@ import FamilyTreeVisualization from './FamilyTreeVisualization1';
 import RelationshipAnalyzer from './RelationshipAnalyzer';
 import { format } from 'date-fns';
 import { cn } from '@/lib/utils';
+import { createUser } from '@/lib/neo4j';
+import { createCoreRelationship } from '@/lib/neo4j/relationships';
+import { generateId, getCurrentDateTime } from '@/lib/utils';
 
 interface DashboardProps {
   user: UserType;
@@ -46,6 +50,24 @@ const Dashboard: React.FC<DashboardProps> = ({ user: initialUser, onUserUpdate }
   const [notifOpen, setNotifOpen] = React.useState(false);
   const [loadingNotifs, setLoadingNotifs] = React.useState(false);
   const [incomingNotifs, setIncomingNotifs] = React.useState<InterconnectRequest[]>([]);
+  
+  // State for Explore feature
+  const [exploreOpen, setExploreOpen] = React.useState(false);
+  const [addMemberOpen, setAddMemberOpen] = React.useState(false);
+  const [newMember, setNewMember] = React.useState({
+    name: '',
+    relationship: '',
+    gender: '',
+    email: '',
+    phone: '',
+    dateOfBirth: '',
+    hasEmail: true,
+    userId: '',
+    password: '',
+    confirmPassword: '',
+    isAlive: true,
+    dateOfDeath: ''
+  });
 
   // Update user state when initialUser prop changes
   React.useEffect(() => {
@@ -294,6 +316,129 @@ const Dashboard: React.FC<DashboardProps> = ({ user: initialUser, onUserUpdate }
     fetchIncomingList();
     if (!ok) {
       toast({ title: 'Delete failed', description: 'Unable to delete notification', variant: 'destructive' });
+    }
+  };
+
+  // Handle adding a new family member from Explore feature
+  const handleAddFamilyMember = async () => {
+    try {
+      // Validation
+      if (!newMember.name || !newMember.relationship || !newMember.gender) {
+        toast({
+          title: 'Missing required fields',
+          description: 'Please fill in name, relationship, and gender.',
+          variant: 'destructive'
+        });
+        return;
+      }
+
+      // Validate based on email/non-email user
+      if (newMember.hasEmail && !newMember.email) {
+        toast({
+          title: 'Email required',
+          description: 'Please provide an email address.',
+          variant: 'destructive'
+        });
+        return;
+      }
+
+      if (!newMember.hasEmail) {
+        if (!newMember.userId || !newMember.password || !newMember.confirmPassword) {
+          toast({
+            title: 'Missing credentials',
+            description: 'Please provide userId, password, and confirm password.',
+            variant: 'destructive'
+          });
+          return;
+        }
+
+        if (newMember.password !== newMember.confirmPassword) {
+          toast({
+            title: "Passwords don't match",
+            description: 'Please make sure your passwords match.',
+            variant: 'destructive'
+          });
+          return;
+        }
+      }
+
+      // Create new user
+      const memberData: any = {
+        userId: newMember.hasEmail ? generateId('U') : newMember.userId,
+        name: newMember.name,
+        email: newMember.hasEmail ? newMember.email : '',
+        phone: newMember.phone,
+        status: newMember.hasEmail ? 'invited' : 'active',
+        familyTreeId: user.familyTreeId,
+        createdBy: user.userId,
+        createdAt: getCurrentDateTime(),
+        myRelationship: newMember.relationship,
+        gender: newMember.gender,
+        dateOfBirth: newMember.dateOfBirth,
+        isAlive: newMember.isAlive,
+        dateOfDeath: newMember.isAlive ? '' : newMember.dateOfDeath,
+        password: newMember.hasEmail ? undefined : newMember.password,
+      };
+
+      const createdMember = await createUser(memberData);
+
+      // Create relationship based on type
+      const relationshipType = newMember.relationship.toLowerCase();
+      
+      // Map semantic relationship to core relationship and determine direction
+      if (relationshipType === 'son' || relationshipType === 'daughter') {
+        // For children: User is PARENT_OF the new member
+        await createCoreRelationship(
+          user.familyTreeId,
+          user.userId,
+          createdMember.userId,
+          'PARENTS_OF'
+        );
+      } else if (relationshipType === 'spouse' || relationshipType === 'husband' || relationshipType === 'wife') {
+        // For spouse: Bidirectional MARRIED_TO relationship
+        await createCoreRelationship(
+          user.familyTreeId,
+          user.userId,
+          createdMember.userId,
+          'MARRIED_TO'
+        );
+      }
+
+      toast({
+        title: 'Family member added',
+        description: `${newMember.name} has been added to your family tree.`
+      });
+
+      // Reset form
+      setNewMember({
+        name: '',
+        relationship: '',
+        gender: '',
+        email: '',
+        phone: '',
+        dateOfBirth: '',
+        hasEmail: true,
+        userId: '',
+        password: '',
+        confirmPassword: '',
+        isAlive: true,
+        dateOfDeath: ''
+      });
+
+      setAddMemberOpen(false);
+      setExploreOpen(false);
+
+      // Refresh family members to update the visualization
+      const updatedMembers = await getFamilyMembers(user.familyTreeId);
+      setFamilyMembers(updatedMembers);
+
+    } catch (error) {
+      console.error('Error adding family member:', error);
+      toast({
+        title: 'Error',
+        description: 'Failed to add family member. Please try again.',
+        variant: 'destructive'
+      });
     }
   };
 
@@ -636,25 +781,38 @@ const Dashboard: React.FC<DashboardProps> = ({ user: initialUser, onUserUpdate }
               <div className="w-4 h-4 bg-white rounded-full animate-bounce [animation-delay:0.3s] shadow-lg"></div>
             </div>
             
-            {/* Animated Family Tree View Button - White theme */}
-            <button
-              onClick={() => {
-                const familyTreeSection = document.getElementById('family-tree-section');
-                familyTreeSection?.scrollIntoView({ behavior: 'smooth', block: 'start' });
-              }}
-              className="group relative inline-flex items-center justify-center px-8 py-4 text-lg font-bold transition-all duration-300 bg-white/20 backdrop-blur-sm text-white rounded-full shadow-2xl hover:shadow-white/30 hover:scale-110 transform animate-pulse hover:animate-none border-2 border-white/50 hover:bg-white/30"
-            >
-              <span className="absolute inset-0 w-full h-full bg-white/10 rounded-full blur opacity-30 group-hover:opacity-50 transition-opacity duration-300"></span>
-              <span className="relative flex items-center gap-3 font-serif">
-                <svg className="w-6 h-6 animate-spin group-hover:animate-none" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 14l-7 7m0 0l-7-7m7 7V3" />
-                </svg>
-                Family Tree View
-                <svg className="w-6 h-6 animate-bounce group-hover:animate-none" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 14l-7 7m0 0l-7-7m7 7V3" />
-                </svg>
-              </span>
-            </button>
+            {/* Action Buttons - Family Tree View and Explore */}
+            <div className="flex flex-col sm:flex-row gap-4 items-center justify-center">
+              <button
+                onClick={() => {
+                  const familyTreeSection = document.getElementById('family-tree-section');
+                  familyTreeSection?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                }}
+                className="group relative inline-flex items-center justify-center px-8 py-4 text-lg font-bold transition-all duration-300 bg-white/20 backdrop-blur-sm text-white rounded-full shadow-2xl hover:shadow-white/30 hover:scale-110 transform animate-pulse hover:animate-none border-2 border-white/50 hover:bg-white/30"
+              >
+                <span className="absolute inset-0 w-full h-full bg-white/10 rounded-full blur opacity-30 group-hover:opacity-50 transition-opacity duration-300"></span>
+                <span className="relative flex items-center gap-3 font-serif">
+                  <svg className="w-6 h-6 animate-spin group-hover:animate-none" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 14l-7 7m0 0l-7-7m7 7V3" />
+                  </svg>
+                  Family Tree View
+                  <svg className="w-6 h-6 animate-bounce group-hover:animate-none" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 14l-7 7m0 0l-7-7m7 7V3" />
+                  </svg>
+                </span>
+              </button>
+
+              <button
+                onClick={() => setExploreOpen(true)}
+                className="group relative inline-flex items-center justify-center px-8 py-4 text-lg font-bold transition-all duration-300 bg-amber-500/90 backdrop-blur-sm text-white rounded-full shadow-2xl hover:shadow-amber-500/30 hover:scale-110 transform border-2 border-amber-400/50 hover:bg-amber-600/90"
+              >
+                <span className="absolute inset-0 w-full h-full bg-amber-400/20 rounded-full blur opacity-30 group-hover:opacity-50 transition-opacity duration-300"></span>
+                <span className="relative flex items-center gap-3 font-serif">
+                  <Compass className="w-6 h-6" />
+                  Explore Features
+                </span>
+              </button>
+            </div>
           </div>
         </div>
 
@@ -978,6 +1136,299 @@ const Dashboard: React.FC<DashboardProps> = ({ user: initialUser, onUserUpdate }
           </div>
         </div>
       )}
+
+      {/* Explore Dialog */}
+      <Dialog open={exploreOpen} onOpenChange={setExploreOpen}>
+        <DialogContent className="sm:max-w-2xl border-0 p-0 overflow-hidden">
+          {/* Header Section with Gradient */}
+          <div className="bg-gradient-to-br from-purple-600 via-purple-500 to-indigo-600 text-white p-8 text-center">
+            <h2 className="text-3xl font-bold mb-3">Welcome to Your Family</h2>
+            <p className="text-purple-100 text-lg">Connect, share, and celebrate together</p>
+            
+            {/* Navigation Dots */}
+            <div className="flex justify-center gap-2 mt-6">
+              <div className="w-3 h-3 rounded-full bg-white"></div>
+              <div className="w-3 h-3 rounded-full bg-white/50"></div>
+              <div className="w-3 h-3 rounded-full bg-white/50"></div>
+              <div className="w-3 h-3 rounded-full bg-white/50"></div>
+              <div className="w-3 h-3 rounded-full bg-white/50"></div>
+            </div>
+          </div>
+
+          {/* Features Section */}
+          <div className="p-8 bg-white">
+            {/* Main Feature - Add Family Member */}
+            <div className="mb-6">
+              <Button
+                variant="outline"
+                onClick={() => {
+                  setExploreOpen(false);
+                  setAddMemberOpen(true);
+                }}
+                className="w-full h-auto py-6 px-6 border-2 border-amber-300 hover:border-amber-500 hover:bg-amber-50 transition-all duration-300"
+              >
+                <div className="flex flex-col items-center gap-2 w-full">
+                  <UserPlus className="w-8 h-8 text-amber-600" />
+                  <span className="text-lg font-semibold text-slate-800">Add Family Member</span>
+                  <p className="text-xs text-slate-500 text-center">Add new members directly connected to you</p>
+                </div>
+              </Button>
+            </div>
+
+            {/* Additional Features Grid */}
+            <div className="mt-6 grid grid-cols-2 gap-3">
+              <Button
+                variant="ghost"
+                className="h-24 border border-dashed border-slate-300 hover:border-slate-400 flex-col gap-2 opacity-50 cursor-not-allowed"
+                disabled
+              >
+                <Plus className="w-6 h-6 text-slate-400" />
+                <span className="text-sm text-slate-400">Health Details</span>
+              </Button>
+              <Button
+                variant="ghost"
+                className="h-24 border border-dashed border-slate-300 hover:border-slate-400 flex-col gap-2 opacity-50 cursor-not-allowed"
+                disabled
+              >
+                <Plus className="w-6 h-6 text-slate-400" />
+                <span className="text-sm text-slate-400">Property Details</span>
+              </Button>
+              <Button
+                variant="ghost"
+                className="h-24 border border-dashed border-slate-300 hover:border-slate-400 flex-col gap-2 opacity-50 cursor-not-allowed"
+                disabled
+              >
+                <Plus className="w-6 h-6 text-slate-400" />
+                <span className="text-sm text-slate-400">Documents</span>
+              </Button>
+              <Button
+                variant="ghost"
+                className="h-24 border border-dashed border-slate-300 hover:border-slate-400 flex-col gap-2 opacity-50 cursor-not-allowed"
+                disabled
+              >
+                <Plus className="w-6 h-6 text-slate-400" />
+                <span className="text-sm text-slate-400">More Coming</span>
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Add Family Member Dialog */}
+      <Dialog open={addMemberOpen} onOpenChange={setAddMemberOpen}>
+        <DialogContent className="sm:max-w-2xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle className="text-xl font-bold">Add Family Member</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4 py-4">
+            {/* Name */}
+            <div>
+              <Label htmlFor="memberName" className="text-sm font-medium">Name *</Label>
+              <Input
+                id="memberName"
+                value={newMember.name}
+                onChange={(e) => setNewMember({ ...newMember, name: e.target.value })}
+                placeholder="Enter full name"
+                className="mt-1"
+              />
+            </div>
+
+            {/* Relationship */}
+            <div>
+              <Label htmlFor="memberRelationship" className="text-sm font-medium">Relationship *</Label>
+              <Select value={newMember.relationship} onValueChange={(value) => setNewMember({ ...newMember, relationship: value })}>
+                <SelectTrigger className="mt-1">
+                  <SelectValue placeholder="Select relationship" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="son">Son</SelectItem>
+                  <SelectItem value="daughter">Daughter</SelectItem>
+                  <SelectItem value="spouse">Spouse</SelectItem>
+                  <SelectItem value="husband">Husband</SelectItem>
+                  <SelectItem value="wife">Wife</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+
+            {/* Gender */}
+            <div>
+              <Label htmlFor="memberGender" className="text-sm font-medium">Gender *</Label>
+              <Select value={newMember.gender} onValueChange={(value) => setNewMember({ ...newMember, gender: value })}>
+                <SelectTrigger className="mt-1">
+                  <SelectValue placeholder="Select gender" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="male">Male</SelectItem>
+                  <SelectItem value="female">Female</SelectItem>
+                  <SelectItem value="other">Other</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+
+            {/* Email Toggle */}
+            <div>
+              <Label className="text-sm font-medium">Does this person have an email?</Label>
+              <div className="flex gap-4 mt-2">
+                <label className="flex items-center">
+                  <input
+                    type="radio"
+                    name="hasEmail"
+                    checked={newMember.hasEmail}
+                    onChange={() => setNewMember({ ...newMember, hasEmail: true, userId: '', password: '', confirmPassword: '' })}
+                    className="mr-2"
+                  />
+                  Yes, has email
+                </label>
+                <label className="flex items-center">
+                  <input
+                    type="radio"
+                    name="hasEmail"
+                    checked={!newMember.hasEmail}
+                    onChange={() => setNewMember({ ...newMember, hasEmail: false, email: '' })}
+                    className="mr-2"
+                  />
+                  No email
+                </label>
+              </div>
+            </div>
+
+            {/* Email Field (if has email) */}
+            {newMember.hasEmail && (
+              <div>
+                <Label htmlFor="memberEmail" className="text-sm font-medium">Email *</Label>
+                <Input
+                  id="memberEmail"
+                  type="email"
+                  value={newMember.email}
+                  onChange={(e) => setNewMember({ ...newMember, email: e.target.value })}
+                  placeholder="Enter email address"
+                  className="mt-1"
+                />
+              </div>
+            )}
+
+            {/* UserId and Password Fields (if no email) */}
+            {!newMember.hasEmail && (
+              <>
+                <div>
+                  <Label htmlFor="memberUserId" className="text-sm font-medium">User ID *</Label>
+                  <Input
+                    id="memberUserId"
+                    value={newMember.userId}
+                    onChange={(e) => setNewMember({ ...newMember, userId: e.target.value })}
+                    placeholder="Create a unique user ID"
+                    className="mt-1"
+                  />
+                </div>
+                <div>
+                  <Label htmlFor="memberPassword" className="text-sm font-medium">Password *</Label>
+                  <Input
+                    id="memberPassword"
+                    type="password"
+                    value={newMember.password}
+                    onChange={(e) => setNewMember({ ...newMember, password: e.target.value })}
+                    placeholder="Create a password"
+                    className="mt-1"
+                  />
+                </div>
+                <div>
+                  <Label htmlFor="memberConfirmPassword" className="text-sm font-medium">Confirm Password *</Label>
+                  <Input
+                    id="memberConfirmPassword"
+                    type="password"
+                    value={newMember.confirmPassword}
+                    onChange={(e) => setNewMember({ ...newMember, confirmPassword: e.target.value })}
+                    placeholder="Confirm password"
+                    className="mt-1"
+                  />
+                </div>
+              </>
+            )}
+
+            {/* Alive/Dead Status */}
+            <div>
+              <Label className="text-sm font-medium">Status</Label>
+              <div className="flex gap-4 mt-2">
+                <label className="flex items-center">
+                  <input
+                    type="radio"
+                    name="isAlive"
+                    checked={newMember.isAlive}
+                    onChange={() => setNewMember({ ...newMember, isAlive: true, dateOfDeath: '' })}
+                    className="mr-2"
+                  />
+                  Alive
+                </label>
+                <label className="flex items-center">
+                  <input
+                    type="radio"
+                    name="isAlive"
+                    checked={!newMember.isAlive}
+                    onChange={() => setNewMember({ ...newMember, isAlive: false })}
+                    className="mr-2"
+                  />
+                  Deceased
+                </label>
+              </div>
+            </div>
+
+            {/* Birth Date */}
+            <div>
+              <Label htmlFor="memberDateOfBirth" className="text-sm font-medium">Date of Birth</Label>
+              <Input
+                id="memberDateOfBirth"
+                type="date"
+                value={newMember.dateOfBirth}
+                onChange={(e) => setNewMember({ ...newMember, dateOfBirth: e.target.value })}
+                className="mt-1"
+              />
+            </div>
+
+            {/* Death Date (if deceased) */}
+            {!newMember.isAlive && (
+              <div>
+                <Label htmlFor="memberDateOfDeath" className="text-sm font-medium">Date of Death</Label>
+                <Input
+                  id="memberDateOfDeath"
+                  type="date"
+                  value={newMember.dateOfDeath}
+                  onChange={(e) => setNewMember({ ...newMember, dateOfDeath: e.target.value })}
+                  className="mt-1"
+                />
+              </div>
+            )}
+
+            {/* Phone */}
+            <div>
+              <Label htmlFor="memberPhone" className="text-sm font-medium">Phone (Optional)</Label>
+              <Input
+                id="memberPhone"
+                value={newMember.phone}
+                onChange={(e) => setNewMember({ ...newMember, phone: e.target.value })}
+                placeholder="Enter phone number"
+                className="mt-1"
+              />
+            </div>
+
+            {/* Action Buttons */}
+            <div className="flex gap-3 pt-4">
+              <Button
+                variant="outline"
+                onClick={() => setAddMemberOpen(false)}
+                className="flex-1"
+              >
+                Cancel
+              </Button>
+              <Button
+                onClick={handleAddFamilyMember}
+                className="flex-1 bg-gradient-to-r from-amber-500 to-orange-600 hover:from-amber-600 hover:to-orange-700"
+              >
+                Add Member
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 };

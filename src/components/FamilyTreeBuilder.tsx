@@ -61,7 +61,16 @@ const FamilyTreeBuilder: React.FC<FamilyTreeBuilderProps> = ({ onComplete, onBac
     gender: '',
     dateOfBirth: '',
     marriageDate: '',
-    marriageStatus: 'married'
+    marriageStatus: 'married',
+    hasEmail: false,
+    userId: '',
+    password: '',
+    confirmPassword: '',
+    isAlive: true,
+    dateOfDeath: '',
+    aliveStatus: '',
+    birthDate: '',
+    deathDate: ''
   });
   const [isLoading, setIsLoading] = useState(false);
   const [selectedNode, setSelectedNode] = useState<any>(null);
@@ -142,7 +151,16 @@ const FamilyTreeBuilder: React.FC<FamilyTreeBuilderProps> = ({ onComplete, onBac
       gender: '',
       dateOfBirth: '',
       marriageDate: '',
-      marriageStatus: 'married'
+      marriageStatus: 'married',
+      hasEmail: true,
+      userId: '',
+      password: '',
+      confirmPassword: '',
+      isAlive: true,
+      dateOfDeath: '',
+      aliveStatus: '',
+      birthDate: '',
+      deathDate: ''
     });
   }, []);
 
@@ -171,6 +189,8 @@ const FamilyTreeBuilder: React.FC<FamilyTreeBuilderProps> = ({ onComplete, onBac
               onAddRelation: handleAddRelation,
               gender: ru.gender,
               userId: ru.userId,
+              isAlive: true,
+              status: 'active'
             }
           };
           setNodes([rootNode]);
@@ -208,13 +228,50 @@ const FamilyTreeBuilder: React.FC<FamilyTreeBuilderProps> = ({ onComplete, onBac
   };
 
   const addFamilyMember = async () => {
-    if (!newMember.name || !newMember.email || !newMember.relationship || !newMember.gender || !selectedNodeId || !familyTreeId || !rootUser) {
+    // Validate required fields based on whether user has email or not
+    const requiredFields = [newMember.name, newMember.relationship, newMember.gender];
+    
+    if (newMember.hasEmail) {
+      requiredFields.push(newMember.email);
+    } else {
+      requiredFields.push(newMember.userId, newMember.password, newMember.confirmPassword);
+    }
+    
+    if (requiredFields.some(field => !field) || !selectedNodeId || !familyTreeId || !rootUser) {
+      const missingFields = [];
+      if (!newMember.name) missingFields.push('name');
+      if (!newMember.relationship) missingFields.push('relationship');
+      if (!newMember.gender) missingFields.push('gender');
+      if (newMember.hasEmail && !newMember.email) missingFields.push('email');
+      if (!newMember.hasEmail && !newMember.userId) missingFields.push('userId');
+      if (!newMember.hasEmail && !newMember.password) missingFields.push('password');
+      if (!newMember.hasEmail && !newMember.confirmPassword) missingFields.push('confirm password');
+      
       toast({
         title: "Missing required fields",
-        description: "Please fill in all required fields (name, email, relationship, gender).",
+        description: `Please fill in: ${missingFields.join(', ')}.`,
         variant: "destructive",
       });
       return;
+    }
+
+    // Check password confirmation for users without email
+    if (!newMember.hasEmail && newMember.password !== newMember.confirmPassword) {
+      toast({
+        title: "Passwords don't match",
+        description: "Please make sure your passwords match.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    // Check if user is trying to reconnect to themselves (only for users with email)
+    if (newMember.hasEmail && newMember.email && rootUser && newMember.email === rootUser.email) {
+      toast({
+        title: "Cannot add yourself",
+        description: "You cannot add yourself as a family member. This will create a new family member with your email.",
+      });
+      // Continue with creation - don't return, just warn
     }
 
     const validation = await validateRelationshipAddition(selectedNode, selectedRelationshipCategory, familyTreeId, newMember);
@@ -234,14 +291,17 @@ const FamilyTreeBuilder: React.FC<FamilyTreeBuilderProps> = ({ onComplete, onBac
       }
     }
 
-    const emailExists = await checkEmailExists(newMember.email, nodes);
-    if (emailExists) {
-      toast({
-        title: "Email already exists",
-        description: "This email is already in use. Please use a different email.",
-        variant: "destructive",
-      });
-      return;
+    // Only check email if user has email
+    if (newMember.hasEmail && newMember.email) {
+      const emailExists = await checkEmailExists(newMember.email, nodes);
+      if (emailExists) {
+        toast({
+          title: "Email already exists",
+          description: "This email is already in use. Please use a different email.",
+          variant: "destructive",
+        });
+        return;
+      }
     }
 
     try {
@@ -269,7 +329,16 @@ const FamilyTreeBuilder: React.FC<FamilyTreeBuilderProps> = ({ onComplete, onBac
         gender: '',
         dateOfBirth: '',
         marriageDate: '',
-        marriageStatus: 'married'
+        marriageStatus: 'married',
+        hasEmail: true,
+        userId: '',
+        password: '',
+        confirmPassword: '',
+        isAlive: true,
+        dateOfDeath: '',
+        aliveStatus: '',
+        birthDate: '',
+        deathDate: ''
       });
 
       toast({
@@ -465,16 +534,111 @@ const FamilyTreeBuilder: React.FC<FamilyTreeBuilderProps> = ({ onComplete, onBac
               </Select>
             </div>
 
+            {/* Email Toggle */}
             <div>
-              <Label htmlFor="email" className="text-sm font-medium">Email *</Label>
-              <Input
-                id="email"
-                type="email"
-                value={newMember.email}
-                onChange={(e) => setNewMember({ ...newMember, email: e.target.value })}
-                placeholder="Enter email address"
-                className="mt-1"
-              />
+              <Label className="text-sm font-medium">Does this person have an email?</Label>
+              <div className="flex gap-4 mt-2">
+                <label className="flex items-center">
+                  <input
+                    type="radio"
+                    name="hasEmail"
+                    checked={newMember.hasEmail}
+                    onChange={() => setNewMember({ ...newMember, hasEmail: true, userId: '', password: '' })}
+                    className="mr-2"
+                  />
+                  Yes, has email
+                </label>
+                <label className="flex items-center">
+                  <input
+                    type="radio"
+                    name="hasEmail"
+                    checked={!newMember.hasEmail}
+                    onChange={() => setNewMember({ ...newMember, hasEmail: false, email: '' })}
+                    className="mr-2"
+                  />
+                  No email
+                </label>
+              </div>
+            </div>
+
+            {/* Email Field (if has email) */}
+            {newMember.hasEmail && (
+              <div>
+                <Label htmlFor="email" className="text-sm font-medium">Email *</Label>
+                <Input
+                  id="email"
+                  type="email"
+                  value={newMember.email}
+                  onChange={(e) => setNewMember({ ...newMember, email: e.target.value })}
+                  placeholder="Enter email address"
+                  className="mt-1"
+                />
+              </div>
+            )}
+
+            {/* UserId and Password Fields (if no email) */}
+            {!newMember.hasEmail && (
+              <>
+                <div>
+                  <Label htmlFor="userId" className="text-sm font-medium">User ID *</Label>
+                  <Input
+                    id="userId"
+                    value={newMember.userId}
+                    onChange={(e) => setNewMember({ ...newMember, userId: e.target.value })}
+                    placeholder="Create a unique user ID"
+                    className="mt-1"
+                  />
+                </div>
+                <div>
+                  <Label htmlFor="password" className="text-sm font-medium">Password *</Label>
+                  <Input
+                    id="password"
+                    type="password"
+                    value={newMember.password}
+                    onChange={(e) => setNewMember({ ...newMember, password: e.target.value })}
+                    placeholder="Create a password"
+                    className="mt-1"
+                  />
+                </div>
+                <div>
+                  <Label htmlFor="confirmPassword" className="text-sm font-medium">Confirm Password *</Label>
+                  <Input
+                    id="confirmPassword"
+                    type="password"
+                    value={newMember.confirmPassword}
+                    onChange={(e) => setNewMember({ ...newMember, confirmPassword: e.target.value })}
+                    placeholder="Confirm password"
+                    className="mt-1"
+                  />
+                </div>
+              </>
+            )}
+
+            {/* Alive/Dead Status */}
+            <div>
+              <Label className="text-sm font-medium">Status</Label>
+              <div className="flex gap-4 mt-2">
+                <label className="flex items-center">
+                  <input
+                    type="radio"
+                    name="isAlive"
+                    checked={newMember.isAlive}
+                    onChange={() => setNewMember({ ...newMember, isAlive: true, dateOfDeath: '' })}
+                    className="mr-2"
+                  />
+                  Alive
+                </label>
+                <label className="flex items-center">
+                  <input
+                    type="radio"
+                    name="isAlive"
+                    checked={!newMember.isAlive}
+                    onChange={() => setNewMember({ ...newMember, isAlive: false })}
+                    className="mr-2"
+                  />
+                  Deceased
+                </label>
+              </div>
             </div>
 
             {selectedRelationshipCategory === 'spouse' && (
@@ -505,6 +669,7 @@ const FamilyTreeBuilder: React.FC<FamilyTreeBuilderProps> = ({ onComplete, onBac
               </>
             )}
 
+            {/* Birth Date */}
             <div>
               <Label htmlFor="dateOfBirth" className="text-sm font-medium">Date of Birth</Label>
               <Input
@@ -515,6 +680,21 @@ const FamilyTreeBuilder: React.FC<FamilyTreeBuilderProps> = ({ onComplete, onBac
                 className="mt-1"
               />
             </div>
+
+            {/* Death Date (if deceased) */}
+            {!newMember.isAlive && (
+              <div>
+                <Label htmlFor="dateOfDeath" className="text-sm font-medium">Date of Death</Label>
+                <Input
+                  id="dateOfDeath"
+                  type="date"
+                  value={newMember.dateOfDeath}
+                  onChange={(e) => setNewMember({ ...newMember, dateOfDeath: e.target.value })}
+                  className="mt-1"
+                />
+              </div>
+            )}
+
 
             <div>
               <Label htmlFor="phone" className="text-sm font-medium">Phone (Optional)</Label>
@@ -538,7 +718,9 @@ const FamilyTreeBuilder: React.FC<FamilyTreeBuilderProps> = ({ onComplete, onBac
               <Button
                 onClick={addFamilyMember}
                 className="flex-1 bg-blue-600 hover:bg-blue-700"
-                disabled={!newMember.name || !newMember.email || !newMember.relationship || !newMember.gender}
+                disabled={!newMember.name || !newMember.relationship || !newMember.gender || 
+                  (newMember.hasEmail && !newMember.email) || 
+                  (!newMember.hasEmail && (!newMember.userId || !newMember.password || !newMember.confirmPassword))}
               >
                 Add Member
               </Button>
