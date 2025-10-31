@@ -1,5 +1,5 @@
 import * as React from 'react';
-import { User, Calendar, MessageSquare, Users, Settings, Home, Plus, Download, Mail, LogOut, X, CalendarIcon, UserPlus, Camera, Menu, Link2, Bell, Compass } from 'lucide-react';
+import { User, Calendar, MessageSquare, Users, Settings, Home, Plus, Download, Mail, LogOut, X, CalendarIcon, UserPlus, Camera, Menu, Link2, Bell, Compass, Activity, Building2 } from 'lucide-react';
 
 import { useNavigate } from 'react-router-dom';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -20,6 +20,8 @@ import { uploadProfilePhoto, getProfilePhotoUrl } from '@/lib/profile-api';
 import { User as UserType, FamilyMember } from '@/types';
 import FamilyTreeVisualization from './FamilyTreeVisualization1';
 import RelationshipAnalyzer from './RelationshipAnalyzer';
+import HealthDetailsManager from './HealthDetailsManager';
+import PropertyDetailsManager from './PropertyDetailsManager';
 import { format } from 'date-fns';
 import { cn } from '@/lib/utils';
 import { createUser } from '@/lib/neo4j';
@@ -54,6 +56,8 @@ const Dashboard: React.FC<DashboardProps> = ({ user: initialUser, onUserUpdate }
   // State for Explore feature
   const [exploreOpen, setExploreOpen] = React.useState(false);
   const [addMemberOpen, setAddMemberOpen] = React.useState(false);
+  const [healthDetailsOpen, setHealthDetailsOpen] = React.useState(false);
+  const [propertyDetailsOpen, setPropertyDetailsOpen] = React.useState(false);
   const [newMember, setNewMember] = React.useState({
     name: '',
     relationship: '',
@@ -1179,19 +1183,25 @@ const Dashboard: React.FC<DashboardProps> = ({ user: initialUser, onUserUpdate }
             <div className="mt-6 grid grid-cols-2 gap-3">
               <Button
                 variant="ghost"
-                className="h-24 border border-dashed border-slate-300 hover:border-slate-400 flex-col gap-2 opacity-50 cursor-not-allowed"
-                disabled
+                onClick={() => {
+                  setExploreOpen(false);
+                  setHealthDetailsOpen(true);
+                }}
+                className="h-24 border-2 border-red-300 hover:border-red-500 hover:bg-red-50 flex-col gap-2 transition-all duration-300"
               >
-                <Plus className="w-6 h-6 text-slate-400" />
-                <span className="text-sm text-slate-400">Health Details</span>
+                <Activity className="w-6 h-6 text-red-600" />
+                <span className="text-sm font-semibold text-slate-800">Health Details</span>
               </Button>
               <Button
                 variant="ghost"
-                className="h-24 border border-dashed border-slate-300 hover:border-slate-400 flex-col gap-2 opacity-50 cursor-not-allowed"
-                disabled
+                onClick={() => {
+                  setExploreOpen(false);
+                  setPropertyDetailsOpen(true);
+                }}
+                className="h-24 border-2 border-emerald-300 hover:border-emerald-500 hover:bg-emerald-50 flex-col gap-2 transition-all duration-300"
               >
-                <Plus className="w-6 h-6 text-slate-400" />
-                <span className="text-sm text-slate-400">Property Details</span>
+                <Building2 className="w-6 h-6 text-emerald-600" />
+                <span className="text-sm font-semibold text-slate-800">Property Details</span>
               </Button>
               <Button
                 variant="ghost"
@@ -1429,6 +1439,20 @@ const Dashboard: React.FC<DashboardProps> = ({ user: initialUser, onUserUpdate }
           </div>
         </DialogContent>
       </Dialog>
+
+      {/* Health Details Manager */}
+      <HealthDetailsManager
+        user={user}
+        open={healthDetailsOpen}
+        onClose={() => setHealthDetailsOpen(false)}
+      />
+
+      {/* Property Details Manager */}
+      <PropertyDetailsManager
+        user={user}
+        open={propertyDetailsOpen}
+        onClose={() => setPropertyDetailsOpen(false)}
+      />
     </div>
   );
 };

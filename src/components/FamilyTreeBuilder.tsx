@@ -228,6 +228,8 @@ const FamilyTreeBuilder: React.FC<FamilyTreeBuilderProps> = ({ onComplete, onBac
   };
 
   const addFamilyMember = async () => {
+    setIsLoading(true);
+    
     // Validate required fields based on whether user has email or not
     const requiredFields = [newMember.name, newMember.relationship, newMember.gender];
     
@@ -252,6 +254,7 @@ const FamilyTreeBuilder: React.FC<FamilyTreeBuilderProps> = ({ onComplete, onBac
         description: `Please fill in: ${missingFields.join(', ')}.`,
         variant: "destructive",
       });
+      setIsLoading(false);
       return;
     }
 
@@ -262,6 +265,7 @@ const FamilyTreeBuilder: React.FC<FamilyTreeBuilderProps> = ({ onComplete, onBac
         description: "Please make sure your passwords match.",
         variant: "destructive",
       });
+      setIsLoading(false);
       return;
     }
 
@@ -281,12 +285,14 @@ const FamilyTreeBuilder: React.FC<FamilyTreeBuilderProps> = ({ onComplete, onBac
         description: validation.message,
         variant: "destructive",
       });
+      setIsLoading(false);
       return;
     }
 
     if (validation.requiresConfirmation) {
       const confirmed = window.confirm(validation.message + "\n\nClick OK to continue or Cancel to abort.");
       if (!confirmed) {
+        setIsLoading(false);
         return;
       }
     }
@@ -300,6 +306,7 @@ const FamilyTreeBuilder: React.FC<FamilyTreeBuilderProps> = ({ onComplete, onBac
           description: "This email is already in use. Please use a different email.",
           variant: "destructive",
         });
+        setIsLoading(false);
         return;
       }
     }
@@ -345,6 +352,7 @@ const FamilyTreeBuilder: React.FC<FamilyTreeBuilderProps> = ({ onComplete, onBac
         title: "Family member added",
         description: `${newMember.name} has been added to the family tree.`,
       });
+      setIsLoading(false);
     } catch (error) {
       console.error('Error adding family member:', error);
       toast({
@@ -352,6 +360,7 @@ const FamilyTreeBuilder: React.FC<FamilyTreeBuilderProps> = ({ onComplete, onBac
         description: "Failed to add family member. Please try again.",
         variant: "destructive",
       });
+      setIsLoading(false);
     }
   };
 
@@ -483,12 +492,12 @@ const FamilyTreeBuilder: React.FC<FamilyTreeBuilderProps> = ({ onComplete, onBac
         </ReactFlow>
       </div>
 
-      <Dialog open={showAddDialog} onOpenChange={setShowAddDialog}>
-        <DialogContent className="sm:max-w-lg">
+      <Dialog open={showAddDialog} onOpenChange={(open) => !isLoading && setShowAddDialog(open)}>
+        <DialogContent className="sm:max-w-lg max-h-[90vh] overflow-hidden flex flex-col">
           <DialogHeader>
             <DialogTitle className="text-xl">Add Family Member</DialogTitle>
           </DialogHeader>
-          <div className="space-y-4">
+          <div className="space-y-4 overflow-y-auto flex-1 pr-2">
             <div>
               <Label htmlFor="name" className="text-sm font-medium">Name *</Label>
               <Input
@@ -706,25 +715,37 @@ const FamilyTreeBuilder: React.FC<FamilyTreeBuilderProps> = ({ onComplete, onBac
                 className="mt-1"
               />
             </div>
+          </div>
 
-            <div className="flex gap-3 pt-4">
-              <Button
-                variant="outline"
-                onClick={() => setShowAddDialog(false)}
-                className="flex-1"
-              >
-                Cancel
-              </Button>
-              <Button
-                onClick={addFamilyMember}
-                className="flex-1 bg-blue-600 hover:bg-blue-700"
-                disabled={!newMember.name || !newMember.relationship || !newMember.gender || 
-                  (newMember.hasEmail && !newMember.email) || 
-                  (!newMember.hasEmail && (!newMember.userId || !newMember.password || !newMember.confirmPassword))}
-              >
-                Add Member
-              </Button>
-            </div>
+          {/* Action buttons fixed at bottom */}
+          <div className="flex gap-3 pt-4 border-t mt-4">
+            <Button
+              variant="outline"
+              onClick={() => setShowAddDialog(false)}
+              className="flex-1"
+              disabled={isLoading}
+            >
+              Cancel
+            </Button>
+            <Button
+              onClick={addFamilyMember}
+              className="flex-1 bg-blue-600 hover:bg-blue-700"
+              disabled={isLoading || !newMember.name || !newMember.relationship || !newMember.gender || 
+                (newMember.hasEmail && !newMember.email) || 
+                (!newMember.hasEmail && (!newMember.userId || !newMember.password || !newMember.confirmPassword))}
+            >
+              {isLoading ? (
+                <>
+                  <svg className="animate-spin -ml-1 mr-2 h-4 w-4 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                  </svg>
+                  Adding...
+                </>
+              ) : (
+                'Add Member'
+              )}
+            </Button>
           </div>
         </DialogContent>
       </Dialog>
