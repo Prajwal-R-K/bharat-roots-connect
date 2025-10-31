@@ -77,25 +77,35 @@ const getCytoscapeStyles = () => [
       "text-wrap": "wrap",
       "text-max-width": "120px",
       "overlay-opacity": 0,
-      "transition-property": "border-width, background-color, width, height",
-      "transition-duration": 300,
+      "transition-property": "border-width, background-color, width, height, border-color",
+      "transition-duration": "0.3s",
+      "transition-timing-function": "ease-in-out",
+      "background-color": "linear-gradient(135deg, #fff, #fff)",
+      "box-shadow": "0 0 10px rgba(0, 0, 0, 0.1)",
     }
   },
   {
     selector: 'node.hover',
     style: {
-      'border-width': 3,
+      'border-width': 6,
       'border-color': '#3b82f6',
-      'border-opacity': 0.8,
+      'border-opacity': 1,
+      'box-shadow': '0 0 20px rgba(59, 130, 246, 0.6)',
+      'width': 110,
+      'height': 110,
+      'z-index': 999
     }
   },
   {
     selector: 'node.highlighted',
     style: {
-      'border-width': 4,
+      'border-width': 6,
       'border-color': '#ef4444',
       'border-opacity': 1,
-      'box-shadow': '0 0 20px #ef4444'
+      'box-shadow': '0 0 30px rgba(239, 68, 68, 0.8), 0 0 60px rgba(239, 68, 68, 0.4)',
+      'width': 115,
+      'height': 115,
+      'z-index': 1000
     }
   },
   {
@@ -104,13 +114,14 @@ const getCytoscapeStyles = () => [
       width: 240,
       height: 130,
       shape: "roundrectangle",
-      "background-color": "#ffffff",
-      "background-opacity": 0.9,
+      "background-color": "#fef3f2",
+      "background-opacity": 0.95,
       "border-width": 2,
-      "border-color": "#e5e7eb",
-      "border-opacity": 0.8,
+      "border-color": "#fca5a5",
+      "border-opacity": 0.6,
       label: "",
       "overlay-opacity": 0,
+      "box-shadow": "0 4px 12px rgba(252, 165, 165, 0.15)"
     }
   },
   {
@@ -135,8 +146,10 @@ const getCytoscapeStyles = () => [
       "text-wrap": "wrap",
       "text-max-width": "100px",
       "overlay-opacity": 0,
-      "transition-property": "border-width, background-color, width, height",
-      "transition-duration": 300
+      "transition-property": "border-width, background-color, width, height, border-color",
+      "transition-duration": "0.3s",
+      "transition-timing-function": "ease-in-out",
+      "box-shadow": "0 2px 8px rgba(0, 0, 0, 0.1)"
     }
   },
   {
@@ -283,36 +296,104 @@ const createCytoscapeElements = (
     }
   });
 
-  // Calculate generation/layer for each node (BFS from root nodes)
+  // COMPREHENSIVE LAYER ASSIGNMENT: Ensures all children of same parents are at same layer
   const layerMap = new Map<string, number>();
   const rootNodes = members.filter(m => !parentMap.has(m.userId));
   
-  // BFS to assign layers
+  // Step 1: Group children by their parent set
+  const childrenByParentSet = new Map<string, Set<string>>();
+  members.forEach(m => {
+    const parents = parentMap.get(m.userId) || [];
+    if (parents.length > 0) {
+      const parentKey = parents.sort().join('-');
+      if (!childrenByParentSet.has(parentKey)) {
+        childrenByParentSet.set(parentKey, new Set());
+      }
+      childrenByParentSet.get(parentKey)!.add(m.userId);
+    }
+  });
+  
+  // Step 2: Assign layers starting from root nodes
   const queue: Array<{userId: string, layer: number}> = rootNodes.map(m => ({userId: m.userId, layer: 0}));
   const visited = new Set<string>();
+  const pendingSiblings = new Map<string, number>(); // Track layer for siblings
   
+  // First pass: assign layers to all nodes
   while (queue.length > 0) {
     const {userId, layer} = queue.shift()!;
     if (visited.has(userId)) continue;
     visited.add(userId);
     layerMap.set(userId, layer);
     
-    // Add children to queue
-    const children = childMap.get(userId) || [];
-    children.forEach(childId => {
-      if (!visited.has(childId)) {
-        queue.push({userId: childId, layer: layer + 1});
-      }
-    });
-    
-    // Spouses should be at the same layer
+    // Spouses must be at the same layer (process immediately)
     const spouses = spouseMap.get(userId) || [];
     spouses.forEach(spouseId => {
       if (!visited.has(spouseId)) {
-        queue.push({userId: spouseId, layer});
+        visited.add(spouseId);
+        layerMap.set(spouseId, layer);
+        queue.push({userId: spouseId, layer}); // Add to queue to process their children
+      }
+    });
+    
+    // Find ALL children of this person (and their spouse if any)
+    const allParents = [userId, ...spouses];
+    const allChildrenSets: Set<string>[] = [];
+    
+    // Collect all children from this person and their spouses
+    allParents.forEach(parentId => {
+      const directChildren = childMap.get(parentId) || [];
+      directChildren.forEach(childId => {
+        // Find the parent set for this child
+        const childParents = parentMap.get(childId) || [];
+        const parentKey = childParents.sort().join('-');
+        
+        // Get all siblings (children of same parent set)
+        const siblings = childrenByParentSet.get(parentKey);
+        if (siblings) {
+          allChildrenSets.push(siblings);
+        }
+      });
+    });
+    
+    // Merge all sibling sets and assign them to the SAME layer
+    const allChildrenOfThisGeneration = new Set<string>();
+    allChildrenSets.forEach(siblingSet => {
+      siblingSet.forEach(childId => allChildrenOfThisGeneration.add(childId));
+    });
+    
+    // Assign all children to the next layer
+    const childLayer = layer + 1;
+    allChildrenOfThisGeneration.forEach(childId => {
+      if (!visited.has(childId)) {
+        queue.push({userId: childId, layer: childLayer});
       }
     });
   }
+  
+  // Step 3: Verify and synchronize siblings one more time
+  childrenByParentSet.forEach((siblings, parentKey) => {
+    // Find the minimum layer among siblings (in case of conflicts)
+    let minLayer = Infinity;
+    siblings.forEach(siblingId => {
+      const siblingLayer = layerMap.get(siblingId);
+      if (siblingLayer !== undefined && siblingLayer < minLayer) {
+        minLayer = siblingLayer;
+      }
+    });
+    
+    // Assign all siblings to the same layer
+    if (minLayer !== Infinity) {
+      siblings.forEach(siblingId => {
+        layerMap.set(siblingId, minLayer);
+        
+        // Also sync their spouses to the same layer
+        const spouses = spouseMap.get(siblingId) || [];
+        spouses.forEach(spouseId => {
+          layerMap.set(spouseId, minLayer);
+        });
+      });
+    }
+  });
 
   const couples = new Map<string, { member1: string; member2: string }>();
   spouseMap.forEach((arr, id) => {
@@ -523,6 +604,8 @@ const createCytoscapeElements = (
       relationship: rel.type,
       sourceName,
       targetName: rel.targetName || "",
+      sourceUserId: rel.source,  // Store original user ID for reliable matching
+      targetUserId: rel.target,  // Store original user ID for reliable matching
       curveDistances: [0, 0, 0],
       curveWeights: [0.1, 0.65, 0.95],
       edgeDash: [0, 0],
@@ -625,22 +708,99 @@ const FamilyTreeVisualization: React.FC<FamilyTreeVisualizationProps> = ({
     // Clear existing custom edges
     svg.innerHTML = '';
     
-    // Add CSS for static dashed lines like in reference image
+    // Add enhanced CSS for beautiful animated edges
     const style = document.createElementNS('http://www.w3.org/2000/svg', 'style');
     style.textContent = `
       .reference-edge {
-        stroke-dasharray: 5 3;
+        stroke-dasharray: 8 4;
         stroke-linecap: round;
+        stroke-linejoin: round;
+        transition: all 0.3s ease;
+      }
+      .reference-edge:hover {
+        stroke-width: 3.5 !important;
+        filter: drop-shadow(0 0 8px currentColor);
+      }
+      .edge-flow {
+        stroke-dasharray: 8 4;
+        animation: edge-flow 2s linear infinite;
+      }
+      @keyframes edge-flow {
+        0% { stroke-dashoffset: 0; }
+        100% { stroke-dashoffset: 12; }
+      }
+      .edge-glow {
+        filter: drop-shadow(0 0 4px rgba(32, 178, 170, 0.6));
       }
     `;
     svg.appendChild(style);
     
+    // Add gradient definitions for beautiful edge coloring
+    const defs = document.createElementNS('http://www.w3.org/2000/svg', 'defs');
+    
+    // Parent-child gradient (teal to blue)
+    const parentGradient = document.createElementNS('http://www.w3.org/2000/svg', 'linearGradient');
+    parentGradient.setAttribute('id', 'parentChildGradient');
+    parentGradient.setAttribute('x1', '0%');
+    parentGradient.setAttribute('y1', '0%');
+    parentGradient.setAttribute('x2', '0%');
+    parentGradient.setAttribute('y2', '100%');
+    
+    const stop1 = document.createElementNS('http://www.w3.org/2000/svg', 'stop');
+    stop1.setAttribute('offset', '0%');
+    stop1.setAttribute('stop-color', parentChildColor);
+    stop1.setAttribute('stop-opacity', '0.95');
+    
+    const stop2 = document.createElementNS('http://www.w3.org/2000/svg', 'stop');
+    stop2.setAttribute('offset', '50%');
+    stop2.setAttribute('stop-color', '#3b82f6');
+    stop2.setAttribute('stop-opacity', '0.9');
+    
+    const stop3 = document.createElementNS('http://www.w3.org/2000/svg', 'stop');
+    stop3.setAttribute('offset', '100%');
+    stop3.setAttribute('stop-color', parentChildColor);
+    stop3.setAttribute('stop-opacity', '0.95');
+    
+    parentGradient.appendChild(stop1);
+    parentGradient.appendChild(stop2);
+    parentGradient.appendChild(stop3);
+    
+    // Glow filter for edges
+    const glowFilter = document.createElementNS('http://www.w3.org/2000/svg', 'filter');
+    glowFilter.setAttribute('id', 'edgeGlow');
+    glowFilter.setAttribute('x', '-50%');
+    glowFilter.setAttribute('y', '-50%');
+    glowFilter.setAttribute('width', '200%');
+    glowFilter.setAttribute('height', '200%');
+    
+    const blur = document.createElementNS('http://www.w3.org/2000/svg', 'feGaussianBlur');
+    blur.setAttribute('in', 'SourceGraphic');
+    blur.setAttribute('stdDeviation', '2');
+    blur.setAttribute('result', 'blur');
+    
+    const merge = document.createElementNS('http://www.w3.org/2000/svg', 'feMerge');
+    const mergeNode1 = document.createElementNS('http://www.w3.org/2000/svg', 'feMergeNode');
+    mergeNode1.setAttribute('in', 'blur');
+    const mergeNode2 = document.createElementNS('http://www.w3.org/2000/svg', 'feMergeNode');
+    mergeNode2.setAttribute('in', 'SourceGraphic');
+    merge.appendChild(mergeNode1);
+    merge.appendChild(mergeNode2);
+    
+    glowFilter.appendChild(blur);
+    glowFilter.appendChild(merge);
+    
+    defs.appendChild(parentGradient);
+    defs.appendChild(glowFilter);
+    svg.appendChild(defs);
+    
     const edges = cyRef.current.edges('[type="parentChild"]');
+    console.log('Rendering custom edges. Total parent-child edges:', edges.length);
     
     edges.forEach((edge) => {
       const edgeId = edge.id();
       const sourceId = edge.data('source');
       const targetId = edge.data('target');
+      console.log('Processing edge:', edgeId, 'from', sourceId, 'to', targetId);
       
       // Get the actual target node - this could be individual or couple container
       const actualTargetNode = cyRef.current.$id(targetId);
@@ -651,31 +811,12 @@ const FamilyTreeVisualization: React.FC<FamilyTreeVisualizationProps> = ({
       let startX, startY;
       
       if (sourceNode.data('type') === 'couple') {
-        // Source is couple container - determine which member is the actual parent
-        const sourceMembers = sourceNode.children('[type="coupleMember"]');
-        const sourceName = edge.data('sourceName');
-        
-        let sourceParent = null;
-        // Find the specific parent within the couple
-        sourceMembers.forEach(member => {
-          if (member.data('name') === sourceName || member.data('userId') === sourceName) {
-            sourceParent = member;
-          }
-        });
-        
-        if (sourceParent) {
-          // Connect from the specific parent's position
-          const parentPos = sourceParent.renderedPosition();
-          const parentBox = sourceParent.renderedBoundingBox();
-          startX = parentPos.x;
-          startY = parentBox.y2; // Bottom of specific parent
-        } else {
-          // Fallback to container center
-          const sourcePos = sourceNode.renderedPosition();
-          const sourceBox = sourceNode.renderedBoundingBox();
-          startX = sourcePos.x;
-          startY = sourceBox.y2; // Bottom of couple container
-        }
+        // Source is couple container - connect from CENTER of couple node
+        const sourcePos = sourceNode.renderedPosition();
+        const sourceBox = sourceNode.renderedBoundingBox();
+        startX = sourcePos.x; // Center X of couple container
+        startY = sourceBox.y2 + 8; // Start clearly below the couple container for visibility
+        console.log('Couple source:', sourceId, 'Start point:', startX, startY);
       } else {
         // Source is individual node
         const sourcePos = sourceNode.renderedPosition();
@@ -694,13 +835,21 @@ const FamilyTreeVisualization: React.FC<FamilyTreeVisualizationProps> = ({
         const containerBox = actualTargetNode.renderedBoundingBox();
         
         if (coupleMembers.length >= 2) {
-          // Determine which member based on target name
+          // Determine which member based on target user ID and name
+          const targetUserId = edge.data('targetUserId');
           const targetName = edge.data('targetName');
           let targetMember = null;
           
-          // Try to match by name first
+          // Try to match by originalId (most reliable) or fullName
           coupleMembers.forEach(member => {
-            if (member.data('name') === targetName || member.data('userId') === targetName) {
+            const memberOriginalId = member.data('originalId');
+            const memberFullName = member.data('fullName');
+            // First try to match by original user ID (most reliable)
+            if (memberOriginalId === targetUserId) {
+              targetMember = member;
+            }
+            // Fallback to name matching if ID doesn't match
+            else if (!targetMember && (memberOriginalId === targetName || memberFullName === targetName)) {
               targetMember = member;
             }
           });
@@ -708,25 +857,34 @@ const FamilyTreeVisualization: React.FC<FamilyTreeVisualizationProps> = ({
           if (targetMember) {
             // Connect to the top of the specific member within the container
             const memberPos = targetMember.renderedPosition();
+            const memberBox = targetMember.renderedBoundingBox();
             endX = memberPos.x;
-            endY = containerBox.y1; // Top edge of container at member's X position
+            endY = memberBox.y1; // Top edge of the specific member
           } else {
-            // If no specific match, use left/right logic based on source position
-            const leftMember = coupleMembers[0];
-            const rightMember = coupleMembers[1];
+            // If no specific match, try to match by checking the originalId against the edge target
+            const edgeTargetId = edge.data('target');
+            coupleMembers.forEach(member => {
+              const parentId = member.data('parent');
+              const originalId = member.data('originalId');
+              // Check if this couple member's parent matches the edge target
+              if (parentId === edgeTargetId) {
+                // Also check if the originalId is part of the coupleId
+                if (!targetMember) {
+                  targetMember = member;
+                }
+              }
+            });
             
-            // Choose member based on which is closer to source X position
-            const leftPos = leftMember.renderedPosition();
-            const rightPos = rightMember.renderedPosition();
-            const distanceToLeft = Math.abs(startX - leftPos.x);
-            const distanceToRight = Math.abs(startX - rightPos.x);
-            
-            if (distanceToLeft < distanceToRight) {
-              endX = leftPos.x;
+            if (targetMember) {
+              const memberPos = targetMember.renderedPosition();
+              const memberBox = targetMember.renderedBoundingBox();
+              endX = memberPos.x;
+              endY = memberBox.y1;
             } else {
-              endX = rightPos.x;
+              // Final fallback: use container center
+              endX = containerPos.x;
+              endY = containerBox.y1;
             }
-            endY = containerBox.y1; // Top edge of container
           }
         } else {
           // Single member or fallback
@@ -741,39 +899,231 @@ const FamilyTreeVisualization: React.FC<FamilyTreeVisualizationProps> = ({
         endY = targetBox.y1; // Top of individual node
       }
       
-      // Create smooth curved path with dramatic bending especially at target node
-      const midY = startY + (endY - startY) * 0.5;
-      const controlX1 = startX;
-      const controlY1 = startY + (endY - startY) * 0.6; // Strong curve from source
-      const controlX2 = endX;
-      const controlY2 = endY - (endY - startY) * 0.8; // Much more dramatic bending to target node
+      // Create smooth curved path with improved control for better visual appearance
+      const verticalDistance = endY - startY;
+      const horizontalDistance = Math.abs(endX - startX);
       
-      // SVG path for smooth bezier curve matching reference
+      // Adjust control points based on distance for natural curves
+      const controlY1 = startY + verticalDistance * 0.3; // Gentler initial curve
+      const controlY2 = endY - verticalDistance * 0.3;   // Gentler ending curve
+      
+      // Add slight horizontal offset for more natural S-curve when nodes are far apart
+      const horizontalOffset = Math.min(horizontalDistance * 0.2, 50);
+      const controlX1 = startX + (endX > startX ? horizontalOffset : -horizontalOffset) * 0.3;
+      const controlX2 = endX - (endX > startX ? horizontalOffset : -horizontalOffset) * 0.3;
+      
+      // SVG path for smooth bezier curve with natural flow
       const pathData = `M ${startX} ${startY} C ${controlX1} ${controlY1}, ${controlX2} ${controlY2}, ${endX} ${endY}`;
       
-      // Create path element with exact reference image styling
+      // Create a group for the edge with all its elements
+      const edgeGroup = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+      edgeGroup.setAttribute('class', 'edge-group');
+      edgeGroup.setAttribute('data-edge-id', edgeId);
+      
+      // Background glow path for depth effect
+      const glowPath = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+      glowPath.setAttribute('d', pathData);
+      glowPath.setAttribute('stroke', parentChildColor);
+      glowPath.setAttribute('stroke-width', '8');
+      glowPath.setAttribute('fill', 'none');
+      glowPath.setAttribute('opacity', '0.25');
+      glowPath.setAttribute('filter', 'url(#edgeGlow)');
+      
+      // Main path with solid color and flowing animation (more visible)
       const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
       path.setAttribute('d', pathData);
-      path.setAttribute('stroke', parentChildColor);
-      path.setAttribute('stroke-width', '2.5');
+      path.setAttribute('stroke', parentChildColor); // Use solid color instead of gradient for better visibility
+      path.setAttribute('stroke-width', '3.5');
       path.setAttribute('fill', 'none');
-      path.setAttribute('class', 'reference-edge'); // Static dashed lines like reference
+      path.setAttribute('class', 'reference-edge edge-flow');
+      path.setAttribute('opacity', '1');
       
-      // Create small triangle arrowhead like in reference
-      const arrowSize = 7; // Smaller like reference image
+      // Invisible wider path for easier hover interaction
+      const hoverPath = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+      hoverPath.setAttribute('d', pathData);
+      hoverPath.setAttribute('stroke', 'transparent');
+      hoverPath.setAttribute('stroke-width', '20');
+      hoverPath.setAttribute('fill', 'none');
+      hoverPath.style.cursor = 'pointer';
+      hoverPath.style.pointerEvents = 'auto';
+      
+      // Get relationship info for tooltip
+      const sourceNodeData = cyRef.current.$id(sourceId);
+      const targetNodeData = cyRef.current.$id(targetId);
+      const sourceName = edge.data('sourceName') || 'Parent';
+      const targetName = edge.data('targetName') || 'Child';
+      
+      // Add hover effects and tooltip
+      hoverPath.addEventListener('mouseenter', (e) => {
+        path.setAttribute('stroke-width', '5');
+        path.setAttribute('opacity', '1');
+        glowPath.setAttribute('opacity', '0.5');
+        
+        // Highlight connected nodes
+        sourceNodeData.addClass('highlighted');
+        targetNodeData.addClass('highlighted');
+        
+        // Show tooltip
+        const tooltip = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+        tooltip.setAttribute('class', 'edge-tooltip');
+        tooltip.setAttribute('id', `tooltip-${edgeId}`);
+        
+        const midX = (startX + endX) / 2;
+        const midY = (startY + endY) / 2 - 20;
+        
+        const rect = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
+        rect.setAttribute('x', String(midX - 60));
+        rect.setAttribute('y', String(midY - 15));
+        rect.setAttribute('width', '120');
+        rect.setAttribute('height', '30');
+        rect.setAttribute('fill', 'white');
+        rect.setAttribute('stroke', parentChildColor);
+        rect.setAttribute('stroke-width', '2');
+        rect.setAttribute('rx', '6');
+        rect.setAttribute('opacity', '0.95');
+        rect.setAttribute('filter', 'url(#edgeGlow)');
+        
+        const text = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+        text.setAttribute('x', String(midX));
+        text.setAttribute('y', String(midY + 5));
+        text.setAttribute('text-anchor', 'middle');
+        text.setAttribute('fill', '#1f2937');
+        text.setAttribute('font-size', '12');
+        text.setAttribute('font-weight', 'bold');
+        text.textContent = '👨‍👩‍👧 Parent → Child';
+        
+        tooltip.appendChild(rect);
+        tooltip.appendChild(text);
+        svg.appendChild(tooltip);
+      });
+      
+      hoverPath.addEventListener('mouseleave', () => {
+        path.setAttribute('stroke-width', '3.5');
+        path.setAttribute('opacity', '1');
+        glowPath.setAttribute('opacity', '0.25');
+        
+        // Remove highlight from nodes
+        sourceNodeData.removeClass('highlighted');
+        targetNodeData.removeClass('highlighted');
+        
+        // Remove tooltip
+        const tooltip = svg.querySelector(`#tooltip-${edgeId}`);
+        if (tooltip) tooltip.remove();
+      });
+      
+      // Create small triangle arrowhead with gradient
+      const arrowSize = 8;
       const angle = Math.atan2(endY - controlY2, endX - controlX2);
-      const arrowX1 = endX - arrowSize * Math.cos(angle - Math.PI / 7);
-      const arrowY1 = endY - arrowSize * Math.sin(angle - Math.PI / 7);
-      const arrowX2 = endX - arrowSize * Math.cos(angle + Math.PI / 7);
-      const arrowY2 = endY - arrowSize * Math.sin(angle + Math.PI / 7);
+      const arrowX1 = endX - arrowSize * Math.cos(angle - Math.PI / 6.5);
+      const arrowY1 = endY - arrowSize * Math.sin(angle - Math.PI / 6.5);
+      const arrowX2 = endX - arrowSize * Math.cos(angle + Math.PI / 6.5);
+      const arrowY2 = endY - arrowSize * Math.sin(angle + Math.PI / 6.5);
       
       const arrowPath = document.createElementNS('http://www.w3.org/2000/svg', 'path');
       arrowPath.setAttribute('d', `M ${endX} ${endY} L ${arrowX1} ${arrowY1} L ${arrowX2} ${arrowY2} Z`);
       arrowPath.setAttribute('fill', parentChildColor);
-      arrowPath.setAttribute('stroke', 'none'); // Solid fill like reference
+      arrowPath.setAttribute('stroke', 'white');
+      arrowPath.setAttribute('stroke-width', '0.5');
+      arrowPath.setAttribute('opacity', '0.95');
+      arrowPath.setAttribute('filter', 'url(#edgeGlow)');
       
-      svg.appendChild(path);
-      svg.appendChild(arrowPath);
+      // Assemble edge group
+      edgeGroup.appendChild(glowPath);
+      edgeGroup.appendChild(path);
+      edgeGroup.appendChild(arrowPath);
+      edgeGroup.appendChild(hoverPath);
+      
+      svg.appendChild(edgeGroup);
+    });
+    
+    // Add decorative elements for couple nodes (hearts and connection indicators)
+    const coupleNodes = cyRef.current.nodes('[type="couple"]');
+    coupleNodes.forEach((coupleNode) => {
+      const couplePos = coupleNode.renderedPosition();
+      const coupleBox = coupleNode.renderedBoundingBox();
+      const coupleMembers = coupleNode.children('[type="coupleMember"]');
+      
+      if (coupleMembers.length >= 2) {
+        // Draw a small heart icon between the couple members
+        const member1Pos = coupleMembers[0].renderedPosition();
+        const member2Pos = coupleMembers[1].renderedPosition();
+        const heartX = (member1Pos.x + member2Pos.x) / 2;
+        const heartY = couplePos.y;
+        
+        // Create heart group
+        const heartGroup = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+        heartGroup.setAttribute('class', 'couple-heart');
+        
+        // Background circle for heart
+        const heartBg = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+        heartBg.setAttribute('cx', String(heartX));
+        heartBg.setAttribute('cy', String(heartY));
+        heartBg.setAttribute('r', '12');
+        heartBg.setAttribute('fill', '#fef2f2');
+        heartBg.setAttribute('stroke', '#fca5a5');
+        heartBg.setAttribute('stroke-width', '1.5');
+        heartBg.setAttribute('opacity', '0.95');
+        
+        // Heart emoji as text
+        const heartText = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+        heartText.setAttribute('x', String(heartX));
+        heartText.setAttribute('y', String(heartY + 5));
+        heartText.setAttribute('text-anchor', 'middle');
+        heartText.setAttribute('font-size', '14');
+        heartText.textContent = '💕';
+        
+        heartGroup.appendChild(heartBg);
+        heartGroup.appendChild(heartText);
+        svg.appendChild(heartGroup);
+      }
+      
+      // Add connection point indicator at bottom center of couple node
+      const bottomCenterX = couplePos.x;
+      const bottomCenterY = coupleBox.y2;
+      
+      // Check if this couple has any children (outgoing parent-child edges)
+      const hasChildren = cyRef.current.edges('[type="parentChild"]').some(e => 
+        e.data('source') === coupleNode.id()
+      );
+      
+      if (hasChildren) {
+        // Draw a short vertical line from couple bottom to where edges start
+        const connectorLine = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+        connectorLine.setAttribute('x1', String(bottomCenterX));
+        connectorLine.setAttribute('y1', String(bottomCenterY));
+        connectorLine.setAttribute('x2', String(bottomCenterX));
+        connectorLine.setAttribute('y2', String(bottomCenterY + 8)); // Match the +8 offset from edge start
+        connectorLine.setAttribute('stroke', parentChildColor);
+        connectorLine.setAttribute('stroke-width', '3');
+        connectorLine.setAttribute('opacity', '1');
+        svg.appendChild(connectorLine);
+        
+        // Draw a decorative connection point at the bottom of couple
+        const connectorGroup = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+        connectorGroup.setAttribute('class', 'couple-connector');
+        
+        // Outer circle
+        const outerCircle = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+        outerCircle.setAttribute('cx', String(bottomCenterX));
+        outerCircle.setAttribute('cy', String(bottomCenterY));
+        outerCircle.setAttribute('r', '10');
+        outerCircle.setAttribute('fill', parentChildColor);
+        outerCircle.setAttribute('opacity', '0.35');
+        
+        // Inner circle
+        const innerCircle = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+        innerCircle.setAttribute('cx', String(bottomCenterX));
+        innerCircle.setAttribute('cy', String(bottomCenterY));
+        innerCircle.setAttribute('r', '6');
+        innerCircle.setAttribute('fill', 'white');
+        innerCircle.setAttribute('stroke', parentChildColor);
+        innerCircle.setAttribute('stroke-width', '2.5');
+        innerCircle.setAttribute('opacity', '1');
+        
+        connectorGroup.appendChild(outerCircle);
+        connectorGroup.appendChild(innerCircle);
+        svg.appendChild(connectorGroup);
+      }
     });
   }, [parentChildColor]);
 
@@ -1475,7 +1825,7 @@ const FamilyTreeVisualization: React.FC<FamilyTreeVisualizationProps> = ({
         <svg
           ref={svgRef}
           className="absolute inset-0 pointer-events-none"
-          style={{ width: '100%', height: '100%' }}
+          style={{ width: '100%', height: '100%', zIndex: 10 }}
         />
 
 
